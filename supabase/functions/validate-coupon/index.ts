@@ -29,11 +29,59 @@ function getClientIp(req: Request): string {
  * It is intentionally read-only; redemption still happens atomically at
  * capture time inside verify-razorpay-payment / razorpay-webhook.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function couponAvailability(req: Request, offeringId: unknown): Promise<Response> {
+  if (typeof offeringId !== "string" || !UUID_RE.test(offeringId)) {
+    return jsonRes({ available: false, error: "offering_id is required" }, 400);
+  }
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+  // Own rate-limit bucket, so checkout loads never eat into the 20 code tries.
+  const ip = getClientIp(req);
+  const { data: rlAllowed, error: rlErr } = await admin.rpc("check_and_increment_rate_limit", {
+    p_key: `validate-coupon-probe:${ip}:${offeringId}`,
+    p_max_count: 60,
+    p_window_seconds: 900,
+  });
+  if (rlErr || rlAllowed === false) return jsonRes({ available: false });
+
+  const { data: offering } = await admin
+    .from("offerings")
+    .select("id, status, is_public")
+    .eq("id", offeringId)
+    .maybeSingle();
+  if (!offering || offering.status !== "active" || !offering.is_public) {
+    return jsonRes({ available: false });
+  }
+
+  const { data: coupons } = await admin
+    .from("coupons")
+    .select("valid_from, valid_until, max_redemptions, used_count, applies_to_offering_id")
+    .eq("is_active", true)
+    .or(`applies_to_offering_id.is.null,applies_to_offering_id.eq.${offeringId}`)
+    .limit(200);
+  const now = new Date();
+  const available = (coupons ?? []).some((c) => couponInvalidReason(c, offeringId, now) === null);
+  return jsonRes({ available });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { coupon_code, offering_id } = await req.json();
+    const { coupon_code, offering_id, check_available } = await req.json();
+
+    // ── Availability probe: does ANY active coupon apply to this offering? ──
+    // The checkout shows its promo box only when one does (an empty box with
+    // no working code sends buyers off to search for one). Returns a boolean
+    // and nothing else: no code, no count, no discount.
+    if (check_available === true) {
+      return await couponAvailability(req, offering_id);
+    }
+
     if (!coupon_code || !offering_id) {
       return jsonRes({ valid: false, error: "coupon_code and offering_id are required" }, 400);
     }

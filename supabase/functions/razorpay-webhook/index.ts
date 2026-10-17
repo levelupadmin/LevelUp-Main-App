@@ -17,6 +17,8 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
+import { ensureCourseGranted } from "../_shared/captureGrant.ts";
 
 async function verifySignature(
   body: string,
@@ -96,15 +98,48 @@ Deno.serve(async (req) => {
       return jsonRes({ received: true, skipped: "no payment_order" });
     }
 
-    // Idempotency: terminal states exit fast. "captured" = fully processed;
-    // "needs_review" = parked for a human (wrong amount / coupon / user issue),
-    // so we must NOT auto-reprocess it on a Razorpay retry.
+    // Idempotency: terminal states exit fast. "captured" = capture recorded
+    // (the course is checked below); "needs_review" = parked for a human
+    // (wrong amount / coupon / user issue), so we must NOT auto-reprocess it
+    // on a Razorpay retry.
     if (po.status === "captured" || po.status === "needs_review") {
       if (!po.razorpay_payment_id) {
         await admin
           .from("payment_orders")
           .update({ razorpay_payment_id: razorpayPaymentId })
           .eq("id", po.id);
+      }
+      // Captured is not the same as granted: verify writes "captured" before
+      // it inserts the enrolment, and can answer 500 in between. Grant the
+      // course first, with the same idempotent insert. A grant it refuses is
+      // written on the order as notes.grant_issue (_shared/captureGrant.ts).
+      // A database error answers 500 so Razorpay delivers again. A course
+      // this order lost on purpose, or an order with no buyer, is left for a
+      // person (a retry cannot help): acknowledged only once the order
+      // carries the marker, and 500 otherwise so a later delivery writes it.
+      // Then start post-capture if no one has claimed it and the capture is
+      // recent (verify, or an earlier delivery, may have failed before it
+      // started; an old order gets no late receipt); the claim keeps it to at
+      // most one run. Staged cohort payments take neither step.
+      if (po.status === "captured" && !po.payment_type && !po.application_id) {
+        const grant = await ensureCourseGranted(admin, po, {
+          source: "razorpay-webhook",
+          razorpayPaymentId,
+        });
+        if (!grant.ok) {
+          if (grant.reason === "read_failed" || grant.reason === "insert_failed") {
+            return jsonRes({ error: "Enrolment creation failed" }, 500);
+          }
+          if (!grant.recorded) {
+            return jsonRes({ error: "Course not granted and not recorded" }, 500);
+          }
+          return jsonRes({ received: true, status: po.status, course: grant.reason, recorded: "notes.grant_issue" });
+        }
+        // This delivery is signed by Razorpay, so its payment id counts when
+        // the row has none yet (it was written just above).
+        if (postCaptureRecoverable({ ...po, razorpay_payment_id: po.razorpay_payment_id || razorpayPaymentId })) {
+          schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
+        }
       }
       return jsonRes({ received: true, status: po.status });
     }
@@ -317,6 +352,12 @@ Deno.serve(async (req) => {
           .eq("id", po.id);
       }
     }
+
+    // One-time post-capture work (server Meta Purchase, receipt email), shared with
+    // verify-razorpay-payment and claimed once per order (_shared/postCapture.ts).
+    // Skipped for staged cohort payments. In the background, so Razorpay gets
+    // its 200 without waiting on Meta.
+    schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
 
     return jsonRes({ success: true, enrolment: enrolmentId ? "created" : "exists" });
   } catch (err) {

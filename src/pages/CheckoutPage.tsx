@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useCheckoutPricing } from "@/hooks/useCheckoutPricing";
 import { useCheckoutCoupon } from "@/hooks/useCheckoutCoupon";
@@ -13,7 +13,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
-import { buildVerifyBody, postPaymentNavState, postPaymentRoute } from "@/lib/checkoutVerify";
+import { buildVerifyBody, postPaymentNavState, postPaymentRoute, type RazorpaySuccess } from "@/lib/checkoutVerify";
+import {
+  cartKey,
+  guestReuseToken,
+  loadOpenOrder,
+  paymentLocked,
+  payStepFor,
+  saveOpenOrder,
+  type OpenOrder,
+} from "@/lib/checkoutOpenOrder";
+import type { OrderPaymentStatus } from "@shared/orderPaymentStatus";
 import { Loader2, Tag, BookOpen, ArrowLeft, CheckCircle2, Lock, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
@@ -29,7 +39,13 @@ import { useMotionSafe } from "@/lib/motion";
 import { useInViewRef } from "@/hooks/useInViewRef";
 import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
-import { track } from "@/lib/analytics";
+import { track, whenAnalyticsReady } from "@/lib/analytics";
+import { addPaymentInfoEventId, contentCategoryForTier } from "@shared/metaEvents";
+import { attributionForOrder, captureCheckoutAttribution, checkoutVisitEventId, landingPageUrl } from "@/lib/attribution";
+import CollapsibleDescription from "@/components/checkout/CollapsibleDescription";
+import AfterYouPay from "@/components/checkout/AfterYouPay";
+import PaymentNotice, { type PaymentIssue } from "@/components/checkout/PaymentNotice";
+import { readFunctionError } from "@/lib/functionError";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
@@ -38,7 +54,7 @@ declare global {
   interface Window {
     Razorpay: new (options: Record<string, unknown>) => {
       open: () => void;
-      on: (event: string, cb: () => void) => void;
+      on: (event: string, cb: (response: { error?: { description?: string; reason?: string } }) => void) => void;
     };
   }
 }
@@ -69,50 +85,45 @@ interface LinkedCourse {
  * default — matching what a cold anonymous visitor actually gets.
  */
 function CheckoutSkeleton({ showGuestForm = false }: { showGuestForm?: boolean }) {
+  // Mirrors the loaded card's order: back, header + two description lines,
+  // guest fields (anon), Total, Pay, reassurance pill, refund line. Everything
+  // else on the card sits below Pay, off the first screen.
   return (
-    <div className="space-y-6" role="status" aria-live="polite" aria-busy="true">
+    <div className="space-y-5 md:space-y-6" role="status" aria-live="polite" aria-busy="true">
       <span className="sr-only">Loading secure checkout…</span>
 
       {/* Back link */}
       <SkeletonLine width={56} height={14} className="-mb-3" />
 
-      {/* Header: 64px thumb + title/instructor */}
-      <div className="flex items-start gap-4">
-        <SkeletonBlock className="h-16 w-16 shrink-0 rounded-xl" height={64} />
-        <div className="min-w-0 flex-1 space-y-2 pt-1">
-          <SkeletonLine width="70%" height={20} />
-          <SkeletonLine width="40%" height={14} />
+      {/* Header: thumb + title/instructor + two clamped description lines */}
+      <div className="space-y-3">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <SkeletonBlock className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-xl" height={56} />
+          <div className="min-w-0 flex-1 space-y-2 pt-1">
+            <SkeletonLine width="70%" height={20} />
+            <SkeletonLine width="40%" height={14} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <SkeletonLine width="100%" height={12} />
+          <SkeletonLine width="85%" height={12} />
         </div>
       </div>
 
-      <div className="h-px w-full bg-border" aria-hidden />
-
-      {/* What you'll get */}
-      <div className="space-y-2">
-        <SkeletonLine width={96} height={12} />
-        <SkeletonBlock className="rounded-lg" height={40} />
-        <SkeletonBlock className="rounded-lg" height={40} />
-      </div>
-
-      {/* Guest details (anon checkout) — mirrors the {!user} block:
-          a "Your details" / "Sign in" header row, three labelled inputs
-          (label is `.caption` = 18px, Input is h-10 = 40px, rounded-[12px]),
-          and the two-line reassurance note. Dimensions are shared with the
-          real fields so the anon handoff stays flush. */}
+      {/* Guest details (anon checkout): header row, three labelled inputs
+          (18px label + 44px input), two-line helper note. */}
       {showGuestForm && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <SkeletonLine width={72} height={12} />
             <SkeletonLine width={148} height={12} />
           </div>
-          {/* name / email / phone: 18px label + 40px input */}
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="space-y-1">
               <SkeletonLine width={[64, 92, 100][i]} height={18} />
-              <SkeletonBlock className="rounded-[12px]" height={40} />
+              <SkeletonBlock className="rounded-[12px]" height={44} />
             </div>
           ))}
-          {/* Two-line helper note */}
           <div className="space-y-1.5">
             <SkeletonLine width="100%" height={12} />
             <SkeletonLine width="75%" height={12} />
@@ -120,32 +131,10 @@ function CheckoutSkeleton({ showGuestForm = false }: { showGuestForm?: boolean }
         </div>
       )}
 
-      {/* Coupon field */}
-      <div className="space-y-2">
-        <SkeletonLine width={88} height={12} />
-        <SkeletonBlock className="rounded-md" height={40} />
-      </div>
-
-      <div className="h-px w-full bg-border" aria-hidden />
-
-      {/* Order summary */}
-      <div className="space-y-2.5">
-        <SkeletonLine width={160} height={24} />
-        <div className="space-y-3 pt-1">
-          <div className="flex items-center justify-between">
-            <SkeletonLine width={72} height={14} />
-            <SkeletonLine width={64} height={14} />
-          </div>
-          <div className="flex items-center justify-between">
-            <SkeletonLine width={56} height={14} />
-            <SkeletonLine width={48} height={14} />
-          </div>
-          <div className="h-px w-full bg-border" aria-hidden />
-          <div className="flex items-center justify-between">
-            <SkeletonLine width={48} height={16} />
-            <SkeletonLine width={72} height={16} />
-          </div>
-        </div>
+      {/* Total */}
+      <div className="flex items-center justify-between">
+        <SkeletonLine width={48} height={16} />
+        <SkeletonLine width={72} height={16} />
       </div>
 
       {/* Pay button */}
@@ -223,9 +212,9 @@ function CheckoutColdSkeleton({
   showTrustPanel,
 }: { showGuestForm: boolean; showTrustPanel: boolean }) {
   return (
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 pt-4 md:pt-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
-        <CardContent className="p-6 md:p-8">
+        <CardContent className="p-5 md:p-8">
           <CheckoutSkeleton showGuestForm={showGuestForm} />
         </CardContent>
       </Card>
@@ -258,15 +247,21 @@ export default function CheckoutPage() {
   const [selectedBumps, setSelectedBumps] = useState<Set<string>>(new Set());
   // Coupon entry + apply/remove. Validation runs through the validate-coupon
   // edge function (the coupons table is admin-read-only). See useCheckoutCoupon.
+  // Staged cohort payments take no coupon, so they never probe for one.
   const {
     couponCode, setCouponCode,
-    appliedCoupon, couponLoading,
+    appliedCoupon, couponLoading, couponAvailable,
     applyCoupon, removeCoupon,
-  } = useCheckoutCoupon(offeringId);
+  } = useCheckoutCoupon(offeringId, { probe: paymentType === "full" });
+  // A campaign link can carry ?coupon=CODE: it opens the promo box and is
+  // applied once the offering has loaded.
+  const urlCoupon = (searchParams.get("coupon") ?? "").trim().toUpperCase().slice(0, 40);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
   const paymentInFlightRef = useRef(false);
+  // The last Pay attempt's problem, shown inline under Pay until the next tap.
+  const [payIssue, setPayIssue] = useState<PaymentIssue | null>(null);
   const [application, setApplication] = useState<any>(null);
   const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
 
@@ -326,6 +321,38 @@ export default function CheckoutPage() {
     guestPhone, setGuestPhone, guestTouched, setGuestTouched, validateGuest,
   } = useGuestCheckout(user);
 
+  /* -- Ad attribution: keep the landing page's utm_* / fbclid / gclid /
+        ic_eid for this visit, so the order row can be tied to the ad. Read
+        once per offering; the query string is gone after a /login round trip. -- */
+  useEffect(() => {
+    if (!offeringId) return;
+    captureCheckoutAttribution(window.location.search, offeringId);
+  }, [offeringId]);
+
+  /* -- InitiateCheckout: once per checkout visit --
+        Fired once per offering per mount (this load effect re-runs when the
+        session object changes, which used to fire it again). The event id is
+        the landing page's ic_eid when the link carried one, so the site's copy
+        of the tap and this one merge in Meta; otherwise an id kept for the tab,
+        so a reload or a /login round trip does not count a second checkout.
+        Waits for the pixel stubs, which load from a DB read at app start. -- */
+  const initiateCheckoutFiredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!offering) return;
+    if (initiateCheckoutFiredFor.current === offering.id) return;
+    initiateCheckoutFiredFor.current = offering.id;
+    const event = {
+      name: "initiate_checkout" as const,
+      content_id: offering.id,
+      content_name: offering.title,
+      value: Number(offering.price_inr || 0),
+      currency: offering.currency || "INR",
+      content_category: contentCategoryForTier(offering.product_tier),
+      event_id: checkoutVisitEventId(offering.id),
+    };
+    void whenAnalyticsReady().then(() => track(event));
+  }, [offering]);
+
   /* -- Load offering data -- */
   useEffect(() => {
     // Wait for auth to settle; load works for both signed-in users
@@ -373,17 +400,6 @@ export default function CheckoutPage() {
       setOffering(offRes.data as Offering);
       setLinkedCourses(coursesRes.data ?? []);
       setCustomFields(fieldsRes.data ?? []);
-
-      // Fire initiate_checkout once the checkout surface has data
-      // to display. Subsequent re-renders don't re-fire because this
-      // sits inside the offering-load flow.
-      track({
-        name: "initiate_checkout",
-        content_id: (offRes.data as any).id,
-        content_name: (offRes.data as any).title,
-        value: Number((offRes.data as any).price_inr || 0),
-        currency: (offRes.data as any).currency || "INR",
-      });
 
       // Phase-3 conversion funnel: the checkout surface is now populated. Guest
       // flag reflects whether an anon buyer is on the guest path at load time.
@@ -464,10 +480,32 @@ export default function CheckoutPage() {
     : paymentType === "confirmation" ? "Confirmation Amount"
     : paymentType === "balance" ? "Balance Payment" : "";
 
+  /* -- ?coupon=CODE: apply once, after the offering loads (non-staged only). -- */
+  const urlCouponTried = useRef(false);
+  useEffect(() => {
+    if (!offering || !urlCoupon || urlCouponTried.current) return;
+    if (paymentType !== "full" && (offering as any).payment_mode === "staged") return;
+    urlCouponTried.current = true;
+    setCouponCode(urlCoupon);
+    void applyCoupon(urlCoupon);
+  }, [offering, urlCoupon, paymentType, applyCoupon, setCouponCode]);
+
+  /* -- No MRP anchor on masterclasses --
+        The struck-through "was" price, "Total savings" and the sticky bar's
+        "Save" read offerings.mrp_inr, a price no masterclass buyer was ever
+        charged. The founder's 17 Oct 2026 decision removes those anchors, so
+        a masterclass checkout ignores mrp_inr. Display only: the charged
+        amount never used it. -- */
+  const isMasterclass = (offering?.product_tier ?? "").trim().toLowerCase() === "masterclass";
+  const pricingOffering = useMemo(
+    () => (offering && isMasterclass ? { ...offering, mrp_inr: null } : offering),
+    [offering, isMasterclass],
+  );
+
   /* -- Pricing (one shared home: @shared/pricing, used by the order edge
         functions too, so the preview can't drift from what's charged) -- */
   const { subtotal, discount, gstRate, gstAmount, total, totalSavings } = useCheckoutPricing({
-    offering,
+    offering: pricingOffering,
     bumps,
     selectedBumps,
     appliedCoupon,
@@ -487,11 +525,268 @@ export default function CheckoutPage() {
     document.body.appendChild(script);
   }, []);
 
+  /* -- The last order a payment sheet was opened for --
+        Kept until it is paid and verified, so no state in which money may
+        have moved can become a second charge (lib/checkoutOpenOrder). The ref
+        serves the async Razorpay callbacks; the state lets the notice offer
+        "Check payment status". Restored per offering from sessionStorage, so
+        a reload does not bring back a live Pay button after Razorpay reported
+        a payment that was never confirmed here. -- */
+  const openOrderRef = useRef<OpenOrder | null>(null);
+  const [hasOpenOrder, setHasOpenOrder] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const rememberOpenOrder = (order: OpenOrder | null) => {
+    openOrderRef.current = order;
+    setHasOpenOrder(!!order);
+    if (offeringId) saveOpenOrder(offeringId, order);
+  };
+  useEffect(() => {
+    if (!offeringId) return;
+    const saved = loadOpenOrder(offeringId);
+    openOrderRef.current = saved;
+    setHasOpenOrder(!!saved);
+    if (saved?.paid) setPayIssue({ kind: "verify_pending" });
+  }, [offeringId]);
+
+  // Money moved or may have: Pay and the sticky bar stay off until a status
+  // check settles it.
+  const payLocked = paymentLocked(payIssue);
+
+  /** What an order is priced from. A different key needs a different order. */
+  const currentCartKey = () =>
+    cartKey({
+      user: user?.id ?? null,
+      paymentType,
+      applicationId,
+      total,
+      coupon: appliedCoupon?.id ?? null,
+      bumps: isStaged ? [] : Array.from(selectedBumps).sort(),
+      fields: customFieldValues,
+      name: user ? null : guestName.trim(),
+      email: user ? null : guestEmail.trim().toLowerCase(),
+      phone: user ? null : guestPhone.replace(/\D/g, "").slice(-10),
+    });
+
+  const releasePay = () => {
+    setPaying(false);
+    paymentInFlightRef.current = false;
+  };
+
+  const reviewMessage = (verifyData: { needs_review?: boolean } | null | undefined, message: string | null) =>
+    verifyData?.needs_review || /review/i.test(message ?? "")
+      ? "We're setting up your access by hand and will email you within a few hours. Please don't pay again."
+      : null;
+
+  /** Ask the server whether a payment landed on this order. Read-only. */
+  const fetchOrderStatus = async (
+    order: OpenOrder,
+  ): Promise<{ status: OrderPaymentStatus; razorpay_payment_id: string | null }> => {
+    const known: OrderPaymentStatus[] = ["captured", "needs_review", "paid", "pending", "none", "unknown"];
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-razorpay-payment", {
+        body: {
+          payment_order_id: order.paymentOrderId,
+          is_guest: order.isGuest,
+          status_check: true,
+          // A guest proves the order is theirs with the token it was made with.
+          ...(order.isGuest ? { reuse_token: order.reuseToken ?? null } : {}),
+        },
+      });
+      const status = data?.status as OrderPaymentStatus | undefined;
+      if (error || !status || !known.includes(status)) return { status: "unknown", razorpay_payment_id: null };
+      return {
+        status,
+        razorpay_payment_id: typeof data?.razorpay_payment_id === "string" ? data.razorpay_payment_id : null,
+      };
+    } catch {
+      return { status: "unknown", razorpay_payment_id: null };
+    }
+  };
+
+  /** The notice for a status that does not finish the purchase. */
+  const issueForStatus = (status: OrderPaymentStatus, locked: boolean): PaymentIssue => {
+    switch (status) {
+      case "paid":
+        return { kind: "verify_pending" };
+      case "needs_review":
+        return { kind: "verify_pending", message: reviewMessage({ needs_review: true }, null) };
+      case "pending":
+        return { kind: "check_needed", reason: "pending", locked };
+      case "unknown":
+        return { kind: "check_needed", reason: "unknown", locked };
+      default:
+        return { kind: "no_payment_found" };
+    }
+  };
+
+  /** The order is paid and verified: count the sale once and move on. */
+  const finishPaid = (order: OpenOrder, razorpayPaymentId: string | null, offeringTitle?: string | null) => {
+    // Purchase fires HERE, right after verify and before any redirect: a guest
+    // only reaches Thank-you after a phone OTP, and 3 in 35 never sign in, so a
+    // Thank-you-only Purchase never reached Meta for them. track() sends it
+    // once per payment (lib/purchaseOnce), so Thank-you does not send it again;
+    // the eventID purchase_<razorpay_payment_id> matches the server (CAPI) copy.
+    // Value is the amount the server priced into the Razorpay order.
+    if (razorpayPaymentId && offering) {
+      track({
+        name: "purchase",
+        transaction_id: razorpayPaymentId,
+        content_id: offering.id,
+        content_name: offering.title,
+        value: order.amountPaise / 100,
+        currency: order.currency || "INR",
+        content_category: contentCategoryForTier(offering.product_tier),
+      });
+    }
+    rememberOpenOrder(null);
+    // Guest: the purchase now sits on the account that owns the phone they
+    // paid with. One OTP on /login (phone prefilled) proves it and lands them
+    // on Thank-you; payment_orders is not anonymously readable.
+    toast.success(
+      order.isGuest
+        ? "Payment received. Confirm your phone number with a one-time code to open your course."
+        : `Welcome to ${offeringTitle ?? order.offeringTitle ?? offering?.title ?? "your course"}!`,
+    );
+    navigate(postPaymentRoute(order.isGuest, order.paymentOrderId), {
+      state: order.isGuest ? postPaymentNavState(guestPhone) : undefined,
+    });
+  };
+
+  /** Open the Razorpay sheet for an order (a new one, or the last one again). */
+  const openSheet = async (order: OpenOrder) => {
+    if (!offering) return;
+    // Prefill: for guest checkout use what they just typed; for logged-in
+    // users pull from profile.
+    let prefillName = guestName;
+    let prefillEmail = guestEmail;
+    let prefillContact = guestPhone;
+    if (user) {
+      const { data: profile } = await supabase
+        .from("users")
+        .select("full_name, email, phone")
+        .eq("id", user.id)
+        .single();
+      prefillName = profile?.full_name ?? "";
+      prefillEmail = profile?.email ?? user.email ?? "";
+      prefillContact = profile?.phone ?? "";
+    }
+
+    const options = {
+      key: order.keyId,
+      amount: order.amountPaise,
+      currency: order.currency,
+      name: "LevelUp",
+      description: order.offeringTitle ?? offering.title,
+      order_id: order.razorpayOrderId,
+      prefill: {
+        name: prefillName,
+        email: prefillEmail,
+        contact: prefillContact,
+      },
+      theme: { color: RAZORPAY_THEME_COLOR, backdrop_color: "rgba(0,0,0,0.8)" },
+      handler: async (response: RazorpaySuccess) => {
+        // Razorpay has taken the money. Until verification confirms it, Pay
+        // stays locked, here and after a reload.
+        const paidOrder: OpenOrder = { ...order, paid: response, savedAt: Date.now() };
+        rememberOpenOrder(paidOrder);
+        // Verify payment. `is_guest` is REQUIRED for an anonymous buyer:
+        // without it the function demands a login token and 401s, and the
+        // buyer is told to "contact support" seconds after paying.
+        const { data: verifyData, error: verifyErr } =
+          await supabase.functions.invoke("verify-razorpay-payment", {
+            body: buildVerifyBody(response, order.paymentOrderId, order.isGuest),
+          });
+
+        if (verifyErr || !verifyData?.success) {
+          // The webhook captures and enrols on its own. Say so, keep Pay
+          // locked, and offer a status check that runs this verification again.
+          const info = await readFunctionError(verifyErr, verifyData);
+          setPayIssue({ kind: "verify_pending", message: reviewMessage(verifyData, info.message) });
+          releasePay();
+          return;
+        }
+        finishPaid(paidOrder, response.razorpay_payment_id, verifyData.offering_title);
+      },
+      modal: {
+        ondismiss: () => {
+          // A failure already set its own notice; keep that one. The order is
+          // kept: the next Pay checks it before anything new is charged.
+          setPayIssue((prev) => prev ?? { kind: "dismissed" });
+          releasePay();
+        },
+      },
+    };
+
+    if (typeof window.Razorpay !== "function") {
+      setPayIssue({ kind: "script_missing" });
+      releasePay();
+      return;
+    }
+
+    // Phase-3 conversion funnel: a real Razorpay order exists and the modal is
+    // about to open. Keyed on our internal payment_order_id so it joins the
+    // ThankYou purchase_completed event on the same id.
+    track({ name: "payment_initiated", orderId: order.paymentOrderId });
+    // AddPaymentInfo: the buyer tapped Pay and the payment sheet is opening.
+    // One per payment order (a reused order or a retry counts once).
+    track({
+      name: "add_payment_info",
+      content_id: offering.id,
+      content_name: offering.title,
+      value: order.amountPaise / 100,
+      currency: order.currency || "INR",
+      content_category: contentCategoryForTier(offering.product_tier),
+      event_id: addPaymentInfoEventId(order.paymentOrderId),
+    });
+
+    rememberOpenOrder(order);
+    const rzp = new window.Razorpay(options);
+    rzp.on("payment.failed", (response) => {
+      setPayIssue({ kind: "failed", detail: response?.error?.description ?? null });
+      releasePay();
+    });
+    rzp.open();
+  };
+
+  /* -- Check payment status --
+        Razorpay reported success on the last order: run the same verification
+        again. Otherwise ask whether any payment landed on it. -- */
+  const handleCheckStatus = async () => {
+    const order = openOrderRef.current;
+    if (!order || checkingStatus || paymentInFlightRef.current) return;
+    setCheckingStatus(true);
+    try {
+      if (order.paid) {
+        const { data: v, error: e } = await supabase.functions.invoke("verify-razorpay-payment", {
+          body: buildVerifyBody(order.paid, order.paymentOrderId, order.isGuest),
+        });
+        if (!e && v?.success) {
+          finishPaid(order, order.paid.razorpay_payment_id, v.offering_title);
+          return;
+        }
+        const info = await readFunctionError(e, v);
+        setPayIssue({ kind: "verify_pending", message: reviewMessage(v, info.message) });
+        toast("Still confirming your payment. We'll email you when your course is open.");
+        return;
+      }
+      const result = await fetchOrderStatus(order);
+      const step = payStepFor(result.status, order.cartKey === currentCartKey());
+      if (step === "done") {
+        finishPaid(order, result.razorpay_payment_id);
+        return;
+      }
+      setPayIssue(issueForStatus(result.status, step === "locked"));
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
   /* -- Pay -- */
   const handlePay = async () => {
     if (!offering) return;
-    if (paymentInFlightRef.current) return;
+    if (paymentInFlightRef.current || payLocked) return;
     void hapticImpact("medium");
+    setPayIssue(null);
 
     // Validate guest fields when anon (marks fields touched + toasts on the
     // first failure). The edge function does the canonical phone normalisation.
@@ -519,6 +814,32 @@ export default function CheckoutPage() {
     setPaying(true);
 
     try {
+      // A sheet opened before was closed without a result. A UPI payment can
+      // still finish in the UPI app after that, so ask whether one landed
+      // before anything new is charged. The same cart reopens the same
+      // Razorpay order, which takes one successful payment only. Staged
+      // cohort payments keep their own order path unchanged.
+      const lastOrder = openOrderRef.current;
+      if (lastOrder && !isStaged) {
+        const result = await fetchOrderStatus(lastOrder);
+        const step = payStepFor(result.status, lastOrder.cartKey === currentCartKey());
+        if (step === "done") {
+          finishPaid(lastOrder, result.razorpay_payment_id);
+          return;
+        }
+        if (step === "locked") {
+          setPayIssue(issueForStatus(result.status, true));
+          releasePay();
+          return;
+        }
+        if (step === "reopen") {
+          await openSheet(lastOrder);
+          return;
+        }
+        // Nothing was paid on that order and the cart has changed.
+        rememberOpenOrder(null);
+      }
+
       // Free total for a signed-in user: no Razorpay leg exists for a
       // zero-rupee order (create-razorpay-order rejects <= 0), so enrol
       // through the dedicated authenticated free path and go straight to
@@ -534,13 +855,27 @@ export default function CheckoutPage() {
           }
         );
         if (freeErr || !freeData?.success) {
-          toast.error(freeData?.error ?? "Couldn't complete the enrolment. Please try again.");
-          setPaying(false); paymentInFlightRef.current = false;
+          const info = await readFunctionError(freeErr, freeData);
+          setPayIssue(
+            info.code === "already_enrolled"
+              ? { kind: "already_enrolled", guest: false }
+              : { kind: "order_error", message: info.message ?? "Couldn't complete the enrolment. Please try again." },
+          );
+          releasePay();
           return;
         }
         navigate(freeData.payment_order_id ? `/thank-you/${freeData.payment_order_id}` : "/my-courses");
         return;
       }
+
+      // Ad attribution for the order row (utm_*, fbclid, gclid, ic_eid, and
+      // the _fbp/_fbc cookies read now). Staged cohort payments carry none:
+      // that pipeline is left exactly as it was.
+      const attribution = isStaged ? null : attributionForOrder(offeringId!);
+      const key = currentCartKey();
+      // A guest order is tied to this browser: the server reuses an open order,
+      // and answers a status check, only for this token (lib/checkoutOpenOrder).
+      const reuseToken = isAnon ? guestReuseToken(offeringId!) : null;
 
       // Anon: guest-create-order (creates the auth.users row on
       // payment verify, no OTP). Logged-in: create-razorpay-order
@@ -553,6 +888,15 @@ export default function CheckoutPage() {
               guest_email: guestEmail.trim(),
               guest_phone: guestPhone.trim(),
               coupon_code: appliedCoupon?.code ?? null,
+              reuse_token: reuseToken,
+              // Top-level utm_* are what the deployed function has always
+              // read; `attribution` carries the full set for the new one.
+              utm_source: attribution?.utm_source ?? null,
+              utm_medium: attribution?.utm_medium ?? null,
+              utm_campaign: attribution?.utm_campaign ?? null,
+              utm_content: attribution?.utm_content ?? null,
+              utm_term: attribution?.utm_term ?? null,
+              attribution,
             },
           })
         : await supabase.functions.invoke("create-razorpay-order", {
@@ -566,107 +910,59 @@ export default function CheckoutPage() {
                     payment_type: paymentType,
                     application_id: applicationId,
                   }
-                : {}),
+                : { attribution }),
             },
           });
 
       if (error || (!data?.razorpay_order_id && !(isAnon && data?.success))) {
-        toast.error(data?.error ?? "Couldn't create your order. Please try again.");
-        setPaying(false); paymentInFlightRef.current = false;
+        // invoke() drops the body of a non-2xx answer; read it from the
+        // response so the buyer sees what actually happened.
+        const info = await readFunctionError(error, data);
+        if (info.code === "already_enrolled" || info.status === 409 && /already/i.test(info.message ?? "")) {
+          setPayIssue({ kind: "already_enrolled", guest: isAnon });
+        } else if (info.status === 429) {
+          setPayIssue({ kind: "rate_limited" });
+        } else if (info.status === 403 && isAnon) {
+          setPayIssue({
+            kind: "identity_mismatch",
+            message: info.message ?? "These details match another account",
+          });
+        } else {
+          setPayIssue({
+            kind: "order_error",
+            message: info.status === null
+              ? "Check your connection, then tap Pay again."
+              : info.message ?? "Couldn't create your order. Please try again.",
+          });
+        }
+        releasePay();
         return;
       }
 
       // Free guest offering: edge function already enrolled the user
       // and granted access. Drop straight to ThankYou.
       if (isAnon && data?.success && !data?.razorpay_order_id) {
-        toast.success("You're enrolled! Sign in with your phone number to open it.");
+        toast.success("You're enrolled. Confirm your phone number with a one-time code to open your course.");
         navigate(postPaymentRoute(true, data.payment_order_id), { state: postPaymentNavState(guestPhone) });
         return;
       }
 
-      // Prefill: for guest checkout use what they just typed; for
-      // logged-in users pull from profile.
-      let prefillName = guestName;
-      let prefillEmail = guestEmail;
-      let prefillContact = guestPhone;
-      if (!isAnon && user) {
-        const { data: profile } = await supabase
-          .from("users")
-          .select("full_name, email, phone")
-          .eq("id", user.id)
-          .single();
-        prefillName = profile?.full_name ?? "";
-        prefillEmail = profile?.email ?? user.email ?? "";
-        prefillContact = profile?.phone ?? "";
-      }
-
-      // Phase-3 conversion funnel: a real Razorpay order exists and the modal is
-      // about to open. Keyed on our internal payment_order_id so it joins the
-      // ThankYou purchase_completed event on the same id.
-      track({ name: "payment_initiated", orderId: data.payment_order_id });
-
-      const options = {
-        key: data.key_id,
-        amount: data.amount,
-        currency: data.currency,
-        name: "LevelUp",
-        description: data.offering_title,
-        order_id: data.razorpay_order_id,
-        prefill: {
-          name: prefillName,
-          email: prefillEmail,
-          contact: prefillContact,
-        },
-        theme: { color: RAZORPAY_THEME_COLOR, backdrop_color: "rgba(0,0,0,0.8)" },
-        handler: async (response: {
-          razorpay_payment_id: string;
-          razorpay_order_id: string;
-          razorpay_signature: string;
-        }) => {
-          // Verify payment. `is_guest` is REQUIRED for an anonymous buyer:
-          // without it the function demands a login token and 401s, and the
-          // buyer is told to "contact support" seconds after paying.
-          const { data: verifyData, error: verifyErr } =
-            await supabase.functions.invoke("verify-razorpay-payment", {
-              body: buildVerifyBody(response, data.payment_order_id, isAnon),
-            });
-
-          if (verifyErr || !verifyData?.success) {
-            toast.error(
-              verifyData?.needs_review
-                ? "Payment received. We're setting up your access and will email you shortly."
-                : "Payment verification failed, please contact support"
-            );
-            setPaying(false); paymentInFlightRef.current = false;
-            return;
-          }
-
-          // Guest: the purchase now sits on the account that owns the phone
-          // they paid with. One OTP on /login (phone prefilled) proves it and
-          // lands them on Thank-you; payment_orders is not anonymously readable.
-          toast.success(
-            isAnon
-              ? "Payment received! Sign in with your phone number to open your course."
-              : `Welcome to ${verifyData.offering_title ?? offering.title}!`
-          );
-          navigate(postPaymentRoute(isAnon, data.payment_order_id), { state: isAnon ? postPaymentNavState(guestPhone) : undefined });
-        },
-        modal: {
-          ondismiss: () => {
-            setPaying(false); paymentInFlightRef.current = false;
-          },
-        },
-      };
-
-      const rzp = new window.Razorpay(options);
-      rzp.on("payment.failed", () => {
-        toast.error("The payment didn't complete. If any amount was debited, it comes back to you automatically. Try again when you're ready.");
-        setPaying(false); paymentInFlightRef.current = false;
+      await openSheet({
+        paymentOrderId: data.payment_order_id,
+        razorpayOrderId: data.razorpay_order_id,
+        amountPaise: Number(data.amount),
+        currency: data.currency || "INR",
+        keyId: data.key_id,
+        offeringTitle: data.offering_title ?? null,
+        isGuest: isAnon,
+        reuseToken,
+        cartKey: key,
+        paid: null,
+        savedAt: Date.now(),
       });
-      rzp.open();
     } catch {
-      toast.error("That didn't go through. Try once more?");
-      setPaying(false); paymentInFlightRef.current = false;
+      setPayIssue({ kind: "order_error", message: "That didn't go through. Check your connection and tap Pay again." });
+      releasePay();
     }
   };
 
@@ -731,8 +1027,13 @@ export default function CheckoutPage() {
   }
 
   const hasMrp =
+    !isMasterclass &&
     (offering as any).mrp_inr &&
     Number((offering as any).mrp_inr) > Number(offering.price_inr);
+  // The itemised receipt is shown only when it says more than the total does.
+  const showBreakdown =
+    isStaged || !!hasMrp || discount > 0 || selectedBumps.size > 0 ||
+    (gstAmount > 0 && offering.gst_mode !== "inclusive");
 
   // Pull display metadata for the trust panel. Uses the first linked course
   // as the "what you're buying" preview, with a safe fallback if none exists.
@@ -763,12 +1064,21 @@ export default function CheckoutPage() {
     <RevealOnMount
       skeleton={<CheckoutColdSkeleton showGuestForm={!user} showTrustPanel={!isStaged} />}
     >
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 pt-4 md:pt-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
-        <CardContent className="p-6 md:p-8 space-y-6">
-          {/* -- Back link -- */}
+        <CardContent className="p-5 md:p-8 space-y-5 md:space-y-6">
+          {/* -- Back link --
+              A buyer from a www masterclass page (the link names it in
+              mc_course) goes back there: that page opened this tab, so the
+              browser has no history, and the app's own /p/ sales page is one
+              they have never seen. -- */}
           <button
             onClick={() => {
+              const landing = landingPageUrl();
+              if (landing) {
+                window.location.href = landing;
+                return;
+              }
               if (offering?.slug) navigate(`/p/${offering.slug}`);
               else if (offeringId) navigate(`/browse`);
               else navigate(-1);
@@ -785,18 +1095,17 @@ export default function CheckoutPage() {
             {isStaged && stagedLabel && (
               <Badge variant="secondary" className="mb-2">{stagedLabel}</Badge>
             )}
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-3 sm:gap-4">
               {(offering.thumbnail_url || offering.banner_url) && (
                 <img
                   src={offering.thumbnail_url || offering.banner_url || ""}
                   alt=""
-                  loading="lazy"
                   decoding="async"
-                  className="h-16 w-16 rounded-xl object-cover shrink-0"
+                  className="h-14 w-14 sm:h-16 sm:w-16 rounded-xl object-cover shrink-0"
                 />
               )}
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-foreground">
+                <h1 className="text-lg sm:text-xl font-semibold leading-snug text-foreground">
                   {offering.title}
                 </h1>
                 {offering.instructor_name && (
@@ -813,77 +1122,12 @@ export default function CheckoutPage() {
                  paymentType === "balance" ? "Complete your remaining balance payment." : ""}
               </p>
             )}
+            {/* Two lines behind "Read more": the full paragraph pushed the
+                form and Pay two to three screens down on a 390px phone. */}
             {!isStaged && offering.description && (
-              <p className="text-sm text-muted-foreground mt-2">
-                {offering.description}
-              </p>
+              <CollapsibleDescription text={offering.description} />
             )}
           </div>
-
-          <Separator className="bg-border" />
-
-          {/* -- What you get -- */}
-          {linkedCourses.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Included courses
-              </p>
-              {linkedCourses.map((lc) => (
-                <div
-                  key={lc.course_id}
-                  className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2"
-                >
-                  <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm text-foreground">
-                    {(lc.courses as any)?.title ?? "Course"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Testimonials */}
-          {!isStaged && (() => {
-            try {
-              const testimonials = (offering as any).checkout_testimonials || [];
-              if (!Array.isArray(testimonials) || testimonials.length === 0) return null;
-              return (
-                <div className="space-y-3">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What students say</p>
-                  {testimonials.map((t: any, i: number) => (
-                    <div key={i} className="flex gap-3 rounded-lg bg-surface-2 px-4 py-3">
-                      {t.photo_url && <img src={t.photo_url} alt={t.name} className="h-10 w-10 rounded-full object-cover shrink-0" />}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground italic">"{t.quote}"</p>
-                        <p className="text-xs text-muted-foreground mt-1">{t.name}{t.title ? ` · ${t.title}` : ""}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            } catch { return null; }
-          })()}
-
-          {/* Value bullets */}
-          {!isStaged && (() => {
-            try {
-              const bullets = (offering as any).checkout_bullets || [];
-              if (!Array.isArray(bullets) || bullets.length === 0) return null;
-              return (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What you get</p>
-                  <ul className="space-y-1.5">
-                    {bullets.map((b: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-foreground">
-                        <CheckCircle2 className="h-4 w-4 text-accent-emerald shrink-0 mt-0.5" />
-                        <span>{b}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            } catch { return null; }
-          })()}
 
           {/* -- Custom fields -- */}
           {customFields.length > 0 && (
@@ -980,10 +1224,10 @@ export default function CheckoutPage() {
           )}
 
           {/* -- Guest fields (anon checkout) --
-              Friction-free: just name + email + phone. No OTP. The
-              edge function uses these to create the auth.users row
-              on payment verify, so the buyer becomes a logged-in
-              user the next time they sign in with this phone. */}
+              Just name + email + phone, no OTP before paying. The order is
+              tied to the phone; after payment the buyer confirms it with one
+              code on /login (phone prefilled), which opens the course. The
+              helper line says exactly that, so the code is not a surprise. */}
           {!user && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -1069,13 +1313,15 @@ export default function CheckoutPage() {
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                We'll create your account on this phone number. No password, no OTP, just sign in with this phone later to access your masterclass.
+                Your course is tied to this phone number. After you pay, confirm it with a one-time code and you're in. No password.
               </p>
             </div>
           )}
 
-          {/* -- Coupon -- */}
-          {!isStaged && (
+          {/* -- Coupon --
+              Only when a code can work: an active coupon applies to this
+              offering, the link carried ?coupon=, or one is applied. -- */}
+          {!isStaged && (couponAvailable || !!urlCoupon || !!appliedCoupon) && (
           <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Promo code
@@ -1141,6 +1387,8 @@ export default function CheckoutPage() {
                       placeholder="Have a promo code?"
                       className="h-11 bg-surface-2 border-border w-full font-mono uppercase"
                       onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                      aria-label="Promo code"
+                      autoCapitalize="characters"
                     />
                     {couponLoading && (
                       <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
@@ -1149,7 +1397,7 @@ export default function CheckoutPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={applyCoupon}
+                    onClick={() => applyCoupon()}
                     disabled={couponLoading || !couponCode.trim()}
                     className="shrink-0 h-11"
                   >
@@ -1165,12 +1413,33 @@ export default function CheckoutPage() {
           </div>
           )}
 
-          <Separator className="bg-border" />
+          <Separator className="bg-border hidden sm:block" />
 
           {/* -- Order summary --
-              Dotted-leader rows (label … value, like a printed receipt) under
-              an Instrument-Serif heading. The leader is a flex-1 dotted border
-              between each label and its amount. */}
+              One price, GST inside it, nothing else on the order: a single
+              Total line keeps Pay on the first screen of a phone. Coupons,
+              add-ons, an MRP or exclusive GST bring back the itemised receipt. -- */}
+          {!showBreakdown ? (
+            <div className="space-y-0.5">
+              <div className="flex items-baseline gap-2 text-base font-semibold">
+                <span className="text-foreground shrink-0">Total</span>
+                <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
+                <CountUp
+                  immediate
+                  value={total}
+                  prefix="₹"
+                  className="text-foreground shrink-0 tabular-nums"
+                />
+              </div>
+              {gstAmount > 0 && (
+                <p className="text-[11px] text-muted-foreground text-right">
+                  Includes ₹{gstAmount.toLocaleString("en-IN")} GST
+                </p>
+              )}
+            </div>
+          ) : (
+          // Itemised receipt: dotted-leader rows (label … value, like a
+          // printed receipt) under an Instrument-Serif heading.
           <div className="space-y-2.5">
             <h2 className="font-['Instrument_Serif'] text-2xl italic text-foreground leading-none">
               Order summary
@@ -1249,11 +1518,7 @@ export default function CheckoutPage() {
               )}
             </div>
           </div>
-
-          {/* -- Trust signals -- */}
-          <div className="flex flex-col items-center gap-2">
-            <GuaranteeBadge days={offering.refund_policy_days} />
-          </div>
+          )}
 
           {/* -- Pay button -- */}
           {/* total <= 0 is a valid, payable state for non-staged orders (free
@@ -1270,7 +1535,7 @@ export default function CheckoutPage() {
             // money moment; suppress the Button's default tapTick so the pay tap
             // doesn't double-buzz.
             haptic={false}
-            disabled={paying || (isStaged && total <= 0)}
+            disabled={paying || payLocked || (isStaged && total <= 0)}
             // STEAL #2 processing arc: mirror `paying` to aria-busy so assistive
             // tech hears the in-flight state (the label crossfades to a quiet dot
             // visually). Purely additive to the existing disabled semantics.
@@ -1282,14 +1547,34 @@ export default function CheckoutPage() {
             <PayButtonContent
               status={paying ? "processing" : "idle"}
               label={
-                isStaged
-                  ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
-                  : total <= 0
-                    ? "Enrol free"
-                    : `Pay ₹${total.toLocaleString("en-IN")}`
+                payLocked
+                  ? payIssue?.kind === "check_needed"
+                    ? "Waiting on your last payment"
+                    : "Confirming your payment"
+                  : isStaged
+                    ? `Pay ${stagedLabel}: ₹${total.toLocaleString("en-IN")}`
+                    : total <= 0
+                      ? "Enrol free"
+                      : `Pay ₹${total.toLocaleString("en-IN")}`
               }
             />
           </Button>
+
+          <PaymentNotice
+            issue={payIssue}
+            courseTitle={offering.title}
+            onCheckStatus={hasOpenOrder ? handleCheckStatus : undefined}
+            checking={checkingStatus}
+            onOpenCourse={() => navigate("/learn?seg=courses")}
+            onSignIn={() =>
+              navigate(
+                `/login?${new URLSearchParams({
+                  next: payIssue?.kind === "already_enrolled" ? "/learn?seg=courses" : location.pathname + location.search,
+                }).toString()}`,
+                { state: postPaymentNavState(guestPhone) },
+              )
+            }
+          />
 
           {/* Reassurance capsule directly under the pay button: lock icon +
               gateway + refund window in one quiet pill. */}
@@ -1303,6 +1588,84 @@ export default function CheckoutPage() {
                 : "7-day refund"}
             </span>
           </div>
+          {/* -- Trust signals -- */}
+          <div className="flex flex-col items-center gap-2">
+            <GuaranteeBadge days={offering.refund_policy_days} productTier={offering.product_tier} />
+          </div>
+
+
+          {/* -- Below the decision: what happens next, what's included, and
+              what students said. On a phone all of this sits under Pay. -- */}
+          {!isStaged && (
+            <>
+              <Separator className="bg-border" />
+              <AfterYouPay isGuest={!user} />
+            </>
+          )}
+
+          {/* Value bullets */}
+          {!isStaged && (() => {
+            try {
+              const bullets = (offering as any).checkout_bullets || [];
+              if (!Array.isArray(bullets) || bullets.length === 0) return null;
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What you get</p>
+                  <ul className="space-y-1.5">
+                    {bullets.map((b: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                        <CheckCircle2 className="h-4 w-4 text-accent-emerald shrink-0 mt-0.5" />
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {/* -- What you get -- */}
+          {linkedCourses.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Included courses
+              </p>
+              {linkedCourses.map((lc) => (
+                <div
+                  key={lc.course_id}
+                  className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2"
+                >
+                  <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm text-foreground">
+                    {(lc.courses as any)?.title ?? "Course"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Testimonials: quote, name and programme label only. No photos:
+              reviews show as recorded, never with a stock or reused face. */}
+          {!isStaged && (() => {
+            try {
+              const testimonials = (offering as any).checkout_testimonials || [];
+              if (!Array.isArray(testimonials) || testimonials.length === 0) return null;
+              return (
+                <div className="space-y-3">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What students say</p>
+                  {testimonials.map((t: any, i: number) => (
+                    <div key={i} className="flex gap-3 rounded-lg bg-surface-2 px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground italic">"{t.quote}"</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t.name}{t.title ? ` · ${t.title}` : ""}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
         </CardContent>
       </Card>
 
@@ -1333,7 +1696,7 @@ export default function CheckoutPage() {
             savings={totalSavings}
             stagedLabel={isStaged ? stagedLabel : undefined}
             paying={paying}
-            disabled={isStaged && total <= 0}
+            disabled={payLocked || (isStaged && total <= 0)}
             onPay={handlePay}
             onMeasure={setStickyBarHeight}
           />

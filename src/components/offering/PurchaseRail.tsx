@@ -13,6 +13,8 @@ interface PurchaseRailProps {
   mrp?: number | null;
   highlights: string[];
   refundPolicyDays?: number | null;
+  /** offerings.product_tier; masterclasses show the watch-rule refund line. */
+  productTier?: string | null;
   /** Tally form URL for application-only cohorts; switches the CTA. */
   applyUrl?: string | null;
   isStaged: boolean;
@@ -35,6 +37,7 @@ export default function PurchaseRail({
   mrp,
   highlights,
   refundPolicyDays,
+  productTier,
   applyUrl,
   isStaged,
   proof,
@@ -91,7 +94,7 @@ export default function PurchaseRail({
       {/* Application-only cohorts charge a separate, non-refundable review
           fee. Showing the program refund window beside the Apply CTA makes it
           look like that review fee is refundable (FEE-1). */}
-      {!applyUrl && <GuaranteeBadge days={refundPolicyDays} />}
+      {!applyUrl && <GuaranteeBadge days={refundPolicyDays} productTier={productTier} />}
 
       {applyUrl ? (
         <a

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/lib/toast";
 
@@ -21,18 +21,41 @@ export interface AppliedCoupon {
  * the validate-coupon edge function (the table is admin-read-only); it returns
  * only a discount preview, never used_count / max_redemptions.
  */
-export function useCheckoutCoupon(offeringId: string | undefined) {
+export function useCheckoutCoupon(offeringId: string | undefined, opts: { probe?: boolean } = {}) {
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
+  // Does any active coupon apply to this offering? The promo box is shown only
+  // when one does (or the link carries ?coupon=). False until the probe answers,
+  // and on any failure: a hidden box costs nothing, an empty one sends buyers
+  // off to hunt for codes.
+  const [couponAvailable, setCouponAvailable] = useState(false);
+  const probe = opts.probe !== false;
 
-  const applyCoupon = useCallback(async () => {
-    if (!couponCode.trim() || !offeringId) return;
+  useEffect(() => {
+    if (!offeringId || !probe) return;
+    let cancelled = false;
+    supabase.functions
+      .invoke("validate-coupon", { body: { offering_id: offeringId, check_available: true } })
+      .then(({ data }) => {
+        if (!cancelled) setCouponAvailable(data?.available === true);
+      })
+      .catch(() => {
+        /* stays hidden */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [offeringId, probe]);
+
+  const applyCoupon = useCallback(async (codeOverride?: string) => {
+    const code = (typeof codeOverride === "string" ? codeOverride : couponCode).trim().toUpperCase();
+    if (!code || !offeringId) return;
     setCouponLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("validate-coupon", {
         body: {
-          coupon_code: couponCode.trim().toUpperCase(),
+          coupon_code: code,
           offering_id: offeringId,
         },
       });
@@ -68,6 +91,7 @@ export function useCheckoutCoupon(offeringId: string | undefined) {
     appliedCoupon,
     setAppliedCoupon,
     couponLoading,
+    couponAvailable,
     applyCoupon,
     removeCoupon,
   };

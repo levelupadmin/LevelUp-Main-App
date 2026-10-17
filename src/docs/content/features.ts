@@ -107,8 +107,14 @@ export const FEATURES: Feature[] = [
     summary: "Admin can issue full or partial refunds from /admin/revenue. process-refund edge function calls Razorpay's refund API and updates the order status.",
     area: "Checkout",
     status: "shipped",
-    codeRefs: ["supabase/functions/process-refund/index.ts"],
-    appRefs: ["/admin/revenue"],
+    codeRefs: [
+      "supabase/functions/process-refund/index.ts",
+      "supabase/functions/_shared/refundPolicy.ts",
+      "src/components/offering/GuaranteeBadge.tsx",
+      "src/pages/RefundPolicy.tsx",
+    ],
+    appRefs: ["/admin/revenue", "/refunds"],
+    details: "Masterclass rule, word for word as on the marketing site: \"Full refund within 7 days of buying, if you have watched less than a quarter of the course.\" It lives in _shared/refundPolicy.ts and shows on the checkout and offering page (GuaranteeBadge, masterclass tier only), on /refunds section 1, and is passed to the purchase receipt as {{refund_policy}} (the live template does not print it yet). Live programmes and workshops keep their own terms on /refunds.",
   },
   {
     slug: "duplicate-purchase-guard",
@@ -116,6 +122,8 @@ export const FEATURES: Feature[] = [
     summary: "Cannot accidentally buy the same offering twice. The order-creation step checks for an active enrolment and short-circuits.",
     area: "Checkout",
     status: "shipped",
+    codeRefs: ["supabase/functions/create-razorpay-order/index.ts"],
+    details: "Signed-in checkouts only: create-razorpay-order checks the caller's own account. Guest checkout (guest-create-order, no login) does not check, because an answer keyed on a typed phone number would tell a stranger what that number bought. A returning owner who uses \"Already have an account? Sign in\" is stopped by the signed-in check.",
   },
 
   /* ─────────── Learning ─────────── */
@@ -452,10 +460,17 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "meta-capi",
-    title: "Meta Conversions API (server-side dedup)",
-    summary: "Server-side purchase events sent to Meta with event_id matching the browser pixel, so Meta deduplicates and each purchase counts once but is robust to ad-blockers.",
+    title: "Meta Conversions API (server-side Purchase)",
+    summary: "After a single-payment order is captured, the server sends Meta a Purchase with the same event_id as the browser pixel (purchase_<razorpay_payment_id>), so each sale counts once even when the browser event is lost.",
     area: "Analytics",
-    status: "shipped",
+    status: "partial",
+    codeRefs: [
+      "supabase/functions/_shared/metaCapi.ts",
+      "supabase/functions/_shared/postCapture.ts",
+      "supabase/functions/razorpay-webhook/index.ts",
+      "supabase/functions/verify-razorpay-payment/index.ts",
+    ],
+    details: "Code is in place but sends nothing until the Supabase secret META_CAPI_ACCESS_TOKEN is set (pixel id comes from analytics_settings, or META_PIXEL_ID). Runs at most once per order, whichever capture path gets there first (claim in payment_orders.notes.post_capture). Hashed em/ph/external_id, plus fbc/fbp/IP/user agent stored on the order at creation. Staged cohort payments are skipped. Optional: META_CAPI_TEST_EVENT_CODE for Events Manager test events.",
   },
   {
     slug: "funnel-analytics",
@@ -509,9 +524,15 @@ export const FEATURES: Feature[] = [
   {
     slug: "invoice-pdf",
     title: "GST invoice PDF",
-    summary: "Per-order invoice generated at capture time with our GST number, totals, customer details. Stored in Supabase Storage, link emailed to buyer.",
+    summary: "Per-order invoice generated at capture time with our GST number, totals, customer details. Stored in Supabase Storage, link emailed to buyer in the purchase receipt.",
     area: "Payment",
     status: "shipped",
+    codeRefs: [
+      "supabase/functions/generate-invoice-pdf/index.ts",
+      "supabase/functions/_shared/receipt.ts",
+      "supabase/functions/_shared/postCapture.ts",
+    ],
+    details: "The receipt email (template payment_receipt) is sent at most once per captured single-payment order from the post-capture step, whichever of verify-razorpay-payment and razorpay-webhook claims the order first. A guest order is mailed at the address typed at checkout; a signed-in order at the account email. The invoice link is a 7-day signed URL to a receipt copy of the PDF that carries no contact details (name, course, amounts, date and payment id only; generate-invoice-pdf receipt_copy), or the profile page when the PDF could not be made. The email itself carries no email address or phone digits, since a guest's address is unverified. Result recorded in payment_orders.notes.post_capture.receipt. Before 17 Oct 2026 no receipt was ever sent (the old call left out user_id). Staged cohort payments keep the older path in verify.",
   },
 
   /* ─────────── Platform ─────────── */

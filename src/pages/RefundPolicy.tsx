@@ -4,6 +4,7 @@ import { ArrowUp } from "lucide-react";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import Footer from "@/components/Footer";
 import usePageTitle from "@/hooks/usePageTitle";
+import { MASTERCLASS_REFUND_SENTENCE } from "@shared/refundPolicy";
 
 const tocSections = [
   { id: "masterclasses", label: "1. Masterclasses" },
@@ -25,8 +26,13 @@ const RefundPolicy = () => {
 
   usePageTitle("Refund Policy");
 
+  // Open at the top, or at the section a link names (#masterclasses from the
+  // checkout's refund line).
   useEffect(() => {
-    window.scrollTo(0, 0);
+    const id = window.location.hash.replace(/^#/, "");
+    const target = id ? document.getElementById(id) : null;
+    if (target) target.scrollIntoView();
+    else window.scrollTo(0, 0);
   }, []);
 
   useEffect(() => {
@@ -76,7 +82,7 @@ const RefundPolicy = () => {
           Refund <span className="font-serif-italic text-cream">Policy</span>
         </h1>
         <p className="text-sm text-muted-foreground mb-2">
-          Last Updated: 21st May 2026
+          Last Updated: 17th October 2026
         </p>
         <p className="text-sm text-muted-foreground mb-10">
           This Refund Policy forms part of our{" "}
@@ -128,10 +134,11 @@ const RefundPolicy = () => {
         </nav>
 
         <div className="space-y-0 text-sm md:text-base text-muted-foreground leading-relaxed">
-          <section id="masterclasses" className="border-b border-border pb-8 mb-8">
+          <section id="masterclasses" className="border-b border-border pb-8 mb-8 scroll-mt-24">
             <h2 className="text-xl font-semibold text-foreground mb-3">
               1. Masterclasses (self-paced video courses)
             </h2>
+            <p className="mb-4 text-foreground">{MASTERCLASS_REFUND_SENTENCE}</p>
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-sm">
                 <thead className="bg-surface-2 text-foreground">
@@ -149,25 +156,18 @@ const RefundPolicy = () => {
                     <td className="px-4 py-3 align-top border-b border-border">
                       Within{" "}
                       <strong className="text-foreground">7 days</strong> of
-                      purchase AND you've watched{" "}
-                      <strong className="text-foreground">less than 20%</strong>{" "}
-                      of any single course in the offering
+                      buying, and you have watched{" "}
+                      <strong className="text-foreground">less than a quarter</strong>{" "}
+                      of the course
                     </td>
                     <td className="px-4 py-3 align-top border-b border-border">
                       <strong className="text-foreground">Full refund</strong>
                     </td>
                   </tr>
                   <tr className="bg-surface/60">
-                    <td className="px-4 py-3 align-top border-b border-border">
-                      Within 7 days but you've watched 20-50% of a course
-                    </td>
-                    <td className="px-4 py-3 align-top border-b border-border">
-                      <strong className="text-foreground">50% refund</strong>
-                    </td>
-                  </tr>
-                  <tr className="bg-surface">
                     <td className="px-4 py-3 align-top">
-                      After 7 days, OR after watching 50%+ of any course
+                      After 7 days, or once you have watched a quarter of the
+                      course or more
                     </td>
                     <td className="px-4 py-3 align-top">
                       No refund, but contact us. We may issue store credit if
@@ -179,8 +179,10 @@ const RefundPolicy = () => {
               </table>
             </div>
             <p className="mt-4 text-xs text-muted-foreground">
-              The 20% watched threshold is calculated from your VdoCipher
-              playback progress across all chapters in the offering.
+              A quarter means a quarter of the course's total running time,
+              measured from your playback progress across all of its lessons.
+              A discounted purchase follows the same rule; the refund is the
+              amount you paid.
             </p>
           </section>
 

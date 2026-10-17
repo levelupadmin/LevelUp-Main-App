@@ -7,6 +7,7 @@ import {
   totalInr as computeTotalInr,
   toPaise,
 } from "../_shared/pricing.ts";
+import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -42,8 +43,9 @@ Deno.serve(async (req) => {
     const userId = claimsData.claims.sub as string;
 
     /* ── Input ── */
+    const body = await req.json();
     const { offering_id, coupon_id, bump_ids, custom_field_values, payment_type, application_id } =
-      await req.json();
+      body;
     if (!offering_id)
       return jsonRes({ error: "offering_id is required" }, 400);
     if (
@@ -282,6 +284,22 @@ Deno.serve(async (req) => {
       }
     }
 
+    /* ── Ad attribution (single-payment offerings only) ──
+       utm_* go to their columns; fbclid, gclid, fbp, fbc, the landing event id
+       and the buyer's IP / user agent go under notes.attribution for the
+       server-side Purchase. Staged cohort payments are left exactly as they
+       were: no attribution is read or written for them. */
+    const attributionColumns: Record<string, unknown> =
+      offering.payment_mode === "staged"
+        ? {}
+        : (() => {
+            const attribution = sanitizeAttribution(body?.attribution);
+            return {
+              ...utmColumns(attribution),
+              notes: { attribution: { ...attribution, ...requestClientMeta(req.headers) } },
+            };
+          })();
+
     /* ── payment_orders row ── */
     const { data: po, error: poErr } = await admin
       .from("payment_orders")
@@ -298,6 +316,7 @@ Deno.serve(async (req) => {
         status: "created",
         payment_type: payment_type || null,
         application_id: application_id || null,
+        ...attributionColumns,
       })
       .select("id")
       .single();

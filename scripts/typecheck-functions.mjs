@@ -24,13 +24,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FUNCTIONS_DIR = join(ROOT, "supabase", "functions");
 const CONCURRENCY = 4;
 
-// Pre-existing failures, unrelated to any current work. All four are LIVE and
+// Pre-existing failures, unrelated to any current work. All three are LIVE and
 // WORKING in production — do NOT "fix" them by editing the live functions; retire
 // an entry only when the underlying cause is genuinely resolved.
 const KNOWN_FAILING = {
   "auth-email-hook": "npm: specifiers unresolved in this node_modules — environment, not code",
   "generate-invoice-pdf": "npm: specifiers unresolved in this node_modules — environment, not code",
-  "guest-create-order": "pre-existing TS2339 (property access on an untyped row)",
   "verify-msg91-otp": "pre-existing TS2345 (argument type mismatch)",
 };
 

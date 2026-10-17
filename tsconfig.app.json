@@ -35,5 +35,12 @@
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/lib/__tests__/guestOrderReuse.test.ts",
+    "src/lib/__tests__/postCaptureRecovery.test.ts",
+    "src/lib/__tests__/guestCreateOrder.test.ts",
+    "src/lib/__tests__/receipt.test.ts",
+    "src/lib/__tests__/verifyApiUnreachable.test.ts"
   ]
 }

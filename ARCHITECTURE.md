@@ -45,7 +45,7 @@ The web app is authoritative; the native shells wrap it and are read-only on buy
 | **Refunds / invoices** | `pages/ProfilePage.tsx`, `components/profile/`, `lib/invoice.ts` | `process-refund`, `generate-invoice-pdf` |
 | **Certificates** | `components/certificates/`, `hooks/useCertificateAutoGenerate.ts`, `lib/certificate-generator.ts` | (client-generated) |
 | **Admin** | `pages/admin/*` (37 pages), `components/admin/` | `admin-api`, `send-bulk-email`, `send-notification`, `admin-grant-access` (CSV import / add student), `admin-update-user` (edit login email/phone), RPCs `admin_duplicate_offering` / `admin_duplicate_course` |
-| **Email / notifications** | `components/notifications/`, `hooks/useNotifications.ts` | `queue-transactional-email`, `process-email-queue`, `_shared/email-templates/` |
+| **Email / notifications** | `components/notifications/`, `hooks/useNotifications.ts` | `queue-transactional-email`, `process-email-queue`, `_shared/email-templates/`, purchase receipt in `_shared/receipt.ts` |
 
 Cross-cutting: `contexts/AuthContext.tsx` (session + user), `components/guards/` (route
 gating), `lib/platform.ts` (`isNative`/`isAndroid`), `lib/analytics.ts` (pixels),
@@ -70,7 +70,65 @@ Razorpay checkout modal → payment
         │
         ▼
 enrolment created  →  access granted
+        │
+        ▼
+post-capture step (_shared/postCapture.ts, at most once per order, single payments only):
+server Meta Purchase (Conversions API) + receipt email with the invoice link
 ```
+
+Captured is not the same as granted: verify writes `status = 'captured'` before it
+inserts the enrolment, and can answer 500 in between. So the already-captured early
+returns of both capture paths first grant the course if the buyer does not hold it
+(`_shared/captureGrant.ts`, the same idempotent insert), and answer success only
+after that. They never grant again a course this order granted and later lost (a
+revoke, a refund). A cancelled or expired enrolment from the buyer's earlier order
+does not block a new paid order. A free order (no Razorpay payment id, or a total of
+0) skips this step: verify answers it `{ success: true, already_captured: true }` and
+the status check answers it `captured`, both from the row alone, with no read of the
+buyer's enrolments, because guest-create-order credits it to the typed phone's
+account and any answer that read that account would tell a caller with no login what
+the person owns. A grant they refuse
+(course taken away, no buyer, a read or insert error) is written on the order as
+`notes.grant_issue = { reason, source, at }`, and marked `resolved_at` once a later
+grant works. The webhook acknowledges a refused grant only after that marker is on
+the order; otherwise it answers 500 and Razorpay delivers again.
+
+Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
+after their own work, and again from their already-captured early returns when
+`notes.post_capture` is still empty and the order was captured in the last 48 hours
+(`postCaptureRecoverable`), so a 500 between capture and the claim does not lose it
+and an old order never gets a late receipt. Both that check and `runPostCapture`
+also need a Razorpay payment id and a total above 0: a free order is written
+captured at creation with no payment, and verify's already-captured return checks
+no payment proof, so a free order's id alone must never queue a receipt. The first caller claims the order by
+writing `payment_orders.notes.post_capture`; the other skips. That makes the step at
+most once, not exactly once: a run that dies after its claim is not retried. Results
+(Meta send, receipt) are recorded under that key, so a missing result shows which
+step did not finish. Ad attribution from the checkout link (`utm_*` columns, the rest
+in `notes.attribution`) is written by the two order functions at creation; see
+`_shared/attribution.ts`.
+
+**No second charge.** The checkout keeps the last order it opened a Razorpay
+sheet for (`src/lib/checkoutOpenOrder.ts`, also in sessionStorage per offering)
+until it is paid and verified. After Razorpay reports success but verify does not
+confirm it, Pay stays locked and "Check payment status" runs the same verify call
+again. After the sheet closes, the next Pay asks `verify-razorpay-payment` with
+`status_check: true` (read-only: our row, then Razorpay's payments for the order,
+`_shared/orderPaymentStatus.ts`) before anything new is charged; an unchanged
+cart reopens the same Razorpay order. A captured single payment reads as
+`captured` only when the buyer holds the course, and as `needs_review` until
+then, so the checkout never says "Welcome" for a course nobody granted (a free
+order reads as `captured` from the row). The guard
+lives in one tab. guest-create-order adds a narrower one: it hands back an open
+order from the last 10 minutes only to the browser that made it. The checkout sends
+a random token kept per offering in localStorage (`guestReuseToken`), the order
+keeps its sha256 as `notes.reuse_key` (`_shared/guestOrderKey.ts`), and reuse also
+needs the same name, email, phone, coupon and total; anything else gets a fresh
+order. A guest status check needs the same token and otherwise gets the 404 of an
+unknown id. So a second tab in the same browser lands on the same Razorpay order,
+while a fresh in-app browser or a second device can still start a second order.
+The browser Purchase goes out once per
+`razorpay_payment_id` across the checkout and Thank-you (`src/lib/purchaseOnce.ts`).
 
 **Pricing has ONE home: [`supabase/functions/_shared/pricing.ts`](supabase/functions/_shared/pricing.ts).**
 `couponDiscountInr`, `gstInr`, `totalInr`, `toPaise`, `couponInvalidReason`. Used by

@@ -9,6 +9,8 @@ import {
 } from "../_shared/pricing.ts";
 import { normalizePhone } from "../_shared/phone.ts";
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
+import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -35,18 +37,21 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    const body = await req.json();
     const {
       offering_id,
       guest_name,
       guest_email,
       guest_phone,
       coupon_code,
-      utm_source,
-      utm_medium,
-      utm_campaign,
-      utm_content,
-      utm_term,
-    } = await req.json();
+    } = body;
+    // Ad attribution from the checkout link (utm_*, fbclid, gclid, ic_eid,
+    // _fbp/_fbc). Older clients send utm_* at the top level only; both are read.
+    const attribution = sanitizeAttribution(body?.attribution, body ?? {});
+    // The checkout's per-browser token (_shared/guestOrderKey.ts). Its hash
+    // goes on the order; with none, the order can be neither reused nor read
+    // by a guest status check.
+    const reuseKey = await requestReuseKey(body?.reuse_token);
 
     /* ── Validate required fields ── */
     if (!offering_id || !guest_name || !guest_email || !guest_phone) {
@@ -103,30 +108,33 @@ Deno.serve(async (req) => {
     if (offering.status !== "active") return jsonRes({ error: "Offering is not active" }, 400);
     if (!offering.is_public) return jsonRes({ error: "Offering is not available for public purchase" }, 400);
 
-    /* ── SCENARIO VALIDATION (server-side security gate) ── */
+    /* ── SCENARIO VALIDATION (server-side security gate) ──
+       Email half only, as it has always worked: an account found by the
+       typed email whose phone differs is refused. There is no phone half.
+       This function needs no login, so an answer that changed with whether
+       a typed phone has an account would tell a stranger that it does (and,
+       with a guessed email, whose it is). It would protect nothing either:
+       capture credits the phone's account whatever email is typed
+       (_shared/buyerIdentity.ts). The old phone half compared
+       public.users.phone with the bare 10 digits, a form that column never
+       holds (0 of 2,983 on 2026-10-18), so it never fired; dropping it
+       changes no answer. */
     const { data: emailUser } = await admin
       .from("users")
       .select("id, phone")
       .eq("email", guest_email)
       .maybeSingle();
 
-    const { data: phoneUser } = await admin
-      .from("users")
-      .select("id, email")
-      .eq("phone", normalizedPhone)
-      .maybeSingle();
-
-    if (emailUser && phoneUser && emailUser.id !== phoneUser.id) {
-      return jsonRes({ error: "Email and phone number are linked to different accounts. Please verify your identity." }, 403);
-    }
-
     if (emailUser && emailUser.phone && normalizePhone(emailUser.phone) !== normalizedPhone) {
       return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity." }, 403);
     }
 
-    if (phoneUser && phoneUser.email !== guest_email) {
-      return jsonRes({ error: "This phone number is linked to a different account. Please verify your identity." }, 403);
-    }
+    /* Whether this phone's account already owns the course is NOT checked
+       here. This function runs for anyone who types a phone number (no
+       login), so any answer that depends on ownership would tell a stranger
+       what that person bought. A returning owner who signs in first
+       ("Already have an account? Sign in" on the checkout) is stopped by
+       create-razorpay-order, which checks only the caller's own account. */
 
     /* ── Coupon (by code, not ID) ── */
     let discountInr = 0;
@@ -161,6 +169,50 @@ Deno.serve(async (req) => {
     const gstInr = computeGstInr(afterDiscount, offering.gst_mode, Number(offering.gst_rate || 18));
     const totalInr = computeTotalInr(afterDiscount, offering.gst_mode, gstInr);
 
+    /* ── Reuse a pending order from the last 10 minutes ──
+       Only an order this browser made (the same reuse token), with the same
+       phone, offering, email, name, coupon and total and a Razorpay order on
+       it: return that order instead of making another. A retry after a closed
+       payment sheet or a failed attempt lands on the same Razorpay order, which
+       accepts one successful payment only, so a double tap or a second attempt
+       cannot charge twice. Anything else gets a fresh order: an existing
+       order's id never goes to a caller without its token, and a corrected
+       name reaches the receipt and the invoice. The answer has the same shape
+       either way. */
+    if (totalInr > 0 && reuseKey) {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: pending } = await admin
+        .from("payment_orders")
+        .select("id, razorpay_order_id, total_inr, coupon_id, guest_email, guest_name, notes")
+        .is("user_id", null)
+        .eq("offering_id", offering_id)
+        .eq("guest_phone", normalizedPhone)
+        .eq("status", "created")
+        .eq("notes->>reuse_key", reuseKey)
+        .gte("created_at", tenMinAgo)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const reuse = (pending ?? []).find((row: Record<string, unknown>) =>
+        reuseKeyMatches(row.notes, reuseKey) &&
+        typeof row.razorpay_order_id === "string" &&
+        Number(row.total_inr) === totalInr &&
+        (row.coupon_id ?? null) === (couponDbId ?? null) &&
+        String(row.guest_email ?? "").trim().toLowerCase() === String(guest_email).trim().toLowerCase() &&
+        String(row.guest_name ?? "").trim() === String(guest_name).trim()
+      );
+      const reuseKeyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim();
+      if (reuse && reuseKeyId) {
+        return jsonRes({
+          razorpay_order_id: reuse.razorpay_order_id,
+          amount: toPaise(totalInr),
+          currency: "INR",
+          key_id: reuseKeyId,
+          payment_order_id: reuse.id,
+          offering_title: offering.title,
+        });
+      }
+    }
+
     /* ── payment_orders row (guest, no user_id) ── */
     const { data: po, error: poErr } = await admin
       .from("payment_orders")
@@ -178,11 +230,14 @@ Deno.serve(async (req) => {
         guest_name,
         guest_email,
         guest_phone: normalizedPhone,
-        utm_source: utm_source || null,
-        utm_medium: utm_medium || null,
-        utm_campaign: utm_campaign || null,
-        utm_content: utm_content || null,
-        utm_term: utm_term || null,
+        ...utmColumns(attribution),
+        // The rest of the attribution, plus the buyer's IP and user agent for
+        // the server-side Purchase (Meta matching), lives in the notes jsonb.
+        // notes.reuse_key ties the order to this browser (see above).
+        notes: {
+          attribution: { ...attribution, ...requestClientMeta(req.headers) },
+          ...(reuseKey ? { reuse_key: reuseKey } : {}),
+        },
         captured_at: totalInr <= 0 ? new Date().toISOString() : null,
       })
       .select("id")
@@ -257,7 +312,10 @@ Deno.serve(async (req) => {
           payment_order_id: po.id,
           status: "active",
           source: "checkout",
-          total_paid_inr: Number(po.total_inr),
+          // The row above selected only `id`, so po.total_inr was undefined:
+          // Number(undefined) is NaN, which JSON sends as null. The free
+          // path's total is the computed one.
+          total_paid_inr: totalInr,
         });
       }
 

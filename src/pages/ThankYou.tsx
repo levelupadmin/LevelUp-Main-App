@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { track } from "@/lib/analytics";
+import { claimPurchaseOnce } from "@/lib/purchaseOnce";
+import { contentCategoryForTier, purchaseEventId } from "@shared/metaEvents";
 import { isNative } from "@/lib/platform";
 import { hapticNotification } from "@/lib/haptics";
 import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
@@ -19,6 +21,7 @@ import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 import { SuccessCheck, DownloadInvoiceButton } from "@/components/checkout/SuccessMoment";
 import type { InvoiceOrder } from "@/lib/invoice";
+import { firstLessonId, formatRuntime, measuredRuntimeSeconds, type OutlineChapter, type OutlineSection } from "@/lib/thankYouCourse";
 import {
   CheckCircle2,
   Loader2,
@@ -92,6 +95,7 @@ function isSafeRedirectUrl(url: string | null | undefined): boolean {
 /* ────────────────────────────────────────────────── */
 interface OrderOffering {
   title: string;
+  product_tier?: string | null;
   subtitle: string | null;
   thumbnail_url: string | null;
   meta_pixel_id: string | null;
@@ -106,6 +110,8 @@ interface OrderOffering {
   thankyou_redirect_seconds: number | null;
   thankyou_show_calendly: boolean | null;
   calendly_url: string | null;
+  /** null = lifetime access (the "Lifetime access" chip shows only then). */
+  validity_days?: number | null;
 }
 
 interface PaymentOrder {
@@ -148,9 +154,14 @@ function firePixels(order: PaymentOrder) {
   const currency = "INR";
   const offering = order.offerings;
 
-  // 1. Meta Pixel: sanitize pixelId to numeric only
+  // 1. Meta Pixel: sanitize pixelId to numeric only. `trackSingle` sends to
+  // THIS pixel only: a plain `track` would also hit the global pixel that
+  // analytics.ts already loaded, and that second Purchase had no eventID, so
+  // Meta could not merge it with the global one. The eventID matches the
+  // global Purchase (purchase_<razorpay_payment_id>).
   if (offering?.meta_pixel_id) {
     const pixelId = offering.meta_pixel_id.replace(/[^0-9]/g, "");
+    const eventId = purchaseEventId((order.razorpay_payment_id || order.id).replace(/[^a-zA-Z0-9_\-]/g, ""));
     if (pixelId.length > 0) {
       const script = document.createElement("script");
       script.innerHTML = `
@@ -160,7 +171,7 @@ function firePixels(order: PaymentOrder) {
         t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
         (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
         fbq('init', '${pixelId}');
-        fbq('track', 'Purchase', { value: ${revenue}, currency: '${currency}' });
+        fbq('trackSingle', '${pixelId}', 'Purchase', { value: ${revenue}, currency: '${currency}' }, { eventID: '${eventId}' });
       `;
       document.head.appendChild(script);
     }
@@ -329,6 +340,10 @@ export default function ThankYou() {
   // phone login, so it never flips on.
   const [loggingIn] = useState(false);
 
+  // Lesson 1 and the measured runtime of the course bought (see
+  // lib/thankYouCourse). Loaded after the order; null until then or on failure.
+  const [outline, setOutline] = useState<{ firstLessonId: string | null; runtimeSeconds: number | null } | null>(null);
+
   const pixelsFired = useRef(false);
   // One-shot success haptic on the produced arrival (native only; no-ops on web).
   const successHapticFired = useRef(false);
@@ -412,11 +427,11 @@ export default function ThankYou() {
         const { data: orderData, error } = await supabase
           .from("payment_orders")
           // created_at (receipt time), slug (share URL), and the
-          // offering_courses→courses join (lessons/hours chips) are all
-          // read by the render below; they must be selected here or the
+          // offering_courses→courses join (lessons chip, lesson 1 link) are
+          // all read by the render below; they must be selected here or the
           // receipt prints the current time, a broken /p/ share link, and
           // no benefit chips.
-          .select("id, offering_id, application_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url, offering_courses(courses(total_lessons, duration_minutes)))")
+          .select("id, offering_id, application_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, product_tier, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url, validity_days, offering_courses(course_id, courses(total_lessons)))")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();
@@ -453,24 +468,78 @@ export default function ThankYou() {
     })();
   }, [paymentOrderId, session]);
 
-  /* ── Fire pixels once ── */
+  /* ── Course outline: lesson 1 and the measured runtime ──
+     Only for a purchase that grants the course. An application payment buys
+     a review, not the course, so it keeps its old destination. Any failure
+     leaves the page as it was: no runtime line, the course page as the
+     destination. */
+  const courseId: string | null =
+    (order?.offerings as { offering_courses?: { course_id?: string }[] } | undefined)?.offering_courses?.[0]?.course_id ?? null;
+  const grantsCourse = !!order && !order.application_id && !!courseId;
+  useEffect(() => {
+    if (!grantsCourse || !courseId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: sections } = await supabase
+          .from("sections")
+          .select("id, sort_order")
+          .eq("course_id", courseId);
+        const sectionRows = (sections ?? []) as OutlineSection[];
+        if (sectionRows.length === 0) return;
+        const { data: chapters } = await supabase
+          .from("chapters")
+          .select("id, section_id, sort_order, content_type, duration_seconds")
+          .in("section_id", sectionRows.map((r) => r.id));
+        const chapterRows = (chapters ?? []) as OutlineChapter[];
+        if (cancelled) return;
+        setOutline({
+          firstLessonId: firstLessonId(sectionRows, chapterRows),
+          runtimeSeconds: measuredRuntimeSeconds(chapterRows),
+        });
+      } catch {
+        /* the page works without it */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [grantsCourse, courseId]);
+
+  // Where "Start lesson 1" and the auto-redirect go when the offering sets no
+  // custom URL: lesson 1, else the course page, else Home (application
+  // payments, offerings with no course). Read through a ref by the countdown so
+  // the outline arriving does not restart it.
+  const lessonPath = outline?.firstLessonId ? `/chapters/${outline.firstLessonId}` : null;
+  const defaultDestination = grantsCourse ? (lessonPath ?? `/courses/${courseId}`) : "/home";
+  const destinationRef = useRef(defaultDestination);
+  destinationRef.current = defaultDestination;
+
+  /* ── Fire pixels once per payment ──
+        The checkout usually sent the global Purchase already, right after
+        verify; track() sends it once per payment (lib/purchaseOnce), so this
+        call only counts a sale the checkout did not (a guest's free order, a
+        payment confirmed later). It runs before firePixels so the global
+        fbq("track") cannot also reach the offering's own pixel. The offering's
+        pixels have their own once-per-payment claim, so a reload of this page
+        does not count the sale again. */
   useEffect(() => {
     if (!order || pixelsFired.current) return;
     pixelsFired.current = true;
-    // Per-offering pixel/tracking-script firing (the existing path).
-    firePixels(order);
+    const transactionId = order.razorpay_payment_id || order.id;
     // Global analytics fan-out for the platforms configured under
     // /admin/analytics-settings (Meta, GA4, Twitter, Clarity).
-    // Idempotent at the platform level; Meta Pixel + GA4 dedupe
-    // identical transaction_ids server-side.
     track({
       name: "purchase",
-      transaction_id: order.razorpay_payment_id || order.id,
+      transaction_id: transactionId,
       content_id: order.offering_id,
       content_name: order.offerings?.title || "LevelUp masterclass",
       value: Number(order.total_inr),
       currency: "INR",
+      content_category: contentCategoryForTier(order.offerings?.product_tier),
     });
+    // Per-offering pixel/tracking-script firing (the existing path).
+    if (claimPurchaseOnce(transactionId, "offering_pixels")) firePixels(order);
     // Conversion-funnel terminal event (P3-T7). Fire-and-forget alongside the
     // pixel purchase above; no PII beyond the order/value already on screen.
     track({
@@ -529,7 +598,7 @@ export default function ThankYou() {
             if (isSafeRedirectUrl(customCtaUrl)) {
               window.location.href = customCtaUrl!;
             } else {
-              navigate("/home");
+              navigate(destinationRef.current);
             }
           }
           return 0;
@@ -570,16 +639,17 @@ export default function ThankYou() {
       if (isSafeRedirectUrl(customCtaUrl)) {
         window.location.href = customCtaUrl!;
       } else {
-        navigate("/home");
+        navigate(destinationRef.current);
       }
       return;
     }
 
     // No session on this device (older app, or the auto sign-in didn't land):
     // the purchase is on the account keyed to the phone they paid with, so the
-    // phone-OTP login is the one path guaranteed to reach it.
+    // phone-OTP login is the one path guaranteed to reach it. It lands on the
+    // same place the button names (lesson 1 when known).
     toast.success("Sign in with the phone number you paid with to open your course.");
-    navigate(`/login?next=${encodeURIComponent("/my-courses")}`);
+    navigate(`/login?next=${encodeURIComponent(destinationRef.current === "/home" ? "/my-courses" : destinationRef.current)}`);
   };
 
   const handleBuyUpsell = useCallback(async (upsell: Upsell) => {
@@ -731,19 +801,21 @@ export default function ThankYou() {
     buyer_phone: order.guest_phone || null,
   };
 
-  // Course-side facts for the celebration strip. Each chip falls out
-  // if the underlying data is missing - never show "0 lessons".
+  // Course-side facts for the celebration strip, each from data, each falling
+  // out when the data is missing (never "0 lessons"). Only for a purchase that
+  // grants the course: an application payment buys a review, not lessons.
+  // Gone: "4K video" and "Subtitles" printed on every order, cohort fees too,
+  // and nobody had checked either; "N+ hrs" came from a lessons x 30
+  // placeholder. The runtime is the measured one (lib/thankYouCourse).
   const course = (order.offerings as any)?.offering_courses?.[0]?.courses;
-  const lessons = course?.total_lessons ?? course?.sections?.reduce(
-    (sum: number, s: any) => sum + (s.chapters?.length ?? 0), 0,
-  );
-  const hours = course?.duration_minutes ? Math.round(course.duration_minutes / 60) : null;
+  const lessons = Number(course?.total_lessons ?? 0);
   const benefitChips: string[] = [];
-  if (lessons && lessons > 0) benefitChips.push(`${lessons} lessons`);
-  if (hours && hours > 0) benefitChips.push(`${hours}+ hrs`);
-  benefitChips.push("4K video");
-  benefitChips.push("Subtitles");
-  benefitChips.push("Lifetime access");
+  if (grantsCourse) {
+    if (lessons > 0) benefitChips.push(`${lessons} lessons`);
+    if (outline?.runtimeSeconds) benefitChips.push(formatRuntime(outline.runtimeSeconds));
+    if (order.offerings?.validity_days == null) benefitChips.push("Lifetime access");
+  }
+  const ctaLabel = order.offerings?.thankyou_cta_label || (lessonPath && !customCtaUrl ? "Start lesson 1" : "Start watching");
 
   // Trim-or-null the admin-authored hero thumbnail so a whitespace-only value
   // reads as absent and we fall back to the SuccessCheck celebration instead of
@@ -911,7 +983,7 @@ export default function ThankYou() {
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground pl-6">
-                  Sign in with that number (OTP) on any device to open it.
+                  Sign in with that number and a one-time code on any device to open it.
                 </p>
               </div>
             )}
@@ -925,12 +997,12 @@ export default function ThankYou() {
               {loggingIn ? (
                 <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Signing you in&hellip;</>
               ) : (
-                <>{order.offerings?.thankyou_cta_label || "Start watching"} <ArrowRight className="h-5 w-5 ml-2" /></>
+                <>{ctaLabel} <ArrowRight className="h-5 w-5 ml-2" /></>
               )}
             </Button>
             {!isGuest && session && autoRedirect && !redirectCancelled && countdown > 0 && (
               <p className="caption text-center">
-                Redirecting in {countdown}s &middot;{" "}
+                {lessonPath && !customCtaUrl ? `Opening lesson 1 in ${countdown}s` : `Redirecting in ${countdown}s`} &middot;{" "}
                 <button
                   type="button"
                   onClick={() => setRedirectCancelled(true)}

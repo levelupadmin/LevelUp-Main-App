@@ -14,6 +14,11 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
+import { requestClientMeta } from "../_shared/attribution.ts";
+import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
+import { courseGranted, ensureCourseGranted, paidOrder } from "../_shared/captureGrant.ts";
+import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
 
 async function verifyHmac(
   orderId: string,
@@ -30,7 +35,7 @@ async function verifyViaApi(
   expectedAmountPaise: number | null,
   keyId: string,
   keySecret: string
-): Promise<{ verified: boolean; status?: string; error?: string }> {
+): Promise<{ verified: boolean; status?: string; error?: string; unreachable?: boolean }> {
   try {
     const res = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
       headers: {
@@ -40,7 +45,12 @@ async function verifyViaApi(
     if (!res.ok) {
       const errText = await res.text();
       console.error("[verify] Razorpay API check failed:", res.status, errText);
-      return { verified: false, error: `Razorpay API ${res.status}` };
+      // 5xx or 429: Razorpay could not answer, which says nothing about the payment.
+      return {
+        verified: false,
+        error: `Razorpay API ${res.status}`,
+        unreachable: res.status >= 500 || res.status === 429,
+      };
     }
     const payment = await res.json();
     console.log("[verify] Razorpay API payment:", {
@@ -73,7 +83,7 @@ async function verifyViaApi(
     };
   } catch (err: any) {
     console.error("[verify] Razorpay API error:", err.message);
-    return { verified: false, error: err.message };
+    return { verified: false, error: err.message, unreachable: true };
   }
 }
 
@@ -88,7 +98,13 @@ Deno.serve(async (req) => {
       razorpay_signature,
       payment_order_id,
       is_guest,
+      status_check,
+      reuse_token,
     } = await req.json();
+    // status_check: the checkout's read-only "did a payment land on this
+    // order?" question (see the branch below). It needs the order id, and
+    // from a guest the reuse token the order was made with.
+    const statusCheck = status_check === true;
 
     console.log("[verify] Request received:", {
       has_payment_id: !!razorpay_payment_id,
@@ -98,12 +114,12 @@ Deno.serve(async (req) => {
       is_guest
     });
 
-    if (
+    if (statusCheck ? !payment_order_id : (
       !razorpay_payment_id ||
       !razorpay_order_id ||
       !razorpay_signature ||
       !payment_order_id
-    )
+    ))
       return jsonRes({ error: "Missing required fields" }, 400);
 
     /* ── Auth: authenticated flow or guest flow ── */
@@ -159,8 +175,100 @@ Deno.serve(async (req) => {
     const { data: po, error: poErr } = await poQuery.single();
 
     if (poErr || !po) return jsonRes({ error: "Payment order not found" }, 404);
-    if (po.status === "captured")
+
+    /* ── Status check (read-only) ──
+       Asked by the checkout before it starts a new payment after a closed
+       Razorpay sheet, and by its "Check payment status" button. It changes
+       nothing: it reads this row and, while the row is not captured, asks
+       Razorpay whether any payment on the order went through. A signed-in
+       buyer is scoped to their own orders above. A guest must also send the
+       reuse token the order was made with (_shared/guestOrderKey.ts): an order
+       id alone could come from someone who made the order for another person
+       to pay. Without it the answer is the same 404 as an unknown id. A
+       captured single payment reads as captured only once the buyer holds the
+       course (_shared/captureGrant.ts); a captured free order reads as
+       captured from the row alone. */
+    if (statusCheck) {
+      if (!userId && !reuseKeyMatches(po.notes, await requestReuseKey(reuse_token))) {
+        return jsonRes({ error: "Payment order not found" }, 404);
+      }
+      return jsonRes(
+        await orderPaymentStatus(po, { keyId, keySecret: secret }, {
+          courseGranted: () => courseGranted(admin, po),
+        }),
+      );
+    }
+
+    if (po.status === "captured") {
+      // Staged cohort payments: unchanged.
+      if (po.payment_type || po.application_id) {
+        return jsonRes({ success: true, already_captured: true });
+      }
+      // A free order (no Razorpay payment, or a total of 0): guest-create-order
+      // writes it captured at creation and returns its id to a caller with no
+      // login. This return checks no payment proof, so it reads and writes
+      // nothing more. Any answer that depended on the enrolments of the
+      // phone's account would tell that caller what the person owns.
+      if (!paidOrder(po)) {
+        return jsonRes({ success: true, already_captured: true });
+      }
+      // Captured is not the same as granted: the call that captured this
+      // order writes "captured" before it inserts the enrolment, and can fail
+      // in between. Grant the course first, with the same idempotent insert,
+      // and answer success only once the buyer holds it. A grant it refuses
+      // is written on the order as notes.grant_issue for a person.
+      const grant = await ensureCourseGranted(admin, po, { source: "verify" });
+      if (!grant.ok) {
+        if (grant.reason === "taken_away") {
+          return jsonRes(
+            {
+              success: false,
+              needs_review: true,
+              error: "Payment received. Our team will review your access and email you within a few hours.",
+            },
+            202,
+          );
+        }
+        return jsonRes({ error: "Failed to create enrolment" }, 500);
+      }
+      // The call that captured this order may also have failed before its
+      // post-capture step started. Start it now if no one has claimed it and
+      // the capture is recent (an old order gets no late receipt); the claim
+      // keeps it to at most one run. postCaptureRecoverable checks the real
+      // payment again.
+      if (postCaptureRecoverable(po)) {
+        schedulePostCapture(admin, payment_order_id, {
+          source: "verify",
+          requestMeta: requestClientMeta(req.headers),
+        });
+      }
       return jsonRes({ success: true, already_captured: true });
+    }
+
+    /* ── An order parked for a person stays parked ──
+       Running verification again (the checkout's "Check payment status")
+       must not redo the buyer lookup or the coupon redemption that parked it.
+       If the course was granted anyway (the webhook enrols before it parks a
+       coupon conflict), say so. */
+    if (po.status === "needs_review") {
+      const { data: granted } = await admin
+        .from("enrolments")
+        .select("id")
+        .eq("payment_order_id", po.id)
+        .eq("status", "active")
+        .limit(1);
+      if (Array.isArray(granted) && granted.length > 0)
+        return jsonRes({ success: true, already_captured: true });
+      return jsonRes(
+        {
+          success: false,
+          needs_review: true,
+          error:
+            "Payment received. Our team is setting up your access by hand and will email you within a few hours.",
+        },
+        202,
+      );
+    }
 
     // Defense in depth: the order_id presented by the client must match the
     // razorpay_order_id we stored when we created the order. This prevents
@@ -212,6 +320,16 @@ Deno.serve(async (req) => {
       );
       if (apiCheck.verified) {
         paymentVerified = true;
+      } else if (apiCheck.unreachable) {
+        // Razorpay signed this payment but its API could not be asked for the
+        // amount. Leave the order as it is rather than marking it failed: the
+        // webhook or a later verify settles it, and guest-create-order reuses
+        // an open order instead of making a new one that could be paid again.
+        console.error("[verify] HMAC ok but Razorpay API unreachable; order left open:", apiCheck.error);
+        return jsonRes(
+          { error: "We couldn't confirm your payment with Razorpay just now. Please don't pay again; check again in a minute." },
+          503,
+        );
       } else {
         console.error("[verify] HMAC ok but API amount check failed:", apiCheck.error);
       }
@@ -512,12 +630,25 @@ Deno.serve(async (req) => {
       responseGuestEmail = poForEmail?.guest_email || null;
     }
 
-    // ── Generate PDF invoice + queue receipt email ───────────────────
+    // ── One-time post-capture work (server Meta Purchase, receipt) ───
+    // Runs at most once per order, whichever capture path gets here first (see
+    // _shared/postCapture.ts); skipped for staged cohort payments. In the
+    // background, so the buyer's redirect is not delayed.
+    schedulePostCapture(admin, payment_order_id, {
+      source: "verify",
+      requestMeta: requestClientMeta(req.headers),
+    });
+
+    // ── Generate PDF invoice + queue receipt email (staged payments) ──
+    // Single-payment orders get their invoice and receipt from the
+    // post-capture step above (_shared/receipt.ts), once per order whichever
+    // capture path wins. This older block stays as it was for staged cohort
+    // payments only, which that step leaves alone.
     // Fire-and-forget; the client doesn't need to wait for the receipt
     // pipeline before showing the ThankYou page. If either step fails,
     // log and continue; the user can still re-download via the
     // dashboard, and we can retry the email queue from admin.
-    void (async () => {
+    if (po.payment_type || po.application_id) void (async () => {
       try {
         const supaUrl = Deno.env.get("SUPABASE_URL")!;
         const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
