@@ -123,8 +123,9 @@ async function findIdentity(
 
 /**
  * The account that owns this phone, by the same `find_login_identity` lookup
- * the login and capture paths use, or null. Read-only: used by guest checkout
- * to stop a second payment for a course the phone's account already owns.
+ * the login and capture paths use, or null. Read-only: guest checkout's
+ * identity gate uses it to find the phone's account. Throws when the lookup
+ * itself fails.
  */
 export async function findAccountIdByPhone(
   admin: BuyerAdmin,

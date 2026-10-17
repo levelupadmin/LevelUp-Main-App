@@ -122,6 +122,8 @@ export const FEATURES: Feature[] = [
     summary: "Cannot accidentally buy the same offering twice. The order-creation step checks for an active enrolment and short-circuits.",
     area: "Checkout",
     status: "shipped",
+    codeRefs: ["supabase/functions/create-razorpay-order/index.ts"],
+    details: "Signed-in checkouts only: create-razorpay-order checks the caller's own account. Guest checkout (guest-create-order, no login) does not check, because an answer keyed on a typed phone number would tell a stranger what that number bought. A returning owner who uses \"Already have an account? Sign in\" is stopped by the signed-in check.",
   },
 
   /* ─────────── Learning ─────────── */

@@ -7,7 +7,7 @@ import {
   totalInr as computeTotalInr,
   toPaise,
 } from "../_shared/pricing.ts";
-import { normalizePhone } from "../_shared/phone.ts";
+import { isSyntheticEmail, normalizePhone } from "../_shared/phone.ts";
 import { findAccountIdByPhone, resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 
@@ -103,18 +103,40 @@ Deno.serve(async (req) => {
     if (offering.status !== "active") return jsonRes({ error: "Offering is not active" }, 400);
     if (!offering.is_public) return jsonRes({ error: "Offering is not available for public purchase" }, 400);
 
-    /* ── SCENARIO VALIDATION (server-side security gate) ── */
+    /* ── SCENARIO VALIDATION (server-side security gate) ──
+       The phone's account comes from find_login_identity (auth.users, last 10
+       digits), the lookup every payment path uses. This used to compare
+       public.users.phone with the bare 10 digits, but that column holds
+       "91XXXXXXXXXX" or "+91XXXXXXXXXX" (checked 2026-10-18: 0 of 2,983
+       phones are bare), so the phone half of the gate matched no one.
+       Emails compare case-insensitively, and a phone-only account's
+       placeholder address counts as no email. A failed lookup never blocks
+       a sale. */
     const { data: emailUser } = await admin
       .from("users")
       .select("id, phone")
       .eq("email", guest_email)
       .maybeSingle();
 
-    const { data: phoneUser } = await admin
-      .from("users")
-      .select("id, email")
-      .eq("phone", normalizedPhone)
-      .maybeSingle();
+    let phoneUser: { id: string; email: string | null } | null = null;
+    try {
+      const phoneOwnerId = await findAccountIdByPhone(admin, normalizedPhone);
+      if (phoneOwnerId) {
+        const { data: profile } = await admin
+          .from("users")
+          .select("email")
+          .eq("id", phoneOwnerId)
+          .maybeSingle();
+        phoneUser = { id: phoneOwnerId, email: (profile?.email as string | null | undefined) ?? null };
+      }
+    } catch (e) {
+      console.warn("[guest-create-order] phone account lookup failed; continuing", e);
+    }
+    const typedEmail = String(guest_email).trim().toLowerCase();
+    const phoneAccountEmailDiffers = (stored: string | null) => {
+      const e = (stored ?? "").trim().toLowerCase();
+      return !!e && !isSyntheticEmail(e) && e !== typedEmail;
+    };
 
     if (emailUser && phoneUser && emailUser.id !== phoneUser.id) {
       return jsonRes({ error: "Email and phone number are linked to different accounts. Please verify your identity.", code: "identity_mismatch" }, 403);
@@ -124,39 +146,16 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity.", code: "identity_mismatch" }, 403);
     }
 
-    if (phoneUser && phoneUser.email !== guest_email) {
+    if (phoneUser && phoneAccountEmailDiffers(phoneUser.email)) {
       return jsonRes({ error: "This phone number is linked to a different account. Please verify your identity.", code: "identity_mismatch" }, 403);
     }
 
-    /* ── Already owned? ──
-       The phone is the identity (_shared/buyerIdentity.ts). If the account that
-       owns it already has this course, a second payment only buys nothing: the
-       enrolment index blocks a duplicate and the money is kept. Stop here and
-       let the checkout send them to sign in. A failed lookup never blocks a
-       sale. */
-    try {
-      const ownerId = await findAccountIdByPhone(admin, normalizedPhone);
-      if (ownerId) {
-        const { data: owned } = await admin
-          .from("enrolments")
-          .select("id")
-          .eq("user_id", ownerId)
-          .eq("offering_id", offering_id)
-          .eq("status", "active")
-          .limit(1);
-        if (Array.isArray(owned) && owned.length > 0) {
-          return jsonRes(
-            {
-              error: "You already own this course. Sign in with your phone number to watch it.",
-              code: "already_enrolled",
-            },
-            409,
-          );
-        }
-      }
-    } catch (e) {
-      console.warn("[guest-create-order] already-owned check failed; continuing", e);
-    }
+    /* Whether this phone's account already owns the course is NOT checked
+       here. This function runs for anyone who types a phone number (no
+       login), so any answer that depends on ownership would tell a stranger
+       what that person bought. A returning owner who signs in first
+       ("Already have an account? Sign in" on the checkout) is stopped by
+       create-razorpay-order, which checks only the caller's own account. */
 
     /* ── Coupon (by code, not ID) ── */
     let discountInr = 0;
