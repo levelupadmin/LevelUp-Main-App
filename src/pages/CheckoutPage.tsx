@@ -1380,7 +1380,7 @@ export default function CheckoutPage() {
           </div>
           {/* -- Trust signals -- */}
           <div className="flex flex-col items-center gap-2">
-            <GuaranteeBadge days={offering.refund_policy_days} />
+            <GuaranteeBadge days={offering.refund_policy_days} productTier={offering.product_tier} />
           </div>
 
 

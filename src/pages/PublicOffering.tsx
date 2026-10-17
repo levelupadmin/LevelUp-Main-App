@@ -123,6 +123,8 @@ interface Offering {
   page_coupon_code: string | null;
   currency: string | null;
   refund_policy_days: number | null;
+  /** "masterclass" switches the refund line to the watch rule (GuaranteeBadge). */
+  product_tier?: string | null;
   offering_courses: OfferingCourse[];
 }
 
@@ -681,7 +683,7 @@ function HeroActions({
           </Button>
         </div>
       </div>
-      <GuaranteeBadge days={offering.refund_policy_days} />
+      <GuaranteeBadge days={offering.refund_policy_days} productTier={offering.product_tier} />
     </div>
   );
 }
@@ -1700,6 +1702,7 @@ export default function PublicOffering() {
               mrp={offering.mrp_inr}
               highlights={highlights}
               refundPolicyDays={offering.refund_policy_days}
+              productTier={offering.product_tier}
               applyUrl={applyUrl}
               isStaged={isStaged}
               proof={proof}

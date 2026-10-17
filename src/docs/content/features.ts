@@ -107,8 +107,14 @@ export const FEATURES: Feature[] = [
     summary: "Admin can issue full or partial refunds from /admin/revenue. process-refund edge function calls Razorpay's refund API and updates the order status.",
     area: "Checkout",
     status: "shipped",
-    codeRefs: ["supabase/functions/process-refund/index.ts"],
-    appRefs: ["/admin/revenue"],
+    codeRefs: [
+      "supabase/functions/process-refund/index.ts",
+      "supabase/functions/_shared/refundPolicy.ts",
+      "src/components/offering/GuaranteeBadge.tsx",
+      "src/pages/RefundPolicy.tsx",
+    ],
+    appRefs: ["/admin/revenue", "/refunds"],
+    details: "Masterclass rule, word for word as on the marketing site: \"Full refund within 7 days of buying, if you have watched less than a quarter of the course.\" It lives in _shared/refundPolicy.ts and shows on the checkout and offering page (GuaranteeBadge, masterclass tier only), on /refunds section 1 and in the purchase receipt. Live programmes and workshops keep their own terms on /refunds.",
   },
   {
     slug: "duplicate-purchase-guard",

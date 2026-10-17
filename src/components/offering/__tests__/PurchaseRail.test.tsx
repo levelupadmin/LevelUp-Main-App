@@ -37,4 +37,15 @@ describe("PurchaseRail fee policy", () => {
 
     expect(screen.getByText("7-day money-back guarantee")).toBeInTheDocument();
   });
+
+  it("states the watch rule for a masterclass", () => {
+    render(
+      <MemoryRouter>
+        <PurchaseRail {...commonProps} isStaged={false} productTier="masterclass" applyUrl={null} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/Full refund within 7 days of buying/)).toBeInTheDocument();
+    expect(screen.queryByText(/money-back guarantee/i)).not.toBeInTheDocument();
+  });
 });
