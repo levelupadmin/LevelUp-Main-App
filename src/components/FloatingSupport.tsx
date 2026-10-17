@@ -9,11 +9,10 @@ import {
 } from "@/components/ui/sheet";
 import { hapticImpact, hapticSelection } from "@/lib/haptics";
 
-const WHATSAPP_PHONE = "919791520177";
+import { supportWhatsAppLink } from "@/lib/support";
 
 /** Build a wa.me deep link with a prefilled message. */
-const waLink = (text: string) =>
-  `https://api.whatsapp.com/send?phone=${WHATSAPP_PHONE}&text=${encodeURIComponent(text)}`;
+const waLink = (text: string) => supportWhatsAppLink(text);
 
 /**
  * Topic chips prefill the WhatsApp message so the team lands on context, and

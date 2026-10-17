@@ -8,7 +8,7 @@ import {
   toPaise,
 } from "../_shared/pricing.ts";
 import { normalizePhone } from "../_shared/phone.ts";
-import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { findAccountIdByPhone, resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 
 function encodeBase64(str: string): string {
@@ -117,15 +117,45 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (emailUser && phoneUser && emailUser.id !== phoneUser.id) {
-      return jsonRes({ error: "Email and phone number are linked to different accounts. Please verify your identity." }, 403);
+      return jsonRes({ error: "Email and phone number are linked to different accounts. Please verify your identity.", code: "identity_mismatch" }, 403);
     }
 
     if (emailUser && emailUser.phone && normalizePhone(emailUser.phone) !== normalizedPhone) {
-      return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity." }, 403);
+      return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity.", code: "identity_mismatch" }, 403);
     }
 
     if (phoneUser && phoneUser.email !== guest_email) {
-      return jsonRes({ error: "This phone number is linked to a different account. Please verify your identity." }, 403);
+      return jsonRes({ error: "This phone number is linked to a different account. Please verify your identity.", code: "identity_mismatch" }, 403);
+    }
+
+    /* ── Already owned? ──
+       The phone is the identity (_shared/buyerIdentity.ts). If the account that
+       owns it already has this course, a second payment only buys nothing: the
+       enrolment index blocks a duplicate and the money is kept. Stop here and
+       let the checkout send them to sign in. A failed lookup never blocks a
+       sale. */
+    try {
+      const ownerId = await findAccountIdByPhone(admin, normalizedPhone);
+      if (ownerId) {
+        const { data: owned } = await admin
+          .from("enrolments")
+          .select("id")
+          .eq("user_id", ownerId)
+          .eq("offering_id", offering_id)
+          .eq("status", "active")
+          .limit(1);
+        if (Array.isArray(owned) && owned.length > 0) {
+          return jsonRes(
+            {
+              error: "You already own this course. Sign in with your phone number to watch it.",
+              code: "already_enrolled",
+            },
+            409,
+          );
+        }
+      }
+    } catch (e) {
+      console.warn("[guest-create-order] already-owned check failed; continuing", e);
     }
 
     /* ── Coupon (by code, not ID) ── */
@@ -160,6 +190,44 @@ Deno.serve(async (req) => {
     const afterDiscount = Math.max(subtotalInr - discountInr, 0);
     const gstInr = computeGstInr(afterDiscount, offering.gst_mode, Number(offering.gst_rate || 18));
     const totalInr = computeTotalInr(afterDiscount, offering.gst_mode, gstInr);
+
+    /* ── Reuse a pending order from the last 10 minutes ──
+       Same phone, offering, email, coupon and total, with a Razorpay order on
+       it: return that order instead of making another. A retry after a closed
+       payment sheet or a failed attempt lands on the same Razorpay order, which
+       accepts one successful payment only, so a double tap or a second attempt
+       cannot charge twice. Mirrors create-razorpay-order's signed-in reuse. */
+    if (totalInr > 0) {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: pending } = await admin
+        .from("payment_orders")
+        .select("id, razorpay_order_id, total_inr, coupon_id, guest_email")
+        .is("user_id", null)
+        .eq("offering_id", offering_id)
+        .eq("guest_phone", normalizedPhone)
+        .eq("status", "created")
+        .gte("created_at", tenMinAgo)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const reuse = (pending ?? []).find((row: Record<string, unknown>) =>
+        typeof row.razorpay_order_id === "string" &&
+        Number(row.total_inr) === totalInr &&
+        (row.coupon_id ?? null) === (couponDbId ?? null) &&
+        String(row.guest_email ?? "").trim().toLowerCase() === String(guest_email).trim().toLowerCase()
+      );
+      const reuseKeyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim();
+      if (reuse && reuseKeyId) {
+        return jsonRes({
+          razorpay_order_id: reuse.razorpay_order_id,
+          amount: toPaise(totalInr),
+          currency: "INR",
+          key_id: reuseKeyId,
+          payment_order_id: reuse.id,
+          offering_title: offering.title,
+          reused: true,
+        });
+      }
+    }
 
     /* ── payment_orders row (guest, no user_id) ── */
     const { data: po, error: poErr } = await admin

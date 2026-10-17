@@ -34,6 +34,8 @@ import { addPaymentInfoEventId, contentCategoryForTier } from "@shared/metaEvent
 import { attributionForOrder, captureCheckoutAttribution, checkoutVisitEventId, landingPageUrl } from "@/lib/attribution";
 import CollapsibleDescription from "@/components/checkout/CollapsibleDescription";
 import AfterYouPay from "@/components/checkout/AfterYouPay";
+import PaymentNotice, { type PaymentIssue } from "@/components/checkout/PaymentNotice";
+import { readFunctionError } from "@/lib/functionError";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
@@ -42,7 +44,7 @@ declare global {
   interface Window {
     Razorpay: new (options: Record<string, unknown>) => {
       open: () => void;
-      on: (event: string, cb: () => void) => void;
+      on: (event: string, cb: (response: { error?: { description?: string; reason?: string } }) => void) => void;
     };
   }
 }
@@ -248,6 +250,8 @@ export default function CheckoutPage() {
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
   const paymentInFlightRef = useRef(false);
+  // The last Pay attempt's problem, shown inline under Pay until the next tap.
+  const [payIssue, setPayIssue] = useState<PaymentIssue | null>(null);
   const [application, setApplication] = useState<any>(null);
   const [totalPreviouslyPaid, setTotalPreviouslyPaid] = useState(0);
 
@@ -504,6 +508,7 @@ export default function CheckoutPage() {
     if (!offering) return;
     if (paymentInFlightRef.current) return;
     void hapticImpact("medium");
+    setPayIssue(null);
 
     // Validate guest fields when anon (marks fields touched + toasts on the
     // first failure). The edge function does the canonical phone normalisation.
@@ -546,7 +551,12 @@ export default function CheckoutPage() {
           }
         );
         if (freeErr || !freeData?.success) {
-          toast.error(freeData?.error ?? "Couldn't complete the enrolment. Please try again.");
+          const info = await readFunctionError(freeErr, freeData);
+          setPayIssue(
+            info.code === "already_enrolled"
+              ? { kind: "already_enrolled", guest: false }
+              : { kind: "order_error", message: info.message ?? "Couldn't complete the enrolment. Please try again." },
+          );
           setPaying(false); paymentInFlightRef.current = false;
           return;
         }
@@ -596,7 +606,26 @@ export default function CheckoutPage() {
           });
 
       if (error || (!data?.razorpay_order_id && !(isAnon && data?.success))) {
-        toast.error(data?.error ?? "Couldn't create your order. Please try again.");
+        // invoke() drops the body of a non-2xx answer; read it from the
+        // response so the buyer sees what actually happened.
+        const info = await readFunctionError(error, data);
+        if (info.code === "already_enrolled" || info.status === 409 && /already/i.test(info.message ?? "")) {
+          setPayIssue({ kind: "already_enrolled", guest: isAnon });
+        } else if (info.status === 429) {
+          setPayIssue({ kind: "rate_limited" });
+        } else if (info.status === 403 && isAnon) {
+          setPayIssue({
+            kind: "identity_mismatch",
+            message: info.message ?? "These details match another account",
+          });
+        } else {
+          setPayIssue({
+            kind: "order_error",
+            message: info.status === null
+              ? "Check your connection, then tap Pay again."
+              : info.message ?? "Couldn't create your order. Please try again.",
+          });
+        }
         setPaying(false); paymentInFlightRef.current = false;
         return;
       }
@@ -668,11 +697,16 @@ export default function CheckoutPage() {
             });
 
           if (verifyErr || !verifyData?.success) {
-            toast.error(
-              verifyData?.needs_review
-                ? "Payment received. We're setting up your access and will email you shortly."
-                : "Payment verification failed, please contact support"
-            );
+            // Razorpay has already taken the money at this point; the webhook
+            // captures and enrols on its own. Say so, and keep the buyer from
+            // paying a second time.
+            const info = await readFunctionError(verifyErr, verifyData);
+            setPayIssue({
+              kind: "verify_pending",
+              message: verifyData?.needs_review || /review/i.test(info.message ?? "")
+                ? "We're setting up your access by hand and will email you within a few hours. Please don't pay again."
+                : null,
+            });
             setPaying(false); paymentInFlightRef.current = false;
             return;
           }
@@ -705,19 +739,26 @@ export default function CheckoutPage() {
         },
         modal: {
           ondismiss: () => {
+            // A failure already set its own notice; keep that one.
+            setPayIssue((prev) => prev ?? { kind: "dismissed" });
             setPaying(false); paymentInFlightRef.current = false;
           },
         },
       };
 
+      if (typeof window.Razorpay !== "function") {
+        setPayIssue({ kind: "script_missing" });
+        setPaying(false); paymentInFlightRef.current = false;
+        return;
+      }
       const rzp = new window.Razorpay(options);
-      rzp.on("payment.failed", () => {
-        toast.error("The payment didn't complete. If any amount was debited, it comes back to you automatically. Try again when you're ready.");
+      rzp.on("payment.failed", (response) => {
+        setPayIssue({ kind: "failed", detail: response?.error?.description ?? null });
         setPaying(false); paymentInFlightRef.current = false;
       });
       rzp.open();
     } catch {
-      toast.error("That didn't go through. Try once more?");
+      setPayIssue({ kind: "order_error", message: "That didn't go through. Check your connection and tap Pay again." });
       setPaying(false); paymentInFlightRef.current = false;
     }
   };
@@ -1310,6 +1351,20 @@ export default function CheckoutPage() {
               }
             />
           </Button>
+
+          <PaymentNotice
+            issue={payIssue}
+            courseTitle={offering.title}
+            onOpenCourse={() => navigate("/learn?seg=courses")}
+            onSignIn={() =>
+              navigate(
+                `/login?${new URLSearchParams({
+                  next: payIssue?.kind === "already_enrolled" ? "/learn?seg=courses" : location.pathname + location.search,
+                }).toString()}`,
+                { state: postPaymentNavState(guestPhone) },
+              )
+            }
+          />
 
           {/* Reassurance capsule directly under the pay button: lock icon +
               gateway + refund window in one quiet pill. */}

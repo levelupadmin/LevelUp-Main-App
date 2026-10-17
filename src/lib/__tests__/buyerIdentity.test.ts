@@ -181,3 +181,18 @@ describe("resolveOrCreateBuyer", () => {
     expect(calls.every((c) => !c.kind.includes("admin/users"))).toBe(true);
   });
 });
+
+describe("findAccountIdByPhone (guest re-purchase guard)", () => {
+  it("returns the phone's account through find_login_identity, read-only", async () => {
+    const { findAccountIdByPhone } = await import("@shared/buyerIdentity");
+    const { admin, calls } = fakeAdmin({ byPhone: { id: "acct-1", email: null, phone: "919876543210" } });
+    expect(await findAccountIdByPhone(admin, "9876543210")).toBe("acct-1");
+    expect(calls.map((c) => c.kind)).toEqual(["rpc:find_login_identity"]);
+  });
+
+  it("returns null for no match or an unusable phone", async () => {
+    const { findAccountIdByPhone } = await import("@shared/buyerIdentity");
+    expect(await findAccountIdByPhone(fakeAdmin({ byPhone: null }).admin, "9876543210")).toBeNull();
+    expect(await findAccountIdByPhone(fakeAdmin({}).admin, "12")).toBeNull();
+  });
+});
