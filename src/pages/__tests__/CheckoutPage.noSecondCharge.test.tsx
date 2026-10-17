@@ -111,6 +111,7 @@ beforeEach(() => {
   navigateSpy.mockClear();
   trackSpy.mockClear();
   window.sessionStorage.clear();
+  window.localStorage.clear();
   (window as unknown as { Razorpay: unknown }).Razorpay = class {
     constructor(opts: RzpOptions) {
       sheets.push(opts);
@@ -184,11 +185,68 @@ describe("CheckoutPage: no second charge", () => {
     await waitFor(() => expect(sheets).toHaveLength(2));
     expect(sheets[1].order_id).toBe("order_1");
     expect(calls("guest-create-order")).toHaveLength(1);
+    // The status check carries the token the order was made with: the server
+    // answers a guest only for that token.
+    const token = calls("guest-create-order")[0][1].body.reuse_token;
+    expect(token).toMatch(/^[0-9a-f]{48}$/);
     expect(calls("verify-razorpay-payment")[0][1].body).toEqual({
       payment_order_id: "po_1",
       is_guest: true,
       status_check: true,
+      reuse_token: token,
     });
+  });
+
+  it("a second tab in the same browser sends the same reuse token, so the server can return the same order", async () => {
+    invokeImpl.fn = async (name) => {
+      if (name === "guest-create-order") return { data: order, error: null };
+      return { data: { available: false }, error: null };
+    };
+    const first = renderCheckout();
+    await fillGuestForm();
+    fireEvent.click(payButtons()[0]);
+    await waitFor(() => expect(sheets).toHaveLength(1));
+    first.unmount();
+
+    // A new tab: its own sessionStorage, the same localStorage.
+    window.sessionStorage.clear();
+    renderCheckout();
+    await fillGuestForm();
+    fireEvent.click(payButtons()[0]);
+    await waitFor(() => expect(sheets).toHaveLength(2));
+
+    const [a, b] = calls("guest-create-order").map(([, opts]) => opts.body.reuse_token);
+    expect(a).toMatch(/^[0-9a-f]{48}$/);
+    expect(b).toBe(a);
+  });
+
+  it("checks a restored guest order with the token it was made with", async () => {
+    window.localStorage.setItem("lu_checkout_reuse_token:off_1", "e5".repeat(24));
+    window.sessionStorage.setItem(
+      "lu_checkout_open_order:off_1",
+      JSON.stringify({
+        paymentOrderId: "po_1",
+        razorpayOrderId: "order_1",
+        amountPaise: 99900,
+        currency: "INR",
+        keyId: "rzp_test_k",
+        offeringTitle: offering.title,
+        isGuest: true,
+        reuseToken: "d4".repeat(24),
+        cartKey: "k",
+        paid: null,
+        savedAt: Date.now(),
+      }),
+    );
+    invokeImpl.fn = async (name, { body }) => {
+      if (name === "verify-razorpay-payment" && body.status_check) return { data: { status: "pending" }, error: null };
+      return { data: { available: false }, error: null };
+    };
+    renderCheckout();
+    await fillGuestForm();
+    fireEvent.click(payButtons()[0]);
+    await waitFor(() => expect(calls("verify-razorpay-payment")).toHaveLength(1));
+    expect(calls("verify-razorpay-payment")[0][1].body.reuse_token).toBe("d4".repeat(24));
   });
 
   it("after a closed sheet, a payment that landed locks Pay instead of charging again", async () => {

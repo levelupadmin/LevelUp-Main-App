@@ -28,6 +28,12 @@ export type OpenOrder = {
   keyId: string;
   offeringTitle: string | null;
   isGuest: boolean;
+  /**
+   * A guest order's reuse token (`guestReuseToken`), sent again with every
+   * status check: the server answers a guest only for the token the order was
+   * made with. Null for a signed-in order.
+   */
+  reuseToken?: string | null;
   /** What the order was priced from; a different cart needs a different order. */
   cartKey: string;
   /** Razorpay's success payload, once its handler fired: money has moved. */
@@ -58,6 +64,7 @@ function isOpenOrder(v: unknown): v is OpenOrder {
     typeof o.currency === "string" &&
     typeof o.keyId === "string" &&
     typeof o.isGuest === "boolean" &&
+    (o.reuseToken === undefined || o.reuseToken === null || typeof o.reuseToken === "string") &&
     typeof o.cartKey === "string" &&
     typeof o.savedAt === "number"
   );
@@ -85,6 +92,51 @@ export function saveOpenOrder(offeringId: string, order: OpenOrder | null): void
   } catch {
     /* storage blocked: the in-memory copy still guards this page view */
   }
+}
+
+const REUSE_TOKEN_PREFIX = "lu_checkout_reuse_token:";
+const REUSE_TOKEN_PATTERN = /^[0-9a-f]{48}$/;
+/** This page view's tokens, for when localStorage is blocked. */
+const memoryReuseTokens = new Map<string, string>();
+
+function newReuseToken(): string | null {
+  try {
+    const bytes = new Uint8Array(24);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The random token this browser sends with a guest order for this offering
+ * (guest-create-order keeps its hash on the order). The server reuses an open
+ * order, and answers a guest status check, only for the same token, so an
+ * order someone else made with this buyer's phone and email is never handed
+ * to this checkout. Kept in localStorage so a reload or a second tab in the
+ * same browser lands on the same Razorpay order; when storage is blocked, the
+ * token lives for this page view. Null only when the browser cannot make a
+ * random value: the server then makes a fresh order every time.
+ */
+export function guestReuseToken(offeringId: string): string | null {
+  const storageKey = REUSE_TOKEN_PREFIX + offeringId;
+  let token = memoryReuseTokens.get(offeringId) ?? null;
+  try {
+    const saved = window.localStorage.getItem(storageKey);
+    if (saved && REUSE_TOKEN_PATTERN.test(saved)) token = saved;
+  } catch {
+    /* storage blocked: keep this page view's token */
+  }
+  token = token ?? newReuseToken();
+  if (!token) return null;
+  memoryReuseTokens.set(offeringId, token);
+  try {
+    window.localStorage.setItem(storageKey, token);
+  } catch {
+    /* storage blocked: the in-memory copy serves this page view */
+  }
+  return token;
 }
 
 /**

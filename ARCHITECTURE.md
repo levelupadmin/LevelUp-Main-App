@@ -119,8 +119,15 @@ cart reopens the same Razorpay order. A captured single payment reads as
 `captured` only when the buyer holds the course, and as `needs_review` until
 then, so the checkout never says "Welcome" for a course nobody granted (a free
 order reads as `captured` from the row). The guard
-lives in one tab: a new tab, a fresh in-app browser or a second device does not see
-it and can still start a second order. The browser Purchase goes out once per
+lives in one tab. guest-create-order adds a narrower one: it hands back an open
+order from the last 10 minutes only to the browser that made it. The checkout sends
+a random token kept per offering in localStorage (`guestReuseToken`), the order
+keeps its sha256 as `notes.reuse_key` (`_shared/guestOrderKey.ts`), and reuse also
+needs the same name, email, phone, coupon and total; anything else gets a fresh
+order. A guest status check needs the same token and otherwise gets the 404 of an
+unknown id. So a second tab in the same browser lands on the same Razorpay order,
+while a fresh in-app browser or a second device can still start a second order.
+The browser Purchase goes out once per
 `razorpay_payment_id` across the checkout and Thank-you (`src/lib/purchaseOnce.ts`).
 
 **Pricing has ONE home: [`supabase/functions/_shared/pricing.ts`](supabase/functions/_shared/pricing.ts).**

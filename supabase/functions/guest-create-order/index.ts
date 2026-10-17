@@ -10,6 +10,7 @@ import {
 import { normalizePhone } from "../_shared/phone.ts";
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
+import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -47,6 +48,10 @@ Deno.serve(async (req) => {
     // Ad attribution from the checkout link (utm_*, fbclid, gclid, ic_eid,
     // _fbp/_fbc). Older clients send utm_* at the top level only; both are read.
     const attribution = sanitizeAttribution(body?.attribution, body ?? {});
+    // The checkout's per-browser token (_shared/guestOrderKey.ts). Its hash
+    // goes on the order; with none, the order can be neither reused nor read
+    // by a guest status check.
+    const reuseKey = await requestReuseKey(body?.reuse_token);
 
     /* ── Validate required fields ── */
     if (!offering_id || !guest_name || !guest_email || !guest_phone) {
@@ -165,28 +170,35 @@ Deno.serve(async (req) => {
     const totalInr = computeTotalInr(afterDiscount, offering.gst_mode, gstInr);
 
     /* ── Reuse a pending order from the last 10 minutes ──
-       Same phone, offering, email, coupon and total, with a Razorpay order on
+       Only an order this browser made (the same reuse token), with the same
+       phone, offering, email, name, coupon and total and a Razorpay order on
        it: return that order instead of making another. A retry after a closed
        payment sheet or a failed attempt lands on the same Razorpay order, which
        accepts one successful payment only, so a double tap or a second attempt
-       cannot charge twice. Mirrors create-razorpay-order's signed-in reuse. */
-    if (totalInr > 0) {
+       cannot charge twice. Anything else gets a fresh order: an existing
+       order's id never goes to a caller without its token, and a corrected
+       name reaches the receipt and the invoice. The answer has the same shape
+       either way. */
+    if (totalInr > 0 && reuseKey) {
       const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data: pending } = await admin
         .from("payment_orders")
-        .select("id, razorpay_order_id, total_inr, coupon_id, guest_email")
+        .select("id, razorpay_order_id, total_inr, coupon_id, guest_email, guest_name, notes")
         .is("user_id", null)
         .eq("offering_id", offering_id)
         .eq("guest_phone", normalizedPhone)
         .eq("status", "created")
+        .eq("notes->>reuse_key", reuseKey)
         .gte("created_at", tenMinAgo)
         .order("created_at", { ascending: false })
         .limit(5);
       const reuse = (pending ?? []).find((row: Record<string, unknown>) =>
+        reuseKeyMatches(row.notes, reuseKey) &&
         typeof row.razorpay_order_id === "string" &&
         Number(row.total_inr) === totalInr &&
         (row.coupon_id ?? null) === (couponDbId ?? null) &&
-        String(row.guest_email ?? "").trim().toLowerCase() === String(guest_email).trim().toLowerCase()
+        String(row.guest_email ?? "").trim().toLowerCase() === String(guest_email).trim().toLowerCase() &&
+        String(row.guest_name ?? "").trim() === String(guest_name).trim()
       );
       const reuseKeyId = Deno.env.get("RAZORPAY_KEY_ID")?.trim();
       if (reuse && reuseKeyId) {
@@ -197,7 +209,6 @@ Deno.serve(async (req) => {
           key_id: reuseKeyId,
           payment_order_id: reuse.id,
           offering_title: offering.title,
-          reused: true,
         });
       }
     }
@@ -222,7 +233,11 @@ Deno.serve(async (req) => {
         ...utmColumns(attribution),
         // The rest of the attribution, plus the buyer's IP and user agent for
         // the server-side Purchase (Meta matching), lives in the notes jsonb.
-        notes: { attribution: { ...attribution, ...requestClientMeta(req.headers) } },
+        // notes.reuse_key ties the order to this browser (see above).
+        notes: {
+          attribution: { ...attribution, ...requestClientMeta(req.headers) },
+          ...(reuseKey ? { reuse_key: reuseKey } : {}),
+        },
         captured_at: totalInr <= 0 ? new Date().toISOString() : null,
       })
       .select("id")

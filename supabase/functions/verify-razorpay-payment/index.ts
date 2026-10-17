@@ -18,6 +18,7 @@ import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCapt
 import { requestClientMeta } from "../_shared/attribution.ts";
 import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
 import { courseGranted, ensureCourseGranted, paidOrder } from "../_shared/captureGrant.ts";
+import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
 
 async function verifyHmac(
   orderId: string,
@@ -98,9 +99,11 @@ Deno.serve(async (req) => {
       payment_order_id,
       is_guest,
       status_check,
+      reuse_token,
     } = await req.json();
     // status_check: the checkout's read-only "did a payment land on this
-    // order?" question (see the branch below). It needs only the order id.
+    // order?" question (see the branch below). It needs the order id, and
+    // from a guest the reuse token the order was made with.
     const statusCheck = status_check === true;
 
     console.log("[verify] Request received:", {
@@ -177,12 +180,18 @@ Deno.serve(async (req) => {
        Asked by the checkout before it starts a new payment after a closed
        Razorpay sheet, and by its "Check payment status" button. It changes
        nothing: it reads this row and, while the row is not captured, asks
-       Razorpay whether any payment on the order went through. A guest holds
-       only the order id the checkout was given, the same id the verify call
-       below accepts. A captured single payment reads as captured only once
-       the buyer holds the course (_shared/captureGrant.ts); a captured free
-       order reads as captured from the row alone. */
+       Razorpay whether any payment on the order went through. A signed-in
+       buyer is scoped to their own orders above. A guest must also send the
+       reuse token the order was made with (_shared/guestOrderKey.ts): an order
+       id alone could come from someone who made the order for another person
+       to pay. Without it the answer is the same 404 as an unknown id. A
+       captured single payment reads as captured only once the buyer holds the
+       course (_shared/captureGrant.ts); a captured free order reads as
+       captured from the row alone. */
     if (statusCheck) {
+      if (!userId && !reuseKeyMatches(po.notes, await requestReuseKey(reuse_token))) {
+        return jsonRes({ error: "Payment order not found" }, 404);
+      }
       return jsonRes(
         await orderPaymentStatus(po, { keyId, keySecret: secret }, {
           courseGranted: () => courseGranted(admin, po),

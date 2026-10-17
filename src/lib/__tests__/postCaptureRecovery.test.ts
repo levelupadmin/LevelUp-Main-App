@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { hmacSha256Hex } from "@shared/crypto";
 import { POST_CAPTURE_RECOVERY_MS, postCaptureRecoverable } from "@shared/postCapture";
+import { reuseKey } from "@shared/guestOrderKey";
 
 /**
  * An order already marked captured is not done until the buyer holds the
@@ -180,6 +181,9 @@ await import("../../../supabase/functions/razorpay-webhook/index.ts");
 await import("../../../supabase/functions/verify-razorpay-payment/index.ts");
 const [webhook, verify] = fake.handlers;
 
+// The guest checkout's token; the order keeps its hash (_shared/guestOrderKey.ts).
+const REUSE_TOKEN = "c3".repeat(24);
+
 const baseOrder = {
   id: "po_1",
   user_id: "user_1",
@@ -191,7 +195,7 @@ const baseOrder = {
   payment_type: null,
   application_id: null,
   bump_offering_ids: [],
-  notes: {},
+  notes: { reuse_key: await reuseKey(REUSE_TOKEN) } as Record<string, unknown>,
   captured_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
 };
 
@@ -224,7 +228,7 @@ const statusCheck = () =>
   verify(
     new Request("https://fn.local/verify-razorpay-payment", {
       method: "POST",
-      body: JSON.stringify({ payment_order_id: "po_1", is_guest: true, status_check: true }),
+      body: JSON.stringify({ payment_order_id: "po_1", is_guest: true, status_check: true, reuse_token: REUSE_TOKEN }),
     }),
   );
 

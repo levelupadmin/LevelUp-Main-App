@@ -16,6 +16,7 @@ import { toast } from "@/lib/toast";
 import { buildVerifyBody, postPaymentNavState, postPaymentRoute, type RazorpaySuccess } from "@/lib/checkoutVerify";
 import {
   cartKey,
+  guestReuseToken,
   loadOpenOrder,
   paymentLocked,
   payStepFor,
@@ -583,7 +584,13 @@ export default function CheckoutPage() {
     const known: OrderPaymentStatus[] = ["captured", "needs_review", "paid", "pending", "none", "unknown"];
     try {
       const { data, error } = await supabase.functions.invoke("verify-razorpay-payment", {
-        body: { payment_order_id: order.paymentOrderId, is_guest: order.isGuest, status_check: true },
+        body: {
+          payment_order_id: order.paymentOrderId,
+          is_guest: order.isGuest,
+          status_check: true,
+          // A guest proves the order is theirs with the token it was made with.
+          ...(order.isGuest ? { reuse_token: order.reuseToken ?? null } : {}),
+        },
       });
       const status = data?.status as OrderPaymentStatus | undefined;
       if (error || !status || !known.includes(status)) return { status: "unknown", razorpay_payment_id: null };
@@ -866,6 +873,9 @@ export default function CheckoutPage() {
       // that pipeline is left exactly as it was.
       const attribution = isStaged ? null : attributionForOrder(offeringId!);
       const key = currentCartKey();
+      // A guest order is tied to this browser: the server reuses an open order,
+      // and answers a status check, only for this token (lib/checkoutOpenOrder).
+      const reuseToken = isAnon ? guestReuseToken(offeringId!) : null;
 
       // Anon: guest-create-order (creates the auth.users row on
       // payment verify, no OTP). Logged-in: create-razorpay-order
@@ -878,6 +888,7 @@ export default function CheckoutPage() {
               guest_email: guestEmail.trim(),
               guest_phone: guestPhone.trim(),
               coupon_code: appliedCoupon?.code ?? null,
+              reuse_token: reuseToken,
               // Top-level utm_* are what the deployed function has always
               // read; `attribution` carries the full set for the new one.
               utm_source: attribution?.utm_source ?? null,
@@ -944,6 +955,7 @@ export default function CheckoutPage() {
         keyId: data.key_id,
         offeringTitle: data.offering_title ?? null,
         isGuest: isAnon,
+        reuseToken,
         cartKey: key,
         paid: null,
         savedAt: Date.now(),
