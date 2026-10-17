@@ -31,7 +31,9 @@ import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
 import { track, whenAnalyticsReady } from "@/lib/analytics";
 import { addPaymentInfoEventId, contentCategoryForTier } from "@shared/metaEvents";
-import { attributionForOrder, captureCheckoutAttribution, checkoutVisitEventId } from "@/lib/attribution";
+import { attributionForOrder, captureCheckoutAttribution, checkoutVisitEventId, landingPageUrl } from "@/lib/attribution";
+import CollapsibleDescription from "@/components/checkout/CollapsibleDescription";
+import AfterYouPay from "@/components/checkout/AfterYouPay";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
@@ -71,50 +73,45 @@ interface LinkedCourse {
  * default — matching what a cold anonymous visitor actually gets.
  */
 function CheckoutSkeleton({ showGuestForm = false }: { showGuestForm?: boolean }) {
+  // Mirrors the loaded card's order: back, header + two description lines,
+  // guest fields (anon), Total, Pay, reassurance pill, refund line. Everything
+  // else on the card sits below Pay, off the first screen.
   return (
-    <div className="space-y-6" role="status" aria-live="polite" aria-busy="true">
+    <div className="space-y-5 md:space-y-6" role="status" aria-live="polite" aria-busy="true">
       <span className="sr-only">Loading secure checkout…</span>
 
       {/* Back link */}
       <SkeletonLine width={56} height={14} className="-mb-3" />
 
-      {/* Header: 64px thumb + title/instructor */}
-      <div className="flex items-start gap-4">
-        <SkeletonBlock className="h-16 w-16 shrink-0 rounded-xl" height={64} />
-        <div className="min-w-0 flex-1 space-y-2 pt-1">
-          <SkeletonLine width="70%" height={20} />
-          <SkeletonLine width="40%" height={14} />
+      {/* Header: thumb + title/instructor + two clamped description lines */}
+      <div className="space-y-3">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <SkeletonBlock className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-xl" height={56} />
+          <div className="min-w-0 flex-1 space-y-2 pt-1">
+            <SkeletonLine width="70%" height={20} />
+            <SkeletonLine width="40%" height={14} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <SkeletonLine width="100%" height={12} />
+          <SkeletonLine width="85%" height={12} />
         </div>
       </div>
 
-      <div className="h-px w-full bg-border" aria-hidden />
-
-      {/* What you'll get */}
-      <div className="space-y-2">
-        <SkeletonLine width={96} height={12} />
-        <SkeletonBlock className="rounded-lg" height={40} />
-        <SkeletonBlock className="rounded-lg" height={40} />
-      </div>
-
-      {/* Guest details (anon checkout) — mirrors the {!user} block:
-          a "Your details" / "Sign in" header row, three labelled inputs
-          (label is `.caption` = 18px, Input is h-10 = 40px, rounded-[12px]),
-          and the two-line reassurance note. Dimensions are shared with the
-          real fields so the anon handoff stays flush. */}
+      {/* Guest details (anon checkout): header row, three labelled inputs
+          (18px label + 44px input), two-line helper note. */}
       {showGuestForm && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <SkeletonLine width={72} height={12} />
             <SkeletonLine width={148} height={12} />
           </div>
-          {/* name / email / phone: 18px label + 40px input */}
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="space-y-1">
               <SkeletonLine width={[64, 92, 100][i]} height={18} />
-              <SkeletonBlock className="rounded-[12px]" height={40} />
+              <SkeletonBlock className="rounded-[12px]" height={44} />
             </div>
           ))}
-          {/* Two-line helper note */}
           <div className="space-y-1.5">
             <SkeletonLine width="100%" height={12} />
             <SkeletonLine width="75%" height={12} />
@@ -122,32 +119,10 @@ function CheckoutSkeleton({ showGuestForm = false }: { showGuestForm?: boolean }
         </div>
       )}
 
-      {/* Coupon field */}
-      <div className="space-y-2">
-        <SkeletonLine width={88} height={12} />
-        <SkeletonBlock className="rounded-md" height={40} />
-      </div>
-
-      <div className="h-px w-full bg-border" aria-hidden />
-
-      {/* Order summary */}
-      <div className="space-y-2.5">
-        <SkeletonLine width={160} height={24} />
-        <div className="space-y-3 pt-1">
-          <div className="flex items-center justify-between">
-            <SkeletonLine width={72} height={14} />
-            <SkeletonLine width={64} height={14} />
-          </div>
-          <div className="flex items-center justify-between">
-            <SkeletonLine width={56} height={14} />
-            <SkeletonLine width={48} height={14} />
-          </div>
-          <div className="h-px w-full bg-border" aria-hidden />
-          <div className="flex items-center justify-between">
-            <SkeletonLine width={48} height={16} />
-            <SkeletonLine width={72} height={16} />
-          </div>
-        </div>
+      {/* Total */}
+      <div className="flex items-center justify-between">
+        <SkeletonLine width={48} height={16} />
+        <SkeletonLine width={72} height={16} />
       </div>
 
       {/* Pay button */}
@@ -225,9 +200,9 @@ function CheckoutColdSkeleton({
   showTrustPanel,
 }: { showGuestForm: boolean; showTrustPanel: boolean }) {
   return (
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 pt-4 md:pt-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
-        <CardContent className="p-6 md:p-8">
+        <CardContent className="p-5 md:p-8">
           <CheckoutSkeleton showGuestForm={showGuestForm} />
         </CardContent>
       </Card>
@@ -796,6 +771,10 @@ export default function CheckoutPage() {
   const hasMrp =
     (offering as any).mrp_inr &&
     Number((offering as any).mrp_inr) > Number(offering.price_inr);
+  // The itemised receipt is shown only when it says more than the total does.
+  const showBreakdown =
+    isStaged || !!hasMrp || discount > 0 || selectedBumps.size > 0 ||
+    (gstAmount > 0 && offering.gst_mode !== "inclusive");
 
   // Pull display metadata for the trust panel. Uses the first linked course
   // as the "what you're buying" preview, with a safe fallback if none exists.
@@ -826,12 +805,21 @@ export default function CheckoutPage() {
     <RevealOnMount
       skeleton={<CheckoutColdSkeleton showGuestForm={!user} showTrustPanel={!isStaged} />}
     >
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 py-12 md:py-20 pb-28 lg:pb-12">
+    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 pt-4 md:pt-20 pb-28 lg:pb-12">
       <Card className="w-full max-w-[560px] border-border bg-surface">
-        <CardContent className="p-6 md:p-8 space-y-6">
-          {/* -- Back link -- */}
+        <CardContent className="p-5 md:p-8 space-y-5 md:space-y-6">
+          {/* -- Back link --
+              A buyer from a www masterclass page (the link names it in
+              mc_course) goes back there: that page opened this tab, so the
+              browser has no history, and the app's own /p/ sales page is one
+              they have never seen. -- */}
           <button
             onClick={() => {
+              const landing = landingPageUrl();
+              if (landing) {
+                window.location.href = landing;
+                return;
+              }
               if (offering?.slug) navigate(`/p/${offering.slug}`);
               else if (offeringId) navigate(`/browse`);
               else navigate(-1);
@@ -848,18 +836,17 @@ export default function CheckoutPage() {
             {isStaged && stagedLabel && (
               <Badge variant="secondary" className="mb-2">{stagedLabel}</Badge>
             )}
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-3 sm:gap-4">
               {(offering.thumbnail_url || offering.banner_url) && (
                 <img
                   src={offering.thumbnail_url || offering.banner_url || ""}
                   alt=""
-                  loading="lazy"
                   decoding="async"
-                  className="h-16 w-16 rounded-xl object-cover shrink-0"
+                  className="h-14 w-14 sm:h-16 sm:w-16 rounded-xl object-cover shrink-0"
                 />
               )}
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-foreground">
+                <h1 className="text-lg sm:text-xl font-semibold leading-snug text-foreground">
                   {offering.title}
                 </h1>
                 {offering.instructor_name && (
@@ -876,77 +863,12 @@ export default function CheckoutPage() {
                  paymentType === "balance" ? "Complete your remaining balance payment." : ""}
               </p>
             )}
+            {/* Two lines behind "Read more": the full paragraph pushed the
+                form and Pay two to three screens down on a 390px phone. */}
             {!isStaged && offering.description && (
-              <p className="text-sm text-muted-foreground mt-2">
-                {offering.description}
-              </p>
+              <CollapsibleDescription text={offering.description} />
             )}
           </div>
-
-          <Separator className="bg-border" />
-
-          {/* -- What you get -- */}
-          {linkedCourses.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Included courses
-              </p>
-              {linkedCourses.map((lc) => (
-                <div
-                  key={lc.course_id}
-                  className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2"
-                >
-                  <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm text-foreground">
-                    {(lc.courses as any)?.title ?? "Course"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Testimonials */}
-          {!isStaged && (() => {
-            try {
-              const testimonials = (offering as any).checkout_testimonials || [];
-              if (!Array.isArray(testimonials) || testimonials.length === 0) return null;
-              return (
-                <div className="space-y-3">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What students say</p>
-                  {testimonials.map((t: any, i: number) => (
-                    <div key={i} className="flex gap-3 rounded-lg bg-surface-2 px-4 py-3">
-                      {t.photo_url && <img src={t.photo_url} alt={t.name} className="h-10 w-10 rounded-full object-cover shrink-0" />}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground italic">"{t.quote}"</p>
-                        <p className="text-xs text-muted-foreground mt-1">{t.name}{t.title ? ` · ${t.title}` : ""}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            } catch { return null; }
-          })()}
-
-          {/* Value bullets */}
-          {!isStaged && (() => {
-            try {
-              const bullets = (offering as any).checkout_bullets || [];
-              if (!Array.isArray(bullets) || bullets.length === 0) return null;
-              return (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What you get</p>
-                  <ul className="space-y-1.5">
-                    {bullets.map((b: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-foreground">
-                        <CheckCircle2 className="h-4 w-4 text-accent-emerald shrink-0 mt-0.5" />
-                        <span>{b}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            } catch { return null; }
-          })()}
 
           {/* -- Custom fields -- */}
           {customFields.length > 0 && (
@@ -1228,12 +1150,33 @@ export default function CheckoutPage() {
           </div>
           )}
 
-          <Separator className="bg-border" />
+          <Separator className="bg-border hidden sm:block" />
 
           {/* -- Order summary --
-              Dotted-leader rows (label … value, like a printed receipt) under
-              an Instrument-Serif heading. The leader is a flex-1 dotted border
-              between each label and its amount. */}
+              One price, GST inside it, nothing else on the order: a single
+              Total line keeps Pay on the first screen of a phone. Coupons,
+              add-ons, an MRP or exclusive GST bring back the itemised receipt. -- */}
+          {!showBreakdown ? (
+            <div className="space-y-0.5">
+              <div className="flex items-baseline gap-2 text-base font-semibold">
+                <span className="text-foreground shrink-0">Total</span>
+                <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
+                <CountUp
+                  immediate
+                  value={total}
+                  prefix="₹"
+                  className="text-foreground shrink-0 tabular-nums"
+                />
+              </div>
+              {gstAmount > 0 && (
+                <p className="text-[11px] text-muted-foreground text-right">
+                  Includes ₹{gstAmount.toLocaleString("en-IN")} GST
+                </p>
+              )}
+            </div>
+          ) : (
+          // Itemised receipt: dotted-leader rows (label … value, like a
+          // printed receipt) under an Instrument-Serif heading.
           <div className="space-y-2.5">
             <h2 className="font-['Instrument_Serif'] text-2xl italic text-foreground leading-none">
               Order summary
@@ -1312,11 +1255,7 @@ export default function CheckoutPage() {
               )}
             </div>
           </div>
-
-          {/* -- Trust signals -- */}
-          <div className="flex flex-col items-center gap-2">
-            <GuaranteeBadge days={offering.refund_policy_days} />
-          </div>
+          )}
 
           {/* -- Pay button -- */}
           {/* total <= 0 is a valid, payable state for non-staged orders (free
@@ -1366,6 +1305,84 @@ export default function CheckoutPage() {
                 : "7-day refund"}
             </span>
           </div>
+          {/* -- Trust signals -- */}
+          <div className="flex flex-col items-center gap-2">
+            <GuaranteeBadge days={offering.refund_policy_days} />
+          </div>
+
+
+          {/* -- Below the decision: what happens next, what's included, and
+              what students said. On a phone all of this sits under Pay. -- */}
+          {!isStaged && (
+            <>
+              <Separator className="bg-border" />
+              <AfterYouPay isGuest={!user} />
+            </>
+          )}
+
+          {/* Value bullets */}
+          {!isStaged && (() => {
+            try {
+              const bullets = (offering as any).checkout_bullets || [];
+              if (!Array.isArray(bullets) || bullets.length === 0) return null;
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What you get</p>
+                  <ul className="space-y-1.5">
+                    {bullets.map((b: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                        <CheckCircle2 className="h-4 w-4 text-accent-emerald shrink-0 mt-0.5" />
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {/* -- What you get -- */}
+          {linkedCourses.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Included courses
+              </p>
+              {linkedCourses.map((lc) => (
+                <div
+                  key={lc.course_id}
+                  className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2"
+                >
+                  <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm text-foreground">
+                    {(lc.courses as any)?.title ?? "Course"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Testimonials: quote, name and programme label only. No photos:
+              reviews show as recorded, never with a stock or reused face. */}
+          {!isStaged && (() => {
+            try {
+              const testimonials = (offering as any).checkout_testimonials || [];
+              if (!Array.isArray(testimonials) || testimonials.length === 0) return null;
+              return (
+                <div className="space-y-3">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What students say</p>
+                  {testimonials.map((t: any, i: number) => (
+                    <div key={i} className="flex gap-3 rounded-lg bg-surface-2 px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground italic">"{t.quote}"</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t.name}{t.title ? ` · ${t.title}` : ""}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
         </CardContent>
       </Card>
 

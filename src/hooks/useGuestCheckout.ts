@@ -12,6 +12,22 @@ import { toast } from "@/lib/toast";
  * The form is also rendered (and prefilled) for logged-in users who have no
  * full_name/email/phone on file yet, so they don't have to retype.
  */
+/**
+ * Bring the first field that needs the buyer into view and focus it. The sticky
+ * Pay bar can be tapped while the form is off screen; a toast alone left them
+ * hunting for what was wrong.
+ */
+function focusField(id: string) {
+  try {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.focus({ preventScroll: true });
+  } catch {
+    /* focus is a convenience, never a blocker */
+  }
+}
+
 export function useGuestCheckout(user: User | null) {
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
@@ -45,17 +61,20 @@ export function useGuestCheckout(user: User | null) {
    */
   function validateGuest(): boolean {
     setGuestTouched({ name: true, email: true, phone: true });
-    if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
-      toast.error("Please fill in name, email and phone");
+    if (!guestName.trim()) {
+      toast.error("Please enter your name");
+      focusField("guest-name");
       return false;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) {
-      toast.error("Please enter a valid email");
+    if (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) {
+      toast.error(guestEmail.trim() ? "Please enter a valid email" : "Please enter your email");
+      focusField("guest-email");
       return false;
     }
     const digits = guestPhone.replace(/\D/g, "");
     if (!(digits.length === 10 || (digits.length === 12 && digits.startsWith("91")))) {
       toast.error("Please enter a valid 10-digit Indian phone number");
+      focusField("guest-phone");
       return false;
     }
     return true;

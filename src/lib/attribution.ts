@@ -126,3 +126,20 @@ export function attributionForOrder(offeringId: string): Attribution {
   }
   return sanitizeAttribution({ ...stored, fbp, fbc, ic_eid: ic, event_source_url: eventSourceUrl });
 }
+
+/**
+ * The www masterclass page this visit came from, when the checkout link named
+ * it (mc_course). The landing page opens checkout in a new tab, so the browser
+ * has no history to go back to; "Back" uses this instead of the app's own sales
+ * page, which the buyer has never seen.
+ */
+export function landingPageUrl(): string | null {
+  try {
+    const stored = JSON.parse(readStore(STORE_KEY) || "{}") as Record<string, unknown>;
+    const slug = typeof stored.mc_course === "string" ? stored.mc_course : "";
+    if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(slug)) return null;
+    return `https://www.leveluplearning.in/masterclass/${slug}`;
+  } catch {
+    return null;
+  }
+}
