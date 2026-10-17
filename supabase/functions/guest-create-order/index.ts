@@ -9,6 +9,7 @@ import {
 } from "../_shared/pricing.ts";
 import { normalizePhone } from "../_shared/phone.ts";
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -35,18 +36,17 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    const body = await req.json();
     const {
       offering_id,
       guest_name,
       guest_email,
       guest_phone,
       coupon_code,
-      utm_source,
-      utm_medium,
-      utm_campaign,
-      utm_content,
-      utm_term,
-    } = await req.json();
+    } = body;
+    // Ad attribution from the checkout link (utm_*, fbclid, gclid, ic_eid,
+    // _fbp/_fbc). Older clients send utm_* at the top level only; both are read.
+    const attribution = sanitizeAttribution(body?.attribution, body ?? {});
 
     /* ── Validate required fields ── */
     if (!offering_id || !guest_name || !guest_email || !guest_phone) {
@@ -178,11 +178,10 @@ Deno.serve(async (req) => {
         guest_name,
         guest_email,
         guest_phone: normalizedPhone,
-        utm_source: utm_source || null,
-        utm_medium: utm_medium || null,
-        utm_campaign: utm_campaign || null,
-        utm_content: utm_content || null,
-        utm_term: utm_term || null,
+        ...utmColumns(attribution),
+        // The rest of the attribution, plus the buyer's IP and user agent for
+        // the server-side Purchase (Meta matching), lives in the notes jsonb.
+        notes: { attribution: { ...attribution, ...requestClientMeta(req.headers) } },
         captured_at: totalInr <= 0 ? new Date().toISOString() : null,
       })
       .select("id")

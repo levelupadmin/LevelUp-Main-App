@@ -31,6 +31,7 @@ import { isAndroid, isNative } from "@/lib/platform";
 import { hapticImpact, hapticSelection, tapTick } from "@/lib/haptics";
 import { track } from "@/lib/analytics";
 import { contentCategoryForTier } from "@shared/metaEvents";
+import { attributionForOrder, captureCheckoutAttribution } from "@/lib/attribution";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
@@ -327,6 +328,14 @@ export default function CheckoutPage() {
     guestPhone, setGuestPhone, guestTouched, setGuestTouched, validateGuest,
   } = useGuestCheckout(user);
 
+  /* -- Ad attribution: keep the landing page's utm_* / fbclid / gclid /
+        ic_eid for this visit, so the order row can be tied to the ad. Read
+        once per offering; the query string is gone after a /login round trip. -- */
+  useEffect(() => {
+    if (!offeringId) return;
+    captureCheckoutAttribution(window.location.search, offeringId);
+  }, [offeringId]);
+
   /* -- Load offering data -- */
   useEffect(() => {
     // Wait for auth to settle; load works for both signed-in users
@@ -543,6 +552,11 @@ export default function CheckoutPage() {
         return;
       }
 
+      // Ad attribution for the order row (utm_*, fbclid, gclid, ic_eid, and
+      // the _fbp/_fbc cookies read now). Staged cohort payments carry none:
+      // that pipeline is left exactly as it was.
+      const attribution = isStaged ? null : attributionForOrder(offeringId!);
+
       // Anon: guest-create-order (creates the auth.users row on
       // payment verify, no OTP). Logged-in: create-razorpay-order
       // (existing path, ties to user.id).
@@ -554,6 +568,14 @@ export default function CheckoutPage() {
               guest_email: guestEmail.trim(),
               guest_phone: guestPhone.trim(),
               coupon_code: appliedCoupon?.code ?? null,
+              // Top-level utm_* are what the deployed function has always
+              // read; `attribution` carries the full set for the new one.
+              utm_source: attribution?.utm_source ?? null,
+              utm_medium: attribution?.utm_medium ?? null,
+              utm_campaign: attribution?.utm_campaign ?? null,
+              utm_content: attribution?.utm_content ?? null,
+              utm_term: attribution?.utm_term ?? null,
+              attribution,
             },
           })
         : await supabase.functions.invoke("create-razorpay-order", {
@@ -567,7 +589,7 @@ export default function CheckoutPage() {
                     payment_type: paymentType,
                     application_id: applicationId,
                   }
-                : {}),
+                : { attribution }),
             },
           });
 
