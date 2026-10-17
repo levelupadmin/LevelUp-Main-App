@@ -14,6 +14,8 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { schedulePostCapture } from "../_shared/postCapture.ts";
+import { requestClientMeta } from "../_shared/attribution.ts";
 
 async function verifyHmac(
   orderId: string,
@@ -511,6 +513,15 @@ Deno.serve(async (req) => {
         .single();
       responseGuestEmail = poForEmail?.guest_email || null;
     }
+
+    // ── One-time post-capture work (server Meta Purchase) ────────────
+    // Runs once per order whichever capture path gets here first (see
+    // _shared/postCapture.ts); skipped for staged cohort payments. In the
+    // background, so the buyer's redirect is not delayed.
+    schedulePostCapture(admin, payment_order_id, {
+      source: "verify",
+      requestMeta: requestClientMeta(req.headers),
+    });
 
     // ── Generate PDF invoice + queue receipt email ───────────────────
     // Fire-and-forget; the client doesn't need to wait for the receipt

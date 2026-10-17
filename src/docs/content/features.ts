@@ -452,10 +452,17 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "meta-capi",
-    title: "Meta Conversions API (server-side dedup)",
-    summary: "Server-side purchase events sent to Meta with event_id matching the browser pixel, so Meta deduplicates and each purchase counts once but is robust to ad-blockers.",
+    title: "Meta Conversions API (server-side Purchase)",
+    summary: "After a single-payment order is captured, the server sends Meta a Purchase with the same event_id as the browser pixel (purchase_<razorpay_payment_id>), so each sale counts once even when the browser event is lost.",
     area: "Analytics",
-    status: "shipped",
+    status: "partial",
+    codeRefs: [
+      "supabase/functions/_shared/metaCapi.ts",
+      "supabase/functions/_shared/postCapture.ts",
+      "supabase/functions/razorpay-webhook/index.ts",
+      "supabase/functions/verify-razorpay-payment/index.ts",
+    ],
+    details: "Code is in place but sends nothing until the Supabase secret META_CAPI_ACCESS_TOKEN is set (pixel id comes from analytics_settings, or META_PIXEL_ID). Runs once per order, whichever capture path gets there first (claim in payment_orders.notes.post_capture). Hashed em/ph/external_id, plus fbc/fbp/IP/user agent stored on the order at creation. Staged cohort payments are skipped. Optional: META_CAPI_TEST_EVENT_CODE for Events Manager test events.",
   },
   {
     slug: "funnel-analytics",

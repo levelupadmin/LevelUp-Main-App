@@ -17,6 +17,7 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { schedulePostCapture } from "../_shared/postCapture.ts";
 
 async function verifySignature(
   body: string,
@@ -317,6 +318,12 @@ Deno.serve(async (req) => {
           .eq("id", po.id);
       }
     }
+
+    // One-time post-capture work (server Meta Purchase), shared with
+    // verify-razorpay-payment and claimed once per order (_shared/postCapture.ts).
+    // Skipped for staged cohort payments. In the background, so Razorpay gets
+    // its 200 without waiting on Meta.
+    schedulePostCapture(admin, po.id, { source: "razorpay-webhook" });
 
     return jsonRes({ success: true, enrolment: enrolmentId ? "created" : "exists" });
   } catch (err) {
