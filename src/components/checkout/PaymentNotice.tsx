@@ -122,12 +122,12 @@ export default function PaymentNotice({ issue, courseTitle, onOpenCourse, onSign
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pl-6">
                   {issue.kind === "already_enrolled" && (
-                    <Button size="sm" variant="champagne" className="h-9" onClick={issue.guest ? onSignIn : onOpenCourse}>
+                    <Button size="sm" variant="champagne" className="h-11" onClick={issue.guest ? onSignIn : onOpenCourse}>
                       {issue.guest ? "Sign in to watch" : "Open your course"}
                     </Button>
                   )}
                   {issue.kind === "identity_mismatch" && (
-                    <Button size="sm" variant="outline" className="h-9" onClick={onSignIn}>
+                    <Button size="sm" variant="outline" className="h-11" onClick={onSignIn}>
                       Sign in instead
                     </Button>
                   )}
@@ -139,7 +139,7 @@ export default function PaymentNotice({ issue, courseTitle, onOpenCourse, onSign
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 min-h-[36px] text-xs font-medium text-[hsl(var(--cream))] hover:underline"
+                    className="inline-flex items-center gap-1.5 min-h-[44px] px-1 text-xs font-medium text-[hsl(var(--cream))] hover:underline"
                   >
                     <MessageCircle className="h-3.5 w-3.5" aria-hidden />
                     WhatsApp us

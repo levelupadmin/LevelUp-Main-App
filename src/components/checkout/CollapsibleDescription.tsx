@@ -29,7 +29,7 @@ export default function CollapsibleDescription({ text, className }: { text: stri
           aria-expanded={open}
           aria-controls={id}
           onClick={() => setOpen((o) => !o)}
-          className="inline-flex items-center min-h-[32px] text-xs font-medium text-[hsl(var(--cream))] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] rounded-sm"
+          className="inline-flex items-center min-h-[44px] -my-1.5 text-xs font-medium text-[hsl(var(--cream))] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] rounded-sm"
         >
           {open ? "Show less" : "Read more"}
         </button>
