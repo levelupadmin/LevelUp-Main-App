@@ -45,7 +45,7 @@ The web app is authoritative; the native shells wrap it and are read-only on buy
 | **Refunds / invoices** | `pages/ProfilePage.tsx`, `components/profile/`, `lib/invoice.ts` | `process-refund`, `generate-invoice-pdf` |
 | **Certificates** | `components/certificates/`, `hooks/useCertificateAutoGenerate.ts`, `lib/certificate-generator.ts` | (client-generated) |
 | **Admin** | `pages/admin/*` (37 pages), `components/admin/` | `admin-api`, `send-bulk-email`, `send-notification`, `admin-grant-access` (CSV import / add student), `admin-update-user` (edit login email/phone), RPCs `admin_duplicate_offering` / `admin_duplicate_course` |
-| **Email / notifications** | `components/notifications/`, `hooks/useNotifications.ts` | `queue-transactional-email`, `process-email-queue`, `_shared/email-templates/` |
+| **Email / notifications** | `components/notifications/`, `hooks/useNotifications.ts` | `queue-transactional-email`, `process-email-queue`, `_shared/email-templates/`, purchase receipt in `_shared/receipt.ts` |
 
 Cross-cutting: `contexts/AuthContext.tsx` (session + user), `components/guards/` (route
 gating), `lib/platform.ts` (`isNative`/`isAndroid`), `lib/analytics.ts` (pixels),
@@ -70,7 +70,18 @@ Razorpay checkout modal → payment
         │
         ▼
 enrolment created  →  access granted
+        │
+        ▼
+post-capture step (_shared/postCapture.ts, once per order, single payments only):
+server Meta Purchase (Conversions API) + receipt email with the invoice link
 ```
+
+Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
+after their own work. The first caller claims the order by writing
+`payment_orders.notes.post_capture`; the other skips. Results (Meta send,
+receipt) are recorded under that key. Ad attribution from the checkout link
+(`utm_*` columns, the rest in `notes.attribution`) is written by the two order
+functions at creation; see `_shared/attribution.ts`.
 
 **Pricing has ONE home: [`supabase/functions/_shared/pricing.ts`](supabase/functions/_shared/pricing.ts).**
 `couponDiscountInr`, `gstInr`, `totalInr`, `toPaise`, `couponInvalidReason`. Used by

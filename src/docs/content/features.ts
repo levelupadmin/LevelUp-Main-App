@@ -114,7 +114,7 @@ export const FEATURES: Feature[] = [
       "src/pages/RefundPolicy.tsx",
     ],
     appRefs: ["/admin/revenue", "/refunds"],
-    details: "Masterclass rule, word for word as on the marketing site: \"Full refund within 7 days of buying, if you have watched less than a quarter of the course.\" It lives in _shared/refundPolicy.ts and shows on the checkout and offering page (GuaranteeBadge, masterclass tier only), on /refunds section 1 and in the purchase receipt. Live programmes and workshops keep their own terms on /refunds.",
+    details: "Masterclass rule, word for word as on the marketing site: \"Full refund within 7 days of buying, if you have watched less than a quarter of the course.\" It lives in _shared/refundPolicy.ts and shows on the checkout and offering page (GuaranteeBadge, masterclass tier only), on /refunds section 1, and is passed to the purchase receipt as {{refund_policy}} (the live template does not print it yet). Live programmes and workshops keep their own terms on /refunds.",
   },
   {
     slug: "duplicate-purchase-guard",
@@ -522,9 +522,15 @@ export const FEATURES: Feature[] = [
   {
     slug: "invoice-pdf",
     title: "GST invoice PDF",
-    summary: "Per-order invoice generated at capture time with our GST number, totals, customer details. Stored in Supabase Storage, link emailed to buyer.",
+    summary: "Per-order invoice generated at capture time with our GST number, totals, customer details. Stored in Supabase Storage, link emailed to buyer in the purchase receipt.",
     area: "Payment",
     status: "shipped",
+    codeRefs: [
+      "supabase/functions/generate-invoice-pdf/index.ts",
+      "supabase/functions/_shared/receipt.ts",
+      "supabase/functions/_shared/postCapture.ts",
+    ],
+    details: "The receipt email (template payment_receipt) is sent once per captured single-payment order from the post-capture step, whichever of verify-razorpay-payment and razorpay-webhook claims the order first. A guest order is mailed at the address typed at checkout; a signed-in order at the account email. The invoice link is a 90-day signed URL, or the profile page when the PDF could not be made. Result recorded in payment_orders.notes.post_capture.receipt. Before 17 Oct 2026 no receipt was ever sent (the old call left out user_id). Staged cohort payments keep the older path in verify.",
   },
 
   /* ─────────── Platform ─────────── */

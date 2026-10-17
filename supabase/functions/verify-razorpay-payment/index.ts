@@ -14,7 +14,7 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
-import { schedulePostCapture } from "../_shared/postCapture.ts";
+import { schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { requestClientMeta } from "../_shared/attribution.ts";
 
 async function verifyHmac(
@@ -514,7 +514,7 @@ Deno.serve(async (req) => {
       responseGuestEmail = poForEmail?.guest_email || null;
     }
 
-    // ── One-time post-capture work (server Meta Purchase) ────────────
+    // ── One-time post-capture work (server Meta Purchase, receipt) ───
     // Runs once per order whichever capture path gets here first (see
     // _shared/postCapture.ts); skipped for staged cohort payments. In the
     // background, so the buyer's redirect is not delayed.
@@ -523,12 +523,16 @@ Deno.serve(async (req) => {
       requestMeta: requestClientMeta(req.headers),
     });
 
-    // ── Generate PDF invoice + queue receipt email ───────────────────
+    // ── Generate PDF invoice + queue receipt email (staged payments) ──
+    // Single-payment orders get their invoice and receipt from the
+    // post-capture step above (_shared/receipt.ts), once per order whichever
+    // capture path wins. This older block stays as it was for staged cohort
+    // payments only, which that step leaves alone.
     // Fire-and-forget; the client doesn't need to wait for the receipt
     // pipeline before showing the ThankYou page. If either step fails,
     // log and continue; the user can still re-download via the
     // dashboard, and we can retry the email queue from admin.
-    void (async () => {
+    if (po.payment_type || po.application_id) void (async () => {
       try {
         const supaUrl = Deno.env.get("SUPABASE_URL")!;
         const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

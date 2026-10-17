@@ -8,7 +8,10 @@
  * absent); Postgres lets exactly one caller win, so the work below runs once per
  * order, whatever the race between the two paths.
  *
- * Today's work: the server copy of the Meta Purchase (Conversions API).
+ * The work, each step caught and recorded on its own:
+ *   1. the server copy of the Meta Purchase (Conversions API);
+ *   2. the purchase receipt email (_shared/receipt.ts), with the invoice PDF
+ *      link when generate-invoice-pdf can make one.
  *
  * Scope rules:
  *   - Staged cohort payments (payment_type / application_id set) are skipped
@@ -16,20 +19,30 @@
  *   - Nothing here can fail the capture: every step is caught and logged, and
  *     the callers run this after their own work is done (in the background via
  *     EdgeRuntime.waitUntil where available).
- *   - Missing configuration (no META_CAPI_ACCESS_TOKEN, no pixel id) is a
- *     logged no-op, so the code can ship before the secret is set.
+ *   - Missing configuration (no META_CAPI_ACCESS_TOKEN, no pixel id, no email
+ *     helpers) is a logged no-op, so the code can ship before it is set.
+ *
+ * Edge functions import `schedulePostCapture` from postCaptureRuntime.ts, which
+ * passes the email helpers in. This file stays free of URL imports so vitest
+ * can run it.
  */
 import { buildPurchaseEvent, sendCapiEvents, type CapiOrder } from "./metaCapi.ts";
+import { sendPurchaseReceipt, type ReceiptEmailDeps } from "./receipt.ts";
 
 // deno-lint-ignore no-explicit-any
-type Admin = { from: (table: string) => any };
+type Admin = { from: (table: string) => any; storage?: any };
 
 export type PostCaptureOptions = {
   /** "verify" | "razorpay-webhook", recorded on the claim. */
   source: string;
   /** The buyer's request IP / user agent, used only when the order has none stored. */
   requestMeta?: { client_ip?: string; client_user_agent?: string };
+  /** Email helpers for the receipt. Without them the receipt step is skipped. */
+  email?: ReceiptEmailDeps;
 };
+
+type OfferingRow = { title: string | null; product_tier: string | null; refund_policy_days: number | null };
+type UserRow = { email: string | null; phone: string | null; full_name: string | null };
 
 type OrderRow = CapiOrder & {
   status: string;
@@ -90,7 +103,13 @@ async function resolvePixelId(admin: Admin): Promise<string | null> {
   return null;
 }
 
-async function sendServerPurchase(admin: Admin, po: OrderRow, opts: PostCaptureOptions): Promise<void> {
+async function sendServerPurchase(
+  admin: Admin,
+  po: OrderRow,
+  opts: PostCaptureOptions,
+  offering: OfferingRow | null,
+  user: UserRow | null,
+): Promise<void> {
   const accessToken = env("META_CAPI_ACCESS_TOKEN");
   if (!accessToken) {
     console.log("[post-capture] META_CAPI_ACCESS_TOKEN not set; server Purchase skipped for", po.id);
@@ -104,24 +123,11 @@ async function sendServerPurchase(admin: Admin, po: OrderRow, opts: PostCaptureO
     return;
   }
 
-  const { data: offering } = await admin
-    .from("offerings")
-    .select("title, product_tier")
-    .eq("id", po.offering_id)
-    .maybeSingle();
-  let userEmail: string | null = null;
-  let userPhone: string | null = null;
-  if (po.user_id) {
-    const { data: u } = await admin.from("users").select("email, phone").eq("id", po.user_id).maybeSingle();
-    userEmail = u?.email ?? null;
-    userPhone = u?.phone ?? null;
-  }
-
   const event = await buildPurchaseEvent(po, {
     offeringTitle: offering?.title ?? null,
     productTier: offering?.product_tier ?? null,
-    userEmail,
-    userPhone,
+    userEmail: user?.email ?? null,
+    userPhone: user?.phone ?? null,
     fallbackClientIp: opts.requestMeta?.client_ip ?? null,
     fallbackUserAgent: opts.requestMeta?.client_user_agent ?? null,
     siteUrl: env("SITE_URL") ?? "https://app.leveluplearning.in",
@@ -150,6 +156,83 @@ async function sendServerPurchase(admin: Admin, po: OrderRow, opts: PostCaptureO
     ...(result.ok ? { fbtrace_id: result.fbtraceId } : { error: result.error }),
     at: new Date().toISOString(),
   });
+}
+
+/**
+ * The invoice PDF's signed link (90 days), or null. generate-invoice-pdf makes
+ * and stores the file; any failure leaves the receipt pointing at the profile
+ * page, where the buyer can download it.
+ */
+async function invoiceLink(admin: Admin, orderId: string): Promise<string | null> {
+  const url = env("SUPABASE_URL");
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key || !admin.storage) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, "")}/functions/v1/generate-invoice-pdf`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ payment_order_id: orderId }),
+      signal: controller.signal,
+    });
+    const json = (await res.json().catch(() => ({}))) as { path?: unknown };
+    if (!res.ok || typeof json.path !== "string") {
+      console.warn("[post-capture] invoice PDF not made for", orderId, res.status);
+      return null;
+    }
+    const signed = await admin.storage.from("invoices").createSignedUrl(json.path, 60 * 60 * 24 * 90);
+    return typeof signed?.data?.signedUrl === "string" ? signed.data.signedUrl : null;
+  } catch (e) {
+    console.warn("[post-capture] invoice PDF failed for", orderId, e);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function sendReceipt(
+  admin: Admin,
+  po: OrderRow,
+  opts: PostCaptureOptions,
+  offering: OfferingRow | null,
+  user: UserRow | null,
+): Promise<void> {
+  if (!opts.email) {
+    await recordResult(admin, po.id, "receipt", { skipped: "no_email_helpers", at: new Date().toISOString() });
+    return;
+  }
+  const appUrl = env("SITE_URL") ?? "https://app.leveluplearning.in";
+  let coursePath: string | null = null;
+  try {
+    const { data: link } = await admin
+      .from("offering_courses")
+      .select("course_id")
+      .eq("offering_id", po.offering_id)
+      .limit(1)
+      .maybeSingle();
+    if (link?.course_id) coursePath = `/courses/${link.course_id}`;
+  } catch {
+    /* the receipt links the library instead */
+  }
+  const result = await sendPurchaseReceipt(
+    admin,
+    po,
+    {
+      offeringTitle: offering?.title ?? null,
+      productTier: offering?.product_tier ?? null,
+      refundPolicyDays: offering?.refund_policy_days ?? null,
+      user,
+      appUrl,
+      invoiceUrl: await invoiceLink(admin, po.id),
+      allowedUrlOrigins: [appUrl, env("SUPABASE_URL") ?? ""].filter(Boolean),
+      coursePath,
+    },
+    opts.email,
+  );
+  if (result.sent) console.log("[post-capture] receipt queued", { order: po.id, message_id: result.message_id });
+  else console.warn("[post-capture] receipt not sent", { order: po.id, ...result });
+  await recordResult(admin, po.id, "receipt", { ...result, at: new Date().toISOString() });
 }
 
 /**
@@ -190,10 +273,36 @@ export async function runPostCapture(admin: Admin, paymentOrderId: string, opts:
     if (!claimed || claimed.length === 0) return; // the other path got here first
     order.notes = claimedNotes;
 
+    let offering: OfferingRow | null = null;
+    let user: UserRow | null = null;
     try {
-      await sendServerPurchase(admin, order, opts);
+      const { data } = await admin
+        .from("offerings")
+        .select("title, product_tier, refund_policy_days")
+        .eq("id", order.offering_id)
+        .maybeSingle();
+      offering = (data as OfferingRow | null) ?? null;
+      if (order.user_id) {
+        const { data: u } = await admin
+          .from("users")
+          .select("email, phone, full_name")
+          .eq("id", order.user_id)
+          .maybeSingle();
+        user = (u as UserRow | null) ?? null;
+      }
+    } catch (e) {
+      console.warn("[post-capture] offering/buyer read failed", order.id, e);
+    }
+
+    try {
+      await sendServerPurchase(admin, order, opts, offering, user);
     } catch (e) {
       console.error("[post-capture] server Purchase threw", order.id, e);
+    }
+    try {
+      await sendReceipt(admin, order, opts, offering, user);
+    } catch (e) {
+      console.error("[post-capture] receipt threw", order.id, e);
     }
   } catch (e) {
     console.error("[post-capture] unexpected error", paymentOrderId, e);
