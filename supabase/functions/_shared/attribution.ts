@@ -45,12 +45,18 @@ export type AttributionRecord = Attribution & {
 
 const MAX_LEN = 300;
 const URL_MAX_LEN = 500;
-const FB_ID_RE = /^fb\.\d\.\d{10,16}\.[A-Za-z0-9_.\-]+$/;
+const FB_ID_RE = /^fb\.\d\.\d{10,16}\.[A-Za-z0-9_.-]+$/;
 
 function clean(v: unknown, max = MAX_LEN): string | undefined {
   if (typeof v !== "string") return undefined;
   // Strip control characters; keep everything else as typed by the ad platform.
-  const s = v.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  const s = Array.from(v)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code > 0x1f && code !== 0x7f;
+    })
+    .join("")
+    .trim();
   if (!s) return undefined;
   return s.slice(0, max);
 }

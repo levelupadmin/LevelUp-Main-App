@@ -187,7 +187,7 @@ describe("runPostCapture receipt step", () => {
     await runPostCapture(admin, "po_1", { source: "razorpay-webhook", email: d });
     await runPostCapture(admin, "po_1", { source: "verify", email: d });
     expect(d.enqueueEmail).toHaveBeenCalledTimes(1);
-    const post = (state.row.notes as Record<string, any>).post_capture;
+    const post = (state.row.notes as { post_capture: { receipt: { sent: boolean }; capi: { skipped?: string } } }).post_capture;
     expect(post.receipt.sent).toBe(true);
     expect(post.capi.skipped).toBe("no_token");
   });

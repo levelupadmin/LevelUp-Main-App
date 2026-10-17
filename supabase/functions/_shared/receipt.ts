@@ -32,7 +32,9 @@ import { masterclassRefundSentence, watchRuleApplies } from "./refundPolicy.ts";
 
 export const RECEIPT_TEMPLATE_KEY = "payment_receipt";
 
+// The service-role client, kept loose so a test double fits.
 // deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = any;
 
 export type ReceiptEmailDeps = {

@@ -29,7 +29,9 @@
 import { buildPurchaseEvent, sendCapiEvents, type CapiOrder } from "./metaCapi.ts";
 import { sendPurchaseReceipt, type ReceiptEmailDeps } from "./receipt.ts";
 
+// The service-role client, kept loose so a test double fits.
 // deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = { from: (table: string) => any; storage?: any };
 
 export type PostCaptureOptions = {

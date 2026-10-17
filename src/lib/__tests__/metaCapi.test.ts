@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { buildPurchaseEvent, sendCapiEvents, sha256Hex, type CapiOrder } from "@shared/metaCapi";
 import { runPostCapture } from "@shared/postCapture";
 
+type PostNotes = { post_capture: { source: string; capi: { skipped?: string } } };
+
 const order: CapiOrder = {
   id: "po_1",
   offering_id: "190a09ee-3f34-4242-ad9f-70ddedcc8eae",
@@ -130,13 +132,13 @@ describe("runPostCapture", () => {
   it("claims once, records the skip when no token is configured, and does nothing the second time", async () => {
     const { admin, state } = fakeAdmin(captured);
     await runPostCapture(admin, "po_1", { source: "verify" });
-    const notes = state.row.notes as Record<string, any>;
+    const notes = state.row.notes as PostNotes;
     expect(notes.post_capture.source).toBe("verify");
     expect(notes.post_capture.capi.skipped).toBe("no_token");
     const writes = state.updates.length;
     await runPostCapture(admin, "po_1", { source: "razorpay-webhook" });
     expect(state.updates.length).toBe(writes);
-    expect((state.row.notes as Record<string, any>).post_capture.source).toBe("verify");
+    expect((state.row.notes as PostNotes).post_capture.source).toBe("verify");
   });
 
   it("leaves staged cohort payments alone", async () => {
