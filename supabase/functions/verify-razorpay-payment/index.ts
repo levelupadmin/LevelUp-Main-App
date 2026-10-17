@@ -17,7 +17,7 @@ import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { requestClientMeta } from "../_shared/attribution.ts";
 import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
-import { courseGranted, ensureCourseGranted } from "../_shared/captureGrant.ts";
+import { courseGranted, ensureCourseGranted, paidOrder } from "../_shared/captureGrant.ts";
 
 async function verifyHmac(
   orderId: string,
@@ -180,7 +180,8 @@ Deno.serve(async (req) => {
        Razorpay whether any payment on the order went through. A guest holds
        only the order id the checkout was given, the same id the verify call
        below accepts. A captured single payment reads as captured only once
-       the buyer holds the course (_shared/captureGrant.ts). */
+       the buyer holds the course (_shared/captureGrant.ts); a captured free
+       order reads as captured from the row alone. */
     if (statusCheck) {
       return jsonRes(
         await orderPaymentStatus(po, { keyId, keySecret: secret }, {
@@ -192,6 +193,14 @@ Deno.serve(async (req) => {
     if (po.status === "captured") {
       // Staged cohort payments: unchanged.
       if (po.payment_type || po.application_id) {
+        return jsonRes({ success: true, already_captured: true });
+      }
+      // A free order (no Razorpay payment, or a total of 0): guest-create-order
+      // writes it captured at creation and returns its id to a caller with no
+      // login. This return checks no payment proof, so it reads and writes
+      // nothing more. Any answer that depended on the enrolments of the
+      // phone's account would tell that caller what the person owns.
+      if (!paidOrder(po)) {
         return jsonRes({ success: true, already_captured: true });
       }
       // Captured is not the same as granted: the call that captured this
@@ -214,11 +223,10 @@ Deno.serve(async (req) => {
         return jsonRes({ error: "Failed to create enrolment" }, 500);
       }
       // The call that captured this order may also have failed before its
-      // post-capture step started. Start it now if the order holds a real
-      // Razorpay payment for more than 0 (this return checks no payment
-      // proof, so a free order's id alone must not send a receipt), no one
-      // has claimed it, and the capture is recent (an old order gets no late
-      // receipt); the claim keeps it to at most one run.
+      // post-capture step started. Start it now if no one has claimed it and
+      // the capture is recent (an old order gets no late receipt); the claim
+      // keeps it to at most one run. postCaptureRecoverable checks the real
+      // payment again.
       if (postCaptureRecoverable(po)) {
         schedulePostCapture(admin, payment_order_id, {
           source: "verify",

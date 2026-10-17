@@ -185,9 +185,10 @@ export async function ensureCourseGranted(
   // granting it again here would quietly undo that. A person decides.
   // The buyer's rows from other orders do not block: a refund or an expiry
   // ends that order, and buying again is allowed (enrolments_unique_active
-  // counts only active rows). That holds only for an order with a real
-  // payment; a free order proves nothing, so any row taken away blocks it.
-  const blocking = paidOrder(po) ? rows.filter((r) => r.payment_order_id === po.id) : rows;
+  // counts only active rows). Free orders never come here: verify answers
+  // them from the row before this step, and the webhook only sees orders
+  // Razorpay signed a payment for.
+  const blocking = rows.filter((r) => r.payment_order_id === po.id);
   if (blocking.length > 0) {
     console.error(tag, `course enrolment is ${blocking[0].status}; not granting it again`);
     return refuse("taken_away");

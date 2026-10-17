@@ -22,7 +22,7 @@ describe("orderPaymentStatus", () => {
     const f = respond({ items: [] });
     const deps = { fetchImpl: f, courseGranted: granted(true) };
     await expect(
-      orderPaymentStatus({ status: "captured", razorpay_order_id: "order_1", razorpay_payment_id: "pay_1" }, keys, deps),
+      orderPaymentStatus({ status: "captured", razorpay_order_id: "order_1", razorpay_payment_id: "pay_1", total_inr: 999 }, keys, deps),
     ).resolves.toEqual({ status: "captured", razorpay_payment_id: "pay_1" });
     await expect(orderPaymentStatus({ status: "needs_review", razorpay_order_id: "order_1" }, keys, deps)).resolves.toEqual({
       status: "needs_review",
@@ -35,7 +35,7 @@ describe("orderPaymentStatus", () => {
 
   it("reads a captured single payment as needs_review until the buyer holds the course", async () => {
     const f = respond({ items: [] });
-    const captured = { status: "captured", razorpay_order_id: "order_1", razorpay_payment_id: "pay_1" };
+    const captured = { status: "captured", razorpay_order_id: "order_1", razorpay_payment_id: "pay_1", total_inr: "999.00" };
     await expect(orderPaymentStatus(captured, keys, { fetchImpl: f, courseGranted: granted(false) })).resolves.toEqual({
       status: "needs_review",
     });
@@ -45,6 +45,27 @@ describe("orderPaymentStatus", () => {
     await expect(orderPaymentStatus(captured, keys, { fetchImpl: f, courseGranted: boom })).resolves.toEqual({
       status: "needs_review",
     });
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("answers a captured free order from the row without asking about the course", async () => {
+    // A free order is credited to the typed phone's account; asking about its
+    // course would read that person's enrolments for a caller with no login.
+    const f = respond({ items: [] });
+    for (const free of [
+      { status: "captured", razorpay_order_id: null, razorpay_payment_id: null, total_inr: 0 },
+      { status: "captured", razorpay_order_id: null, razorpay_payment_id: null, total_inr: "999.00" },
+      { status: "captured", razorpay_order_id: "order_1", razorpay_payment_id: "pay_1", total_inr: "0.00" },
+    ]) {
+      for (const holds of [true, false]) {
+        const ask = granted(holds);
+        await expect(orderPaymentStatus(free, keys, { fetchImpl: f, courseGranted: ask })).resolves.toEqual({
+          status: "captured",
+          razorpay_payment_id: free.razorpay_payment_id,
+        });
+        expect(ask).not.toHaveBeenCalled();
+      }
+    }
     expect(f).not.toHaveBeenCalled();
   });
 

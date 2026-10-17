@@ -82,7 +82,12 @@ returns of both capture paths first grant the course if the buyer does not hold 
 (`_shared/captureGrant.ts`, the same idempotent insert), and answer success only
 after that. They never grant again a course this order granted and later lost (a
 revoke, a refund). A cancelled or expired enrolment from the buyer's earlier order
-does not block a new paid order; for a free order it still does. A grant they refuse
+does not block a new paid order. A free order (no Razorpay payment id, or a total of
+0) skips this step: verify answers it `{ success: true, already_captured: true }` and
+the status check answers it `captured`, both from the row alone, with no read of the
+buyer's enrolments, because guest-create-order credits it to the typed phone's
+account and any answer that read that account would tell a caller with no login what
+the person owns. A grant they refuse
 (course taken away, no buyer, a read or insert error) is written on the order as
 `notes.grant_issue = { reason, source, at }`, and marked `resolved_at` once a later
 grant works. The webhook acknowledges a refused grant only after that marker is on
@@ -112,7 +117,8 @@ again. After the sheet closes, the next Pay asks `verify-razorpay-payment` with
 `_shared/orderPaymentStatus.ts`) before anything new is charged; an unchanged
 cart reopens the same Razorpay order. A captured single payment reads as
 `captured` only when the buyer holds the course, and as `needs_review` until
-then, so the checkout never says "Welcome" for a course nobody granted. The guard
+then, so the checkout never says "Welcome" for a course nobody granted (a free
+order reads as `captured` from the row). The guard
 lives in one tab: a new tab, a fresh in-app browser or a second device does not see
 it and can still start a second order. The browser Purchase goes out once per
 `razorpay_payment_id` across the checkout and Thank-you (`src/lib/purchaseOnce.ts`).

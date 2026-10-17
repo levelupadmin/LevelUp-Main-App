@@ -304,6 +304,7 @@ describe("post-capture after an already-captured order", () => {
     expect(await res.json()).toEqual({ success: true, already_captured: true });
     expect(fake.schedule).not.toHaveBeenCalled();
     expect(enrolmentInserts()).toHaveLength(0);
+    expect(fake.state.enrolmentReads).toHaveLength(0);
     expect(fake.state.poWrites).toHaveLength(0);
   });
 
@@ -419,14 +420,14 @@ describe("a captured order whose course was never granted", () => {
     expect(fake.state.events).toEqual(["insert:enrolments", "insert:enrolment_audit_log", "schedule"]);
   });
 
-  it("a free order is not granted a course its buyer lost on another order", async () => {
-    // A free order carries no payment proof, so it cannot undo a revoke.
-    fake.state.po = { ...baseOrder, total_inr: 0, razorpay_payment_id: null };
-    fake.state.enrolments = [enrolment({ id: "enr_old", payment_order_id: "po_0", status: "revoked" }), ...strangers()];
-    const res = await callVerify({ razorpay_payment_id: "junk", razorpay_signature: "junk" });
-    expect(res.status).toBe(202);
-    expect(enrolmentInserts()).toHaveLength(0);
-    expect(grantIssue()).toMatchObject({ reason: "taken_away" });
+  it("the webhook grants it to a buyer refunded on an earlier order even before the row has its payment id", async () => {
+    // The delivery is signed by Razorpay for this order, so only this order's
+    // own rows can block the grant.
+    fake.state.po = { ...baseOrder, razorpay_payment_id: null };
+    fake.state.enrolments = [enrolment({ id: "enr_old", payment_order_id: "po_0", status: "cancelled" }), ...strangers()];
+    expect(await (await deliverWebhook()).json()).toEqual({ received: true, status: "captured" });
+    expect(enrolmentInserts()).toHaveLength(1);
+    expect(grantIssue()).toBeUndefined();
   });
 
   it("an order with no buyer is written down for a person before the webhook acknowledges it", async () => {
@@ -477,6 +478,61 @@ describe("a captured order whose course was never granted", () => {
     expect(await (await statusCheck()).json()).toEqual({ status: "captured", razorpay_payment_id: "pay_1" });
     expect(enrolmentInserts()).toHaveLength(0);
     expect(fake.schedule).not.toHaveBeenCalled();
+  });
+});
+
+describe("a free order, asked about with no login", () => {
+  // guest-create-order writes a free order captured at creation, credits it to
+  // the typed phone's account (skipping its own enrolment when that account
+  // has any row in the course) and returns its id. Junk-proof verify and the
+  // status check must answer it the same way whatever that account holds, or
+  // they tell a stranger whether the person behind a phone number once held
+  // the course and lost it.
+  const freeOrder = { ...baseOrder, total_inr: 0, razorpay_payment_id: null, razorpay_order_id: null };
+  const accounts: Array<[string, Record<string, unknown>, ReturnType<typeof enrolment>[]]> = [
+    ["a new phone: the free order's own row", {}, [enrolment({})]],
+    ["an account that holds the course from a paid order", {}, [enrolment({ id: "enr_paid", payment_order_id: "po_0" })]],
+    ["an account whose earlier row was revoked", {}, [enrolment({ id: "enr_old", payment_order_id: "po_0", status: "revoked" })]],
+    ["an account refunded on an earlier order", {}, [enrolment({ id: "enr_old", payment_order_id: "po_0", status: "cancelled" })]],
+    ["an account whose row from this order was revoked", {}, [enrolment({ status: "revoked" })]],
+    ["an order whose buyer could not be set up", { user_id: null }, []],
+  ];
+
+  it("gets the same answer from verify and the status check, and nothing is read or written", async () => {
+    const answers: string[] = [];
+    for (const [label, over, rows] of accounts) {
+      fake.state.po = { ...freeOrder, ...over };
+      fake.state.enrolments = [...rows, ...strangers()];
+      fake.state.inserts = [];
+      fake.state.enrolmentReads = [];
+      fake.state.poWrites = [];
+      const v = await callVerify({ razorpay_payment_id: "pay_junk", razorpay_order_id: "order_junk", razorpay_signature: "junk" });
+      const s = await statusCheck();
+      answers.push(`${v.status} ${await v.text()} | ${s.status} ${await s.text()}`);
+      expect({ label, reads: fake.state.enrolmentReads, inserts: fake.state.inserts, writes: fake.state.poWrites }).toEqual({
+        label,
+        reads: [],
+        inserts: [],
+        writes: [],
+      });
+    }
+    expect(new Set(answers).size).toBe(1);
+    expect(answers[0]).toBe(
+      `200 ${JSON.stringify({ success: true, already_captured: true })} | 200 ${JSON.stringify({ status: "captured", razorpay_payment_id: null })}`,
+    );
+    expect(fake.schedule).not.toHaveBeenCalled();
+  });
+
+  it("an order with a total but no payment id, or a payment id but a zero total, is answered the same way", async () => {
+    fake.state.enrolments = [enrolment({ id: "enr_old", payment_order_id: "po_0", status: "revoked" }), ...strangers()];
+    for (const po of [{ ...baseOrder, razorpay_payment_id: null }, { ...baseOrder, total_inr: "0.00" }]) {
+      fake.state.po = po;
+      expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+      expect((await (await statusCheck()).json()).status).toBe("captured");
+    }
+    expect(fake.state.enrolmentReads).toEqual([]);
+    expect(fake.state.inserts).toEqual([]);
+    expect(fake.state.poWrites).toEqual([]);
   });
 });
 

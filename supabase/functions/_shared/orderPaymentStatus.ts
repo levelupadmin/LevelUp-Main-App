@@ -8,8 +8,8 @@
  * in-app browsers). The sheet then reports nothing, our order row still reads
  * "created", and a fresh order would let the buyer pay a second time.
  *
- *   captured      our row is captured and, for a single payment, the buyer
- *                 holds the course
+ *   captured      our row is captured and, for a paid single payment, the
+ *                 buyer holds the course
  *   needs_review  our row is parked for a person, or it is captured but the
  *                 course is not granted (yet): money moved either way
  *   paid          Razorpay holds an authorized or captured payment on the
@@ -24,8 +24,16 @@
  * single payment counts as captured only when `courseGranted` says the buyer
  * holds the course. Staged cohort payments answer from the row, as before.
  *
+ * A free order (no Razorpay payment, or a total of 0) answers from the row as
+ * well, without asking about the course. guest-create-order writes it captured
+ * at creation and credits it to the typed phone's account, so `courseGranted`
+ * would read that person's enrolments, and the answer would tell a caller with
+ * no login whether they once held the course and lost it.
+ *
  * Pure apart from the injected fetch and enrolment read, so vitest can drive it.
  */
+
+import { paidOrder } from "./captureGrant.ts";
 
 export type OrderPaymentStatus = "captured" | "needs_review" | "paid" | "pending" | "none" | "unknown";
 
@@ -44,6 +52,7 @@ export type OrderRow = {
   status: string | null;
   razorpay_order_id: string | null;
   razorpay_payment_id?: string | null;
+  total_inr?: number | string | null;
   payment_type?: string | null;
   application_id?: string | null;
 };
@@ -59,7 +68,7 @@ export async function orderPaymentStatus(
 ): Promise<{ status: OrderPaymentStatus; razorpay_payment_id?: string | null }> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   if (po.status === "captured") {
-    if (!po.payment_type && !po.application_id) {
+    if (!po.payment_type && !po.application_id && paidOrder(po)) {
       let granted = false;
       try {
         granted = await deps.courseGranted();
