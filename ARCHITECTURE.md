@@ -77,11 +77,23 @@ server Meta Purchase (Conversions API) + receipt email with the invoice link
 ```
 
 Both capture paths call `schedulePostCapture` (`_shared/postCaptureRuntime.ts`)
-after their own work. The first caller claims the order by writing
-`payment_orders.notes.post_capture`; the other skips. Results (Meta send,
-receipt) are recorded under that key. Ad attribution from the checkout link
-(`utm_*` columns, the rest in `notes.attribution`) is written by the two order
-functions at creation; see `_shared/attribution.ts`.
+after their own work, and again from their already-captured early returns when
+`notes.post_capture` is still empty, so a failure after capture cannot lose it.
+The first caller claims the order by writing `payment_orders.notes.post_capture`;
+the other skips. Results (Meta send, receipt) are recorded under that key. Ad
+attribution from the checkout link (`utm_*` columns, the rest in
+`notes.attribution`) is written by the two order functions at creation; see
+`_shared/attribution.ts`.
+
+**No second charge.** The checkout keeps the last order it opened a Razorpay
+sheet for (`src/lib/checkoutOpenOrder.ts`, also in sessionStorage per offering)
+until it is paid and verified. After Razorpay reports success but verify does not
+confirm it, Pay stays locked and "Check payment status" runs the same verify call
+again. After the sheet closes, the next Pay asks `verify-razorpay-payment` with
+`status_check: true` (read-only: our row, then Razorpay's payments for the order,
+`_shared/orderPaymentStatus.ts`) before anything new is charged; an unchanged
+cart reopens the same Razorpay order. The browser Purchase goes out once per
+`razorpay_payment_id` across the checkout and Thank-you (`src/lib/purchaseOnce.ts`).
 
 **Pricing has ONE home: [`supabase/functions/_shared/pricing.ts`](supabase/functions/_shared/pricing.ts).**
 `couponDiscountInr`, `gstInr`, `totalInr`, `toPaise`, `couponInvalidReason`. Used by
