@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useUploads } from "@/contexts/UploadContext";
-import { Loader2, CheckCircle2, AlertCircle, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, X, ChevronDown, ChevronUp, RotateCw } from "lucide-react";
 
 /**
  * Google-Drive-style upload tray. Mounted once, above the router, so it stays
@@ -9,7 +9,7 @@ import { Loader2, CheckCircle2, AlertCircle, X, ChevronDown, ChevronUp } from "l
  * Finished items persist (no auto-dismiss) until the admin clears them.
  */
 export default function UploadDock() {
-  const { uploads, dismiss, clearFinished } = useUploads();
+  const { uploads, dismiss, clearFinished, resume, retryAttach } = useUploads();
   const [collapsed, setCollapsed] = useState(false);
   if (!uploads.length) return null;
 
@@ -62,7 +62,9 @@ export default function UploadDock() {
           {uploads.map((u) => (
             <div key={u.id} className="px-3 py-2.5 flex items-center gap-2.5">
               <div className="shrink-0">
-                {u.status === "done" ? (
+                {u.status === "done" && u.warning ? (
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                ) : u.status === "done" ? (
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 ) : u.status === "error" ? (
                   <AlertCircle className="h-4 w-4 text-red-500" />
@@ -81,7 +83,20 @@ export default function UploadDock() {
                   </div>
                 )}
                 {u.status === "error" && (
-                  <div className="text-[11px] text-red-500 truncate">{u.error || "Upload failed"}</div>
+                  <div className="text-[11px] text-red-500 break-words">{u.error || "Upload failed"}</div>
+                )}
+                {u.status === "done" && u.warning && (
+                  <div className="text-[11px] text-amber-500 break-words">{u.warning}</div>
+                )}
+                {(u.canResume || u.canRetryAttach) && (
+                  <button
+                    type="button"
+                    onClick={() => (u.canResume ? resume(u.id) : retryAttach(u.id))}
+                    className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-foreground underline underline-offset-2"
+                  >
+                    <RotateCw className="h-3 w-3" />
+                    {u.canResume ? `Resume from ${u.progress}%` : "Retry attach"}
+                  </button>
                 )}
               </div>
               <div className="shrink-0 text-[11px] text-muted-foreground w-10 text-right">

@@ -23,6 +23,14 @@ project_id = "twqagwleffjggoemzfqs"
     verify_jwt = false
   [functions.vdocipher-upload-credential]
     verify_jwt = false
+  # Protected-video pair. Both gate in-handler (get-video-src lets anon reach
+  # make_free previews; get-video-upload-url checks the admin role), and both
+  # already run with verify_jwt OFF on prod — pinned here so a CLI deploy
+  # can't silently switch the gateway check back on.
+  [functions.get-video-src]
+    verify_jwt = false
+  [functions.get-video-upload-url]
+    verify_jwt = false
   [functions.verify-msg91-otp]
     verify_jwt = false
   # verify-email-otp: the EMAIL half of passwordless sign-in, and like every

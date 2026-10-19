@@ -118,6 +118,15 @@ Deno.serve(async (req) => {
       .from(BUCKET)
       .createSignedUrl(chapter.media_url, TTL_SECONDS);
     if (sErr || !signed?.signedUrl) {
+      // The chapter points at a key with no stored object — an upload that
+      // never finished. Say so distinctly, so students read "not uploaded yet"
+      // instead of being told to check their enrolment, and admins see the
+      // lesson flagged as missing its file.
+      // Exactly "Object not found" — a missing BUCKET must stay a 500, not
+      // tell every student their lesson "isn't up yet".
+      if (/object not found/i.test(sErr?.message ?? "")) {
+        return json({ error: "file_missing" }, 404);
+      }
       return json({ error: "Could not sign video", detail: sErr?.message }, 500);
     }
 

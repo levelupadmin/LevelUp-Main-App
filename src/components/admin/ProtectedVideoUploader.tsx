@@ -1,17 +1,21 @@
 import { useState } from "react";
 import { useUploads } from "@/contexts/UploadContext";
-import { ShieldCheck, UploadCloud } from "lucide-react";
+import { UploadCloud } from "lucide-react";
+import ProtectedUploadStatus from "@/components/admin/ProtectedUploadStatus";
 
 interface Props {
-  /** Called immediately with the storage key. The caller sets the chapter's
-   *  media_url = key and media_provider = 'supabase-signed', persists the row,
-   *  and may return the real chapter id (used for the completion patch). */
-  onUploaded: (key: string) => void | string | Promise<string | void>;
+  /** Called before the upload starts: make sure the chapter row exists
+   *  (inserting a brand-new one) WITHOUT changing its media, and return its
+   *  real id. The file is attached only after it has fully uploaded. */
+  ensureChapter: () => void | string | Promise<string | void>;
+  /** Called once the file is stored; reflect it in the editor's local state. */
+  onAttached: (key: string, chapterId: string, attached: boolean) => void;
   courseId?: string;
-  /** The chapter's id. If it's a saved id (not "new-…"), the background upload
-   *  also patches the row on completion, so the video attaches even if the admin
-   *  navigated away without saving. */
+  /** The chapter's id. If it's a saved id (not "new-…"), the finished upload
+   *  is attached to that row even if the admin navigated away without saving. */
   chapterId?: string;
+  /** The chapter's current media_url — re-checks the file is really in storage. */
+  mediaKey?: string;
   /** Shown in the upload dock so parallel uploads are tellable-apart. */
   label?: string;
   /** true once this chapter already holds a protected upload */
@@ -23,36 +27,41 @@ interface Props {
  * immediately — progress shows in the floating UploadDock and keeps running as
  * the admin moves around the app. The file never gets a public URL.
  */
-export default function ProtectedVideoUploader({ onUploaded, courseId, chapterId, label, alreadyProtected }: Props) {
-  const { startVideoUpload } = useUploads();
+export default function ProtectedVideoUploader({
+  ensureChapter,
+  onAttached,
+  courseId,
+  chapterId,
+  mediaKey,
+  label,
+  alreadyProtected,
+}: Props) {
+  const { uploads, startVideoUpload } = useUploads();
   const [file, setFile] = useState<File | null>(null);
-  const [started, setStarted] = useState(false);
+  // Found by chapter id, not held in state: saving a new chapter swaps its
+  // "new-…" id for the real one, which remounts this component.
+  const latest = chapterId ? uploads.filter((u) => u.chapterIds.includes(chapterId)).at(-1) : undefined;
 
   const upload = () => {
     if (!file) return;
-    startVideoUpload({ file, chapterId, courseId, label, onKey: onUploaded });
-    setStarted(true);
+    startVideoUpload({ file, chapterId, courseId, label, ensureChapter, onAttached });
     setFile(null);
   };
 
   return (
     <div className="space-y-2">
-      {(alreadyProtected || started) && (
-        <div className="flex items-center gap-1.5 text-xs text-emerald-500">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          {started && !alreadyProtected
-            ? "Upload started — it continues in the corner while you work"
-            : "Protected video attached (no public link, download blocked)"}
-        </div>
-      )}
+      <ProtectedUploadStatus
+        upload={latest}
+        chapterId={chapterId}
+        mediaKey={mediaKey}
+        alreadyProtected={alreadyProtected}
+        noun="video"
+      />
       <div className="flex items-center gap-2">
         <input
           type="file"
           accept="video/*"
-          onChange={(e) => {
-            setFile(e.target.files?.[0] || null);
-            setStarted(false);
-          }}
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
           className="text-xs"
         />
         <button
@@ -66,7 +75,8 @@ export default function ProtectedVideoUploader({ onUploaded, courseId, chapterId
         </button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Runs in the background and saves automatically — you can leave this page (keep the tab open).
+        Runs in the background, up to 10 GB, and attaches itself when it finishes. You can leave this page, but keep the
+        tab open.
       </p>
     </div>
   );

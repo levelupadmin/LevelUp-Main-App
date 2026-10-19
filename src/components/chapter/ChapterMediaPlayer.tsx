@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { RotateCcw, RotateCw, FileText, BookOpen, Download } from "lucide-react";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchSignedMediaUrl } from "@/lib/protectedMedia";
 import ProtectedPdfViewer from "@/components/chapter/ProtectedPdfViewer";
 import { useMotionSafe, durations, easings, instant } from "@/lib/motion";
 import { tapTick, hapticSelection } from "@/lib/haptics";
@@ -406,6 +407,17 @@ function AppOwnedVideo({ url, title, chapterId }: { url: string; title: string; 
  *  • Vimeo / YouTube / generic / embedded / pdf → cross-origin <iframe>. Off-limits.
  *  • image / article → static, no playback surface.
  */
+/** Student-facing line for a protected chapter whose signed URL didn't resolve. */
+function signedMediaMessage(kind: "missing" | "denied" | "error", noun: "video" | "file"): string {
+  if (kind === "missing") {
+    return noun === "video"
+      ? "This recording isn't up yet. The team is uploading it, so please check back soon."
+      : "This file isn't up yet. The team is uploading it, so please check back soon.";
+  }
+  if (kind === "denied") return `This ${noun} couldn't be loaded. Make sure you're signed in and enrolled.`;
+  return `This ${noun} couldn't be loaded. Check your connection and try again.`;
+}
+
 /**
  * Player for a download-protected chapter (media_provider = 'supabase-signed').
  * The video is in a private bucket; get-video-src returns a short-lived signed
@@ -422,20 +434,11 @@ export function SignedVideo({ chapterId, title }: { chapterId: string; title: st
     let cancelled = false;
     setUrl(null);
     setErr(null);
-    supabase.functions
-      .invoke("get-video-src", { body: { chapter_id: chapterId } })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        const resolved = (data as { url?: string } | null)?.url;
-        if (error || !resolved) {
-          setErr("This video couldn't be loaded. Make sure you're signed in and enrolled.");
-          return;
-        }
-        setUrl(resolved);
-      })
-      .catch(() => {
-        if (!cancelled) setErr("This video couldn't be loaded. Please try again.");
-      });
+    void fetchSignedMediaUrl(chapterId).then((res) => {
+      if (cancelled) return;
+      if (res.kind === "ok") setUrl(res.url);
+      else setErr(signedMediaMessage(res.kind, "video"));
+    });
     return () => {
       cancelled = true;
     };
@@ -525,20 +528,11 @@ export function ProtectedDocument({ chapter }: { chapter: DocumentChapter }) {
     let cancelled = false;
     setUrl(null);
     setErr(null);
-    supabase.functions
-      .invoke("get-video-src", { body: { chapter_id: chapter.id } })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        const resolved = (data as { url?: string } | null)?.url;
-        if (error || !resolved) {
-          setErr("This file couldn't be loaded. Make sure you're signed in and enrolled.");
-          return;
-        }
-        setUrl(resolved);
-      })
-      .catch(() => {
-        if (!cancelled) setErr("This file couldn't be loaded. Please try again.");
-      });
+    void fetchSignedMediaUrl(chapter.id).then((res) => {
+      if (cancelled) return;
+      if (res.kind === "ok") setUrl(res.url);
+      else setErr(signedMediaMessage(res.kind, "file"));
+    });
     return () => {
       cancelled = true;
     };

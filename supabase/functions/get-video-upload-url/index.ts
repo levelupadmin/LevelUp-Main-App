@@ -53,20 +53,35 @@ Deno.serve(async (req) => {
       return json({ error: "Forbidden — admins only" }, 403);
     }
 
-    const { filename, course_id } = await req.json().catch(() => ({}));
-    const safe = String(filename || "video.mp4")
-      .replace(/[^a-zA-Z0-9._-]/g, "-")
-      .slice(-80);
-    const folder = String(course_id || "misc").replace(/[^a-zA-Z0-9._-]/g, "-");
-    const key = `uploads/${folder}/${crypto.randomUUID()}-${safe}`;
+    const { filename, course_id, path } = await req.json().catch(() => ({}));
+
+    // `path` = re-sign an upload already in progress. The client uploads in
+    // resumable 6 MB chunks, and a multi-GB recording on a slow uplink can
+    // outlive the token's 2 hours, so it asks for a fresh token for the SAME
+    // key mid-upload. upsert stays off, so a re-sign can never overwrite a file
+    // that is already stored.
+    let key: string;
+    if (path !== undefined) {
+      if (typeof path !== "string" || !/^uploads\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(path)) {
+        return json({ error: "Invalid path" }, 400);
+      }
+      key = path;
+    } else {
+      const safe = String(filename || "video.mp4")
+        .replace(/[^a-zA-Z0-9._-]/g, "-")
+        .slice(-80);
+      const folder = String(course_id || "misc").replace(/[^a-zA-Z0-9._-]/g, "-");
+      key = `uploads/${folder}/${crypto.randomUUID()}-${safe}`;
+    }
 
     const { data, error } = await admin.storage
       .from(BUCKET)
       .createSignedUploadUrl(key);
     if (error || !data) return json({ error: error?.message || "Could not create upload URL" }, 500);
 
-    // path is the object key the chapter should store in media_url.
-    return json({ signedUrl: data.signedUrl, token: data.token, path: key });
+    // path is the object key the chapter should store in media_url — but only
+    // once the upload has finished (see UploadContext).
+    return json({ signedUrl: data.signedUrl, token: data.token, path: key, bucket: BUCKET });
   } catch (e) {
     return json({ error: "unexpected", detail: String(e) }, 500);
   }

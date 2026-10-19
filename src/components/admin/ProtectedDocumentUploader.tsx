@@ -1,17 +1,21 @@
 import { useState } from "react";
 import { useUploads } from "@/contexts/UploadContext";
-import { ShieldCheck, UploadCloud } from "lucide-react";
+import { UploadCloud } from "lucide-react";
+import ProtectedUploadStatus from "@/components/admin/ProtectedUploadStatus";
 
 interface Props {
-  /** Called immediately with the storage key. The caller sets the chapter's
-   *  media_url = key and media_provider = 'supabase-signed', persists the row,
-   *  and may return the real chapter id (used for the completion patch). */
-  onUploaded: (key: string) => void | string | Promise<string | void>;
+  /** Called before the upload starts: make sure the chapter row exists
+   *  (inserting a brand-new one) WITHOUT changing its media, and return its
+   *  real id. The file is attached only after it has fully uploaded. */
+  ensureChapter: () => void | string | Promise<string | void>;
+  /** Called once the file is stored; reflect it in the editor's local state. */
+  onAttached: (key: string, chapterId: string, attached: boolean) => void;
   courseId?: string;
-  /** The chapter's id. If it's a saved id (not "new-…"), the background upload
-   *  also patches the row on completion, so the file attaches even if the admin
-   *  navigated away without saving. */
+  /** The chapter's id. If it's a saved id (not "new-…"), the finished upload
+   *  is attached to that row even if the admin navigated away without saving. */
   chapterId?: string;
+  /** The chapter's current media_url — re-checks the file is really in storage. */
+  mediaKey?: string;
   /** Shown in the upload dock so parallel uploads are tellable-apart. */
   label?: string;
   /** true once this chapter already holds a protected upload */
@@ -36,36 +40,41 @@ const ACCEPT =
  * floating UploadDock and keeps running as the admin moves around. The file
  * never gets a public URL; students reach it through a short-lived signed URL.
  */
-export default function ProtectedDocumentUploader({ onUploaded, courseId, chapterId, label, alreadyProtected }: Props) {
-  const { startDocumentUpload } = useUploads();
+export default function ProtectedDocumentUploader({
+  ensureChapter,
+  onAttached,
+  courseId,
+  chapterId,
+  mediaKey,
+  label,
+  alreadyProtected,
+}: Props) {
+  const { uploads, startDocumentUpload } = useUploads();
   const [file, setFile] = useState<File | null>(null);
-  const [started, setStarted] = useState(false);
+  // Found by chapter id, not held in state: saving a new chapter swaps its
+  // "new-…" id for the real one, which remounts this component.
+  const latest = chapterId ? uploads.filter((u) => u.chapterIds.includes(chapterId)).at(-1) : undefined;
 
   const upload = () => {
     if (!file) return;
-    startDocumentUpload({ file, chapterId, courseId, label, onKey: onUploaded });
-    setStarted(true);
+    startDocumentUpload({ file, chapterId, courseId, label, ensureChapter, onAttached });
     setFile(null);
   };
 
   return (
     <div className="space-y-2">
-      {(alreadyProtected || started) && (
-        <div className="flex items-center gap-1.5 text-xs text-emerald-500">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          {started && !alreadyProtected
-            ? "Upload started — it continues in the corner while you work"
-            : "Protected file attached (no public link)"}
-        </div>
-      )}
+      <ProtectedUploadStatus
+        upload={latest}
+        chapterId={chapterId}
+        mediaKey={mediaKey}
+        alreadyProtected={alreadyProtected}
+        noun="file"
+      />
       <div className="flex items-center gap-2">
         <input
           type="file"
           accept={ACCEPT}
-          onChange={(e) => {
-            setFile(e.target.files?.[0] || null);
-            setStarted(false);
-          }}
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
           className="text-xs"
         />
         <button

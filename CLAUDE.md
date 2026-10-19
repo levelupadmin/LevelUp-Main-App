@@ -60,6 +60,13 @@ killing vertical scroll.)
   users up ONLY via the `find_login_identity` RPC (`_shared/buyerIdentity.ts` for
   checkout, `verify-msg91-otp` for login). Never write name/email/phone onto an
   existing profile from an unauthenticated form.
+- **2026-10-19 — The Oct-9 billing pause silently reset the project-wide Storage
+  upload cap to 50 MB, and re-upgrading to Pro did NOT restore it.** Every class
+  recording failed with "Upload failed (400)" for 12 days while the buckets still
+  said 10 GB. Because the admin uploader wrote the key onto the chapter BEFORE the
+  bytes landed, every failed upload (since August) also left students a dead
+  player — 8 lessons. After ANY billing/plan change run `ops/storage-health.sh`;
+  uploads now go up resumable (TUS) and attach only after the last byte is stored.
 
 ### Staged (phased) rollout — what it is
 Release a new build to a SMALL fraction of users first, watch crash/error/complaint

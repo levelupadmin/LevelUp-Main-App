@@ -88,6 +88,9 @@ interface Section {
 // two Add clicks land in the same millisecond.
 let newIdSeq = 0;
 
+// A chapter's media as one comparable value (load() stores "" for null).
+const mediaSig = (url?: string | null, provider?: string | null) => `${url || ""}|${provider || ""}`;
+
 const AdminCourseCurriculum = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
@@ -112,9 +115,20 @@ const AdminCourseCurriculum = () => {
   // Always-fresh mirror of `sections` for async callbacks (upload persistence
   // fires long after the render that captured its closure).
   const sectionsRef = useRef<Section[]>([]);
+  // Each saved chapter's media as of the last load (or as this page last
+  // wrote it). handleSave writes media_url/media_provider only for chapters
+  // whose media was changed HERE: an upload that finished after this page
+  // loaded — or one started by another admin — attaches its file server-side,
+  // and a stale copy of the chapter must not wipe it.
+  const loadedMediaRef = useRef<Map<string, string>>(new Map());
   // De-dupes concurrent section inserts: two uploads landing in the same
   // brand-new section must share ONE insert, not create it twice.
   const sectionInsertsRef = useRef<Record<string, Promise<string>>>({});
+  // Same for brand-new chapters, keyed by local "new-…" id and shared with
+  // handleSave: an upload started on a new chapter and a Save Curriculum
+  // clicked a second later must land on ONE row. Resolves to the real id, or
+  // undefined if the insert failed.
+  const chapterInsertsRef = useRef<Record<string, Promise<string | undefined>>>({});
   const [editingChapter, setEditingChapter] = useState<{ sectionIdx: number; chapterIdx: number } | null>(null);
   const [courseDefaultVideoType, setCourseDefaultVideoType] = useState("standard");
   const [vdoUploadMode, setVdoUploadMode] = useState<Record<string, "upload" | "existing">>({});
@@ -156,6 +170,10 @@ const AdminCourseCurriculum = () => {
       .in("section_id", secIds)
       .order("sort_order");
 
+    loadedMediaRef.current = new Map(
+      ((chs || []) as unknown as Array<{ id: string; media_url: string | null; media_provider: string | null }>)
+        .map((ch) => [ch.id, mediaSig(ch.media_url, ch.media_provider)])
+    );
     const chapsBySection: Record<string, Chapter[]> = {};
     (chs || []).forEach((ch) => {
       if (!chapsBySection[ch.section_id]) chapsBySection[ch.section_id] = [];
@@ -495,6 +513,17 @@ const AdminCourseCurriculum = () => {
     setSaving(true);
 
     try {
+      // Let any row an upload is inserting land first, so the walk below
+      // reuses it instead of inserting a twin.
+      await Promise.allSettled([
+        ...Object.values(sectionInsertsRef.current),
+        ...Object.values(chapterInsertsRef.current),
+      ]);
+      // Snapshot the media baseline: an upload that attaches mid-save moves
+      // the live ref to its new key, and comparing this save's stale copy
+      // against THAT would write the old key back over it.
+      const baseline = new Map(loadedMediaRef.current);
+
       // Deletions first, so a removed row can never be resurrected by the
       // upsert walk below and so freed sort_order slots are already vacant.
       // Both lists hold only server-side ids (see the state declaration).
@@ -510,15 +539,25 @@ const AdminCourseCurriculum = () => {
         const sec = sections[sIdx];
         let sectionId = sec.id;
 
-        if (sec._isNew) {
-          const { data, error } = await supabase
-            .from("sections")
-            .insert({ course_id: courseId, title: sec.title, sort_order: sIdx })
-            .select("id")
-            .single();
-          if (error) throw error;
-          sectionId = data.id;
+        const insertedSectionId = sec._isNew
+          ? await sectionInsertsRef.current[sec.id]?.catch(() => undefined)
+          : undefined;
+        if (sec._isNew && !insertedSectionId) {
+          const p = (async () => {
+            const { data, error } = await supabase
+              .from("sections")
+              .insert({ course_id: courseId, title: sec.title, sort_order: sIdx })
+              .select("id")
+              .single();
+            if (error) throw error;
+            return data.id as string;
+          })();
+          // Registered before awaiting, so an upload into this section reuses it.
+          sectionInsertsRef.current[sec.id] = p;
+          p.catch(() => { delete sectionInsertsRef.current[sec.id]; });
+          sectionId = await p;
         } else {
+          if (insertedSectionId) sectionId = insertedSectionId;
           const { error } = await supabase
             .from("sections")
             .update({ title: sec.title, sort_order: sIdx })
@@ -548,11 +587,22 @@ const AdminCourseCurriculum = () => {
             vdocipher_thumbnail_url: ch.vdocipher_thumbnail_url || null,
           };
 
-          if (ch._isNew) {
-            const { error } = await supabase.from("chapters").insert(payload as any);
-            if (error) throw error;
+          const rowId = ch._isNew ? await chapterInsertsRef.current[ch.id] : ch.id;
+          if (!rowId) {
+            const p = (async () => {
+              const { data, error } = await supabase.from("chapters").insert(payload as any).select("id").single();
+              if (error) throw error;
+              return data.id as string;
+            })();
+            // Registered before awaiting, so an upload clicked mid-save reuses this row.
+            chapterInsertsRef.current[ch.id] = p.catch(() => undefined);
+            await p;
           } else {
-            const { error } = await supabase.from("chapters").update(payload as any).eq("id", ch.id);
+            if (baseline.get(rowId) === mediaSig(ch.media_url, ch.media_provider)) {
+              delete payload.media_url;
+              delete payload.media_provider;
+            }
+            const { error } = await supabase.from("chapters").update(payload as any).eq("id", rowId);
             if (error) throw error;
           }
         }
@@ -569,9 +619,10 @@ const AdminCourseCurriculum = () => {
   };
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Targeted persistence for uploads. When a video upload attaches a key, we
-  // save ONLY that chapter's row (inserting it — and its section — if brand
-  // new), then swap the real UUIDs into local state IN PLACE.
+  // Targeted persistence for uploads. When an upload starts we save ONLY that
+  // chapter's row (inserting it — and its section — if brand new), then swap
+  // the real UUIDs into local state IN PLACE. The file itself is attached when
+  // the upload finishes.
   //
   // Deliberately NOT handleSave(): a full save (a) validates every chapter, so
   // an unrelated half-filled chapter would silently abort persisting the
@@ -606,33 +657,29 @@ const AdminCourseCurriculum = () => {
     return p;
   }, [courseId]);
 
-  // Persist the uploaded chapter; returns its REAL id (for the background
-  // completion patch) or undefined on failure. Looks the chapter up by its
+  // Before an upload's bytes move: make sure its chapter has a real row to be
+  // attached to, so a finished upload always lands somewhere (the 2026-08-03
+  // lesson). Media is NOT written here: the file is attached only once it has
+  // fully uploaded (UploadContext), so a failed upload can never leave
+  // students a dead player or replace a working video with a dead one.
+  // Returns the REAL id, or undefined on failure. Looks the chapter up by its
   // local id — indices captured in closures go stale across renders.
-  const persistUploadedChapter = useCallback(async (
+  const ensureChapterSaved = useCallback((
     chapterLocalId: string,
-    key: string,
     kind: "video" | "document" = "video",
   ): Promise<string | undefined> => {
-    // A document keeps its own content_type (pdf/…) and has no video_type;
-    // only a video normalises video_type to 'standard'.
-    const media = (kind === "video"
-      ? { media_url: key, media_provider: "supabase-signed", video_type: "standard" }
-      : { media_url: key, media_provider: "supabase-signed" }) as Record<string, string>;
-    const attachedLabel = kind === "video" ? "Video attached & saved" : "File attached & saved";
-    // Reflect the upload in local state immediately (by id, never by index).
-    setSections((prev) => prev.map((s) => ({
-      ...s,
-      chapters: s.chapters.map((c) => (c.id === chapterLocalId ? { ...c, ...media } : c)),
-    })));
-    try {
-      const secs = sectionsRef.current;
-      const sec = secs.find((s) => s.chapters.some((c) => c.id === chapterLocalId));
-      if (!sec || !courseId) throw new Error("Chapter no longer exists on this page");
-      const ch = sec.chapters.find((c) => c.id === chapterLocalId)!;
-      const sectionId = await ensureSectionSaved(sec.id);
+    // Already being inserted (by another upload or by handleSave): share it.
+    const inflight = chapterInsertsRef.current[chapterLocalId];
+    if (inflight) return inflight;
 
-      if (ch._isNew) {
+    const sec = sectionsRef.current.find((s) => s.chapters.some((c) => c.id === chapterLocalId));
+    const ch = sec?.chapters.find((c) => c.id === chapterLocalId);
+    if (ch && !ch._isNew) return Promise.resolve(ch.id);
+
+    const p = (async (): Promise<string | undefined> => {
+      try {
+        if (!sec || !ch || !courseId) throw new Error("Chapter no longer exists on this page");
+        const sectionId = await ensureSectionSaved(sec.id);
         const cIdx = sec.chapters.findIndex((c) => c.id === chapterLocalId);
         const { data, error } = await supabase
           .from("chapters")
@@ -641,7 +688,8 @@ const AdminCourseCurriculum = () => {
             title: ch.title,
             content_type: ch.content_type || "video",
             description: ch.description || null,
-            ...media,
+            // A document has no video_type; a video is always 'standard' here.
+            ...(kind === "video" ? { video_type: "standard" } : {}),
             embed_url: ch.embed_url || null,
             article_body: ch.article_body || null,
             duration_seconds: ch.duration_seconds || 0,
@@ -652,27 +700,51 @@ const AdminCourseCurriculum = () => {
           .select("id")
           .single();
         if (error) throw error;
+        // The row was inserted with NO media, so that is its baseline: any
+        // media this page holds for it still has to be written by a Save.
+        loadedMediaRef.current.set(data.id, mediaSig());
         setSections((prev) => prev.map((s) => ({
           ...s,
           chapters: s.chapters.map((c) => (c.id === chapterLocalId ? { ...c, id: data.id, _isNew: false } : c)),
         })));
-        toast({ title: attachedLabel, description: ch.title });
         return data.id as string;
+      } catch (err: any) {
+        toast({
+          title: "Couldn't save the new chapter",
+          description: `${err.message}. Click Save Curriculum, then upload again.`,
+          variant: "destructive",
+        });
+        return undefined;
       }
-
-      const { error } = await supabase.from("chapters").update(media as any).eq("id", ch.id);
-      if (error) throw error;
-      toast({ title: attachedLabel, description: ch.title });
-      return ch.id;
-    } catch (err: any) {
-      toast({
-        title: "Couldn't auto-save the chapter",
-        description: `${err.message}. The file itself is safe in storage — click Save Curriculum to attach it.`,
-        variant: "destructive",
-      });
-      return undefined;
-    }
+    })();
+    // Registered synchronously, before the first await above resumes.
+    chapterInsertsRef.current[chapterLocalId] = p;
+    return p;
   }, [courseId, ensureSectionSaved, toast]);
+
+  // After the upload has stored every byte: show the file on its chapter.
+  // Matches the local id the upload started with OR the real id it was saved
+  // under. If the server-side attach worked, the row already holds this key,
+  // so it becomes the baseline; if it failed, the baseline stays put and the
+  // next Save Curriculum writes the key.
+  const applyUploadedMedia = useCallback((
+    ids: string[],
+    key: string,
+    kind: "video" | "document",
+    attached: boolean,
+  ) => {
+    const media = kind === "video"
+      ? { media_url: key, media_provider: "supabase-signed", video_type: "standard" }
+      : { media_url: key, media_provider: "supabase-signed" };
+    const match = new Set(ids);
+    if (attached) {
+      for (const id of match) loadedMediaRef.current.set(id, mediaSig(key, "supabase-signed"));
+    }
+    setSections((prev) => prev.map((s) => ({
+      ...s,
+      chapters: s.chapters.map((c) => (match.has(c.id) ? { ...c, ...media } : c)),
+    })));
+  }, []);
 
   const ec = editingChapter;
 
@@ -793,16 +865,15 @@ const AdminCourseCurriculum = () => {
                                 courseId={courseId || undefined}
                                 chapterId={ch.id}
                                 label={`${ch.title || "Untitled chapter"}${courseTitle ? " · " + courseTitle : ""}`}
+                                mediaKey={ch.media_url}
                                 alreadyProtected={ch.media_provider === "supabase-signed"}
-                                onUploaded={(key) =>
-                                  // Targeted save of just this chapter (inserts
-                                  // it if new); returns the real id so the
-                                  // background completion patch can find it.
-                                  persistUploadedChapter(ch.id, key)
+                                ensureChapter={() => ensureChapterSaved(ch.id)}
+                                onAttached={(key, realId, attached) =>
+                                  applyUploadedMedia([ch.id, realId], key, "video", attached)
                                 }
                               />
                               <p className="text-[11px] text-muted-foreground mt-1">
-                                Goes to a private bucket — no public link, download disabled. The upload runs in the background and saves automatically.
+                                Goes to a private bucket — no public link, download disabled.
                               </p>
                             </div>
                             <div>
@@ -912,12 +983,11 @@ const AdminCourseCurriculum = () => {
                                 courseId={courseId || undefined}
                                 chapterId={ch.id}
                                 label={`${ch.title || "Untitled chapter"}${courseTitle ? " · " + courseTitle : ""}`}
+                                mediaKey={ch.media_url}
                                 alreadyProtected={ch.media_provider === "supabase-signed"}
-                                onUploaded={(key) =>
-                                  // Targeted save of just this chapter (inserts it
-                                  // if new); "document" kind keeps content_type=pdf
-                                  // and skips video_type.
-                                  persistUploadedChapter(ch.id, key, "document")
+                                ensureChapter={() => ensureChapterSaved(ch.id, "document")}
+                                onAttached={(key, realId, attached) =>
+                                  applyUploadedMedia([ch.id, realId], key, "document", attached)
                                 }
                               />
                               <p className="text-[11px] text-muted-foreground mt-1">
