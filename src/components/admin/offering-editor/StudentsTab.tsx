@@ -106,6 +106,8 @@ const RESULT_LABEL: Record<string, string> = {
   repaired_and_enrolled: "Account repaired + access granted",
   already_enrolled: "Already had access",
   reactivated: "Access re-activated",
+  // Access WAS granted; the warning is that phone login still won't reach it.
+  phone_belongs_to_another_account: "Granted — but phone is on another account",
   error: "Failed",
 };
 
@@ -349,9 +351,16 @@ export default function StudentsTab({ offeringId }: Props) {
     }
     const counts: Record<string, number> = {};
     for (const r of collected) counts[r.status] = (counts[r.status] || 0) + 1;
-    const ok = (counts.enrolled || 0) + (counts.created_and_enrolled || 0) + (counts.repaired_and_enrolled || 0) + (counts.reactivated || 0);
+    const dupes = counts.phone_belongs_to_another_account || 0;
+    const ok = (counts.enrolled || 0) + (counts.created_and_enrolled || 0) + (counts.repaired_and_enrolled || 0) + (counts.reactivated || 0) + dupes;
     if (counts.error) {
       toast.error(`${ok} granted, ${counts.already_enrolled || 0} already had access, ${counts.error} failed — download the report`);
+    } else if (dupes) {
+      // Silence here is what hid the Cohort 03 breakage: every row "succeeded"
+      // while the students could not reach what they were granted.
+      toast.warning(
+        `${ok} granted — but ${dupes} ${dupes === 1 ? "student has" : "students have"} their number on a second account and won't see it after phone login. Download the report.`,
+      );
     } else {
       toast.success(`Done — ${ok} granted, ${counts.already_enrolled || 0} already had access`);
     }

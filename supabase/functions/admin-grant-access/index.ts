@@ -56,6 +56,7 @@ interface RowResult {
     | "repaired_and_enrolled" // half-provisioned profile fixed, then enrolled
     | "already_enrolled"
     | "reactivated"
+    | "phone_belongs_to_another_account" // enrolled, but the number is taken
     | "error";
   user_id?: string;
   detail?: string;
@@ -170,26 +171,67 @@ Deno.serve(async (req) => {
             createdAccount = true;
           }
 
-          // 4. Profile: handle_new_user may have auto-created it — fill the
-          // gaps, never overwrite non-empty fields, tolerate unique clashes.
-          const { data: prof } = await admin.from("users")
-            .select("id, full_name, email, phone").eq("id", userId).maybeSingle();
-          if (prof) {
-            const updates: Record<string, string> = {};
-            if (!prof.full_name && fullName) updates.full_name = fullName;
-            if (!prof.email && email) updates.email = email;
-            if (!prof.phone && profilePhone) updates.phone = profilePhone;
-            if (Object.keys(updates).length) {
-              const { error: uErr } = await admin.from("users").update(updates).eq("id", userId);
-              if (!uErr && !createdAccount) repaired = true;
-            }
-          } else {
-            const { error: iErr } = await admin.from("users").insert({
-              id: userId, full_name: fullName, email, phone: profilePhone, role: "student",
+        }
+
+        // 4. Reconcile the resolved account with what the CSV asserts.
+        //
+        // THIS RUNS FOR EVERY ROW, not just newly-created accounts. It used to
+        // sit inside the `if (!userId)` branch above, so a row matched by EMAIL
+        // at step 1 skipped it entirely: the account was enrolled and left with
+        // NO PHONE. Phone-OTP login resolves through `auth.users.phone`, so it
+        // never found that account — GoTrue minted an empty phone-only shell
+        // instead and the student saw an empty library. On the Creator Academy
+        // Cohort 03 import that was 16 of 17 students; the enrolments were all
+        // real, just hanging on the half of the identity nobody could log into.
+        //
+        // Note which table matters: writing `public.users.phone` alone does NOT
+        // fix login. `find_login_identity` reads `auth.users.phone`, so the
+        // number has to be attached through the Auth admin API as well.
+        let phoneConflict = false;
+        if (authPhone) {
+          const { data: au } = await admin.auth.admin.getUserById(userId!);
+          if (au?.user && !au.user.phone) {
+            // Only claim a number that belongs to nobody. If another account
+            // holds it, these are two identities for one human and merging them
+            // is a judgement call with data loss on the line — report it and let
+            // an admin decide, rather than silently picking a winner.
+            const { data: taken } = await admin.rpc("admin_find_auth_user", {
+              p_email: null,
+              p_phone: authPhone,
             });
-            if (iErr) return { input: s, status: "error", detail: `Profile insert failed: ${iErr.message}` };
-            if (!createdAccount) repaired = true;
+            const other = (taken ?? []).find((r: { id: string }) => r.id !== userId);
+            if (other) {
+              phoneConflict = true;
+            } else {
+              const { error: pErr } = await admin.auth.admin.updateUserById(userId!, {
+                phone: `+${authPhone}`,
+                phone_confirm: true,
+              });
+              if (!pErr && !createdAccount) repaired = true;
+            }
           }
+        }
+
+        // Profile row: handle_new_user may have auto-created it — fill the
+        // gaps, never overwrite non-empty fields, tolerate unique clashes.
+        const { data: prof } = await admin.from("users")
+          .select("id, full_name, email, phone").eq("id", userId).maybeSingle();
+        if (prof) {
+          const updates: Record<string, string> = {};
+          if (!prof.full_name && fullName) updates.full_name = fullName;
+          if (!prof.email && email) updates.email = email;
+          if (!prof.phone && profilePhone && !phoneConflict) updates.phone = profilePhone;
+          if (Object.keys(updates).length) {
+            const { error: uErr } = await admin.from("users").update(updates).eq("id", userId);
+            if (!uErr && !createdAccount) repaired = true;
+          }
+        } else {
+          const { error: iErr } = await admin.from("users").insert({
+            id: userId, full_name: fullName, email,
+            phone: phoneConflict ? null : profilePhone, role: "student",
+          });
+          if (iErr) return { input: s, status: "error", detail: `Profile insert failed: ${iErr.message}` };
+          if (!createdAccount) repaired = true;
         }
 
         // 5. Enrolment — idempotent by hand (no DB unique constraint).
@@ -227,6 +269,16 @@ Deno.serve(async (req) => {
             target_id: targetId ?? null,
             metadata: { offering_id: offeringId, offering_title: offering.title, user_id: userId, via: "offering-editor", source },
           });
+        }
+        // The enrolment is real either way; the row is flagged so the report
+        // tells the admin this student still cannot log in by phone.
+        if (phoneConflict) {
+          return {
+            input: s,
+            status: "phone_belongs_to_another_account",
+            user_id: userId ?? undefined,
+            detail: "Enrolled, but this number is already on a different account — merge them or the student won't see it after phone login.",
+          };
         }
         return { input: s, status, user_id: userId ?? undefined };
       } catch (e) {
