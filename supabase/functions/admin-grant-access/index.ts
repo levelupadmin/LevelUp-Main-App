@@ -21,7 +21,7 @@
 // claim_purchases_for_user — a pre-created confirmed-phone account is exactly
 // what the claim flow expects to attach legacy purchases to at first sign-in.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
-import { resolveImportPhone } from "../_shared/phone.ts";
+import { resolveImportPhone, phoneVariants } from "../_shared/phone.ts";
 
 function corsFor(req: Request) {
   const origin = req.headers.get("Origin") || "";
@@ -154,6 +154,37 @@ Deno.serve(async (req) => {
             p_phone: authPhone,
           });
           if (authRows?.length) userId = authRows[0].id;
+
+          // 2b. LAST RESORT BEFORE MINTING: the student's own application.
+          //
+          // `cohort_applications` is the one record where a phone and an email
+          // were typed by the STUDENT and bound to a real account. That makes
+          // it the only safe way to catch a roster whose email is wrong: on
+          // 2026-10-23 a row read `mosesl@gmail.com` where the student's own
+          // application said `moseslg@gmail.com`, so nothing matched, a second
+          // account was minted and enrolled, and he kept signing in to the
+          // original and seeing an empty library. His CSV phone was correct and
+          // was already on that application — this step would have found him.
+          //
+          // Deliberately LAST: a direct profile/auth hit always wins, so this
+          // can only ever rescue a row that was otherwise about to create a
+          // duplicate. And it is phone-only — an emailed match here would let a
+          // mistyped address attach a grant to a stranger, which is the
+          // 2026-09-09 lesson. A phone in an application was paired with that
+          // account by the applicant, so it carries the same trust the
+          // `legacy_enrolments` lookup in verify-msg91-otp already relies on.
+          if (!userId && authPhone) {
+            const { data: apps } = await admin
+              .from("cohort_applications")
+              .select("user_id")
+              .in("phone", phoneVariants(`+${authPhone}`))
+              .not("user_id", "is", null);
+            const ids = [...new Set((apps ?? []).map((a: { user_id: string }) => a.user_id))];
+            // Exactly one account, or we are guessing. Two applications
+            // disagreeing about whose number this is must not silently pick a
+            // winner — fall through and mint, which is recoverable.
+            if (ids.length === 1) userId = ids[0];
+          }
 
           // 3. Nobody anywhere → create the account, pre-confirmed.
           if (!userId) {
