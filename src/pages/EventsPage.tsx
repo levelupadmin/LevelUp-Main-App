@@ -36,6 +36,8 @@ const EventsPage = () => {
 
   // Load Razorpay script
   useEffect(() => {
+    // The native shells take no payments, so they never load Razorpay.
+    if (isNative()) return;
     if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) return;
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";

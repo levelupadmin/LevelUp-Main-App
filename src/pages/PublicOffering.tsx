@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/accordion";
 import Footer from "@/components/Footer";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
-import { isAndroid, isNative } from "@/lib/platform";
+import { isAndroid, isIOS, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import AndroidAppCard from "@/components/AndroidAppCard";
 import VdoCipherPlayer from "@/components/VdoCipherPlayer";
@@ -537,9 +537,22 @@ function HeroActions({
   // Program, Video Editing Academy, etc.) are not sold in-app. The CTA
   // opens the program's landing page on the web, where the student
   // applies via the Tally form and our sales team takes payment. Same on
-  // every platform, and Reader-Rule-safe on iOS/Android (an application,
-  // not an in-app digital-goods purchase).
-  const applyUrl = (offering as any)?.tally_form_url || null;
+  // web and Android (an application, not an in-app digital-goods purchase).
+  // iOS gets no link: the form leads to a paid application fee, which Apple
+  // treats as steering to an outside purchase (Guidelines 3.1.1 / 3.1.3).
+  const isCohort = !!(offering as any)?.tally_form_url;
+  if (isCohort && isIOS()) {
+    if (variant === "slim") return null;
+    return (
+      <div className="rounded-xl border border-border bg-card/40 p-5">
+        <p className="text-sm text-muted-foreground">
+          This is a live cohort. Admitted students find their cohort room,
+          live sessions and recordings right here in the app.
+        </p>
+      </div>
+    );
+  }
+  const applyUrl = isCohort ? (offering as any).tally_form_url : null;
   if (applyUrl) {
     const applyButton = (
       <a
@@ -1414,7 +1427,11 @@ export default function PublicOffering() {
 
   const highlights: string[] = Array.isArray(offering.highlights) ? offering.highlights : [];
   const isFree = Number(offering.price_inr) === 0;
-  const applyUrl = (offering as any).tally_form_url || null;
+  const isCohort = !!(offering as any).tally_form_url;
+  // No application link on iOS (Apple 3.1.1 / 3.1.3): it leads to a paid
+  // application fee. With applyUrl null the sticky bar and deadline copy drop
+  // out; isCohort still picks the cohort page layout.
+  const applyUrl = isCohort && !isIOS() ? (offering as any).tally_form_url : null;
 
   const courseData = offering.offering_courses?.[0]?.courses;
   const courseOutcomes = (courseData?.outcomes || []).filter(
@@ -1563,7 +1580,7 @@ export default function PublicOffering() {
                 hero CTA, skipped when no outcomes are populated. */}
             <OutcomesGrid outcomes={courseOutcomes} />
 
-            {applyUrl ? (
+            {isCohort ? (
               /* Live-cohort flow: who it's for / what's inside, the
                  admission journey, then the instructor; preview (when one
                  exists) closes the pitch. No curriculum list or includes
@@ -1590,7 +1607,7 @@ export default function PublicOffering() {
                 )}
 
                 {/* Admission journey for application-only cohorts. */}
-                <ApplicationTimeline />
+                {!isIOS() && <ApplicationTimeline />}
 
                 <IncludedCourses courses={offering.offering_courses || []} />
 
@@ -1673,7 +1690,7 @@ export default function PublicOffering() {
                 back without scrolling up. Slim (button-only) because the
                 price has already appeared twice; cohorts get the closing
                 deadline as the headline. */}
-            {offering.status !== "archived" && (
+            {offering.status !== "archived" && !isIOS() && (
               <div className="rounded-2xl border border-border bg-[hsl(var(--surface))] p-6 sm:p-8 text-center space-y-4">
                 <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
                   {applyUrl ? "Applications open" : "Ready when you are"}

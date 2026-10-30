@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { isNative } from "@/lib/platform";
+import { nativePaymentNote } from "@/lib/storeCopy";
 import { COHORT_INTERVIEW, DECISION_FLOW, flag } from "@/lib/flags";
 import { useFunnelStage } from "@/hooks/useFunnelStage";
 import { InterviewSlots } from "@/components/interview/SlotButtons";
@@ -667,7 +668,7 @@ const ApplicationStatus = () => {
           {reconciledCta &&
             (reconciledCta.payment && isNative() ? (
               <p className="mt-4 text-xs text-muted-foreground">
-                Complete this step from a web browser.
+                {nativePaymentNote()}
               </p>
             ) : (
               <div className="mt-4">
@@ -867,7 +868,7 @@ const ApplicationStatus = () => {
                     application.status === "accepted" &&
                     (isNative() ? (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Complete this step from a web browser.
+                        {nativePaymentNote()}
                       </p>
                     ) : (
                       <Link
@@ -885,7 +886,7 @@ const ApplicationStatus = () => {
                     application.status === "confirmation_paid" &&
                     (isNative() ? (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Complete this step from a web browser.
+                        {nativePaymentNote()}
                       </p>
                     ) : (
                       <Link

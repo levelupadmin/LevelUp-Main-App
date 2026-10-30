@@ -25,6 +25,7 @@ import CohortSchedule from "@/components/course-detail/CohortSchedule";
 import TestimonialsCarousel from "@/components/course-detail/TestimonialsCarousel";
 import FAQ from "@/components/course-detail/FAQ";
 import UrgencyStrip from "@/components/course-detail/UrgencyStrip";
+import { isIOSShell } from "@/lib/storeCopy";
 
 interface Course {
   id: string;
@@ -366,6 +367,12 @@ const CourseDetail = () => {
       // Don't dead-end the user on a toast: give them a path to the
       // program page where they can enrol (web) or apply (native; the
       // offering page hides price/buy UI itself per the Reader Rule).
+      // iOS gets the notice alone: no enrol prompt and no link to the
+      // program page (Apple 3.1.1 / 3.1.3 anti-steering).
+      if (isIOSShell()) {
+        toast("This chapter is locked");
+        return;
+      }
       toast("This chapter is locked", {
         description: "Enrol in this course to unlock all chapters.",
         ...(offeringSlug

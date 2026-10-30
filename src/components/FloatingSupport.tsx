@@ -10,6 +10,7 @@ import {
 import { hapticImpact, hapticSelection } from "@/lib/haptics";
 
 import { supportWhatsAppLink } from "@/lib/support";
+import { isIOSShell } from "@/lib/storeCopy";
 
 /** Build a wa.me deep link with a prefilled message. */
 const waLink = (text: string) => supportWhatsAppLink(text);
@@ -47,7 +48,12 @@ const FloatingSupport = () => {
   const onCheckout = pathname.startsWith("/checkout/");
   const onProfile = pathname === "/profile" || pathname.startsWith("/profile/");
 
-  if (!onOffering && !onCheckout && !onProfile) return null;
+  // iOS shows support on the account page only, and without the course-picking
+  // chip: on offering and checkout pages it would be a sales channel for
+  // purchases made outside the app (Apple 3.1.1 / 3.1.3).
+  const ios = isIOSShell();
+  if (ios ? !onProfile : !onOffering && !onCheckout && !onProfile) return null;
+  const topics = ios ? TOPICS.filter((t) => t.label !== "Which course is right for me?") : TOPICS;
 
   // Conversion pages (offering + checkout) have a sticky CTA at the bottom
   // on MOBILE, hide the bubble there so they don't overlap. On desktop the
@@ -106,7 +112,7 @@ const FloatingSupport = () => {
           {/* Topic chips */}
           <div className="mt-5 flex flex-col gap-2">
             <p className="text-xs text-muted-foreground">What can we help with?</p>
-            {TOPICS.map((t) => (
+            {topics.map((t) => (
               <button
                 key={t.label}
                 type="button"

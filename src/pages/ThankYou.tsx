@@ -410,6 +410,8 @@ export default function ThankYou() {
 
   /* ── Load Razorpay script (for upsells) ── */
   useEffect(() => {
+    // The native shells take no payments, so they never load Razorpay.
+    if (isNative()) return;
     if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) return;
     const s = document.createElement("script");
     s.src = "https://checkout.razorpay.com/v1/checkout.js";
