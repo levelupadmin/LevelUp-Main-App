@@ -1,6 +1,7 @@
 import { BookOpen, Lock, Play } from "lucide-react";
 import Reveal from "@/components/motion/Reveal";
 import { hapticSelection } from "@/lib/haptics";
+import { formatRuntime } from "@/lib/thankYouCourse";
 
 /**
  * Minimal chapter/section shapes the browser needs. Kept structurally
@@ -73,8 +74,9 @@ export default function LessonBrowser({
     (sum, ch) => sum + (ch.duration_seconds ?? 0),
     0,
   );
+  // Exact runtime ("2 h 33 min"), not whole hours: rounding turned
+  // Nelson's 153 min into "3 hrs".
   const totalMins = durationMinutes || Math.round(chapterSeconds / 60);
-  const totalHrs = totalMins >= 60 ? Math.round(totalMins / 60) : null;
   // Running 1-based lesson index across all sections, so a 3-section
   // course numbers 01 → 12 continuously rather than restarting each block.
   let runningIndex = 0;
@@ -91,7 +93,7 @@ export default function LessonBrowser({
           </h2>
           <div className="text-xs text-muted-foreground font-mono">
             {lessonCount} lesson{lessonCount === 1 ? "" : "s"}
-            {totalHrs ? ` · ${totalHrs} hrs` : totalMins > 0 ? ` · ${totalMins} min` : ""}
+            {totalMins > 0 ? ` · ${formatRuntime(totalMins * 60)}` : ""}
             {" · 4K"}
           </div>
         </div>

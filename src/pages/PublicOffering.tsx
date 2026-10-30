@@ -31,6 +31,7 @@ import ArtworkImage from "@/components/media/ArtworkImage";
 import AmbientGlow from "@/components/media/AmbientGlow";
 import { durations, easings, useMotionSafe } from "@/lib/motion";
 import { resolveHandoff } from "./publicOfferingHandoff";
+import { formatRuntime } from "@/lib/thankYouCourse";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -798,6 +799,7 @@ function FreePreviewPlayer({
  * the free preview on masterclass pages. Numbers derive from the already-
  * loaded course (total_lessons / duration_minutes, falling back to summing
  * chapter durations); a numeric tile is omitted when its value is unknown.
+ * Runtime prints exact ("2 h 33 min"); "N+ hrs" rounded 153 min up to 3.
  * Format/captions/access are platform constants: masterclasses ship as 4K
  * masters with burned-in subtitles and lifetime access.
  */
@@ -813,16 +815,13 @@ function StatStrip({ offering }: { offering: Offering }) {
     0,
   );
   const minutes = course?.duration_minutes || Math.round(chapterSeconds / 60);
-  const hours = minutes >= 60 ? Math.round(minutes / 60) : null;
 
   const tiles: { label: string; value: string }[] = [];
   if (lessons && lessons > 0) {
     tiles.push({ label: "Lessons", value: String(lessons) });
   }
-  if (hours) {
-    tiles.push({ label: "Runtime", value: `${hours}+ hrs` });
-  } else if (minutes > 0) {
-    tiles.push({ label: "Runtime", value: `${minutes} min` });
+  if (minutes > 0) {
+    tiles.push({ label: "Runtime", value: formatRuntime(minutes * 60) });
   }
   tiles.push({ label: "Format", value: "4K video" });
   tiles.push({ label: "Captions", value: "Subtitles" });
