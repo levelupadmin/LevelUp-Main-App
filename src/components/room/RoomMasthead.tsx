@@ -2,7 +2,7 @@
  * RoomMasthead.tsx — the title card of a cohort room (R1-T3).
  *
  * The room's name, its tagline, and the cohort's weeks drawn as the line from
- * the LevelUp mark (RoomWeekLine), with one status line under it ("WEEK 4 OF
+ * one segment per week (RoomWeekLine), with one status line under it ("WEEK 4 OF
  * 12 · 8 WEEKS TO GO"). Optional hero art sits as a band above the name.
  *
  * Layout notes that are load-bearing, not decoration:
