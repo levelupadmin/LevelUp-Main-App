@@ -5,7 +5,7 @@
 --   legacy_customers        one row per legacy phone, with its totals
 --   legacy_customer_emails  every email seen on each legacy phone, lower-cased
 --
--- refresh_legacy_reports() rebuilds both. It runs once at the end of this file,
+-- refresh_legacy_reports() rebuilds all three. It runs once at the end of this file,
 -- then after any statement that changes a column they read: mapping saves,
 -- TagMango ingests, admin edits. Claims only set claimed_by_user_id and
 -- claimed_at, so sign-in never triggers a rebuild.
