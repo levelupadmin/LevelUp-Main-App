@@ -19,6 +19,7 @@ import { requestClientMeta } from "../_shared/attribution.ts";
 import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
 import { courseGranted, ensureCourseGranted, paidOrder } from "../_shared/captureGrant.ts";
 import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
+import { proveCapturedOrder } from "../_shared/capturedOrderProof.ts";
 
 async function verifyHmac(
   orderId: string,
@@ -211,6 +212,33 @@ Deno.serve(async (req) => {
       // phone's account would tell that caller what the person owns.
       if (!paidOrder(po)) {
         return jsonRes({ success: true, already_captured: true });
+      }
+      // A captured row is not payment proof: until migration 20261030120000 a
+      // signed-in user could insert one. Ask Razorpay whether the row's own
+      // payment and order are real before granting anything
+      // (_shared/capturedOrderProof.ts). A refusal changes nothing on the row,
+      // so the status check still reads it and Pay stays locked; the webhook
+      // grants a real buyer's course on its own signed delivery.
+      const proof = await proveCapturedOrder(
+        po,
+        { razorpay_order_id, razorpay_payment_id, razorpay_signature },
+        { keyId, keySecret: secret },
+        { courseGranted: () => courseGranted(admin, po) },
+      );
+      if (proof.kind === "held") {
+        console.warn("[verify] captured order", po.id, "Razorpay unreachable; signature valid and course already held");
+        return jsonRes({ success: true, already_captured: true });
+      }
+      if (proof.kind === "retry") {
+        console.error("[verify] captured order", po.id, "Razorpay unreachable; nothing granted:", proof.detail);
+        return jsonRes(
+          { error: "We couldn't confirm your payment with Razorpay just now. Please don't pay again; check again in a minute." },
+          503,
+        );
+      }
+      if (proof.kind === "refused") {
+        console.error("[verify] captured order", po.id, "payment proof refused; nothing granted:", proof.detail);
+        return jsonRes({ error: "Payment verification failed. Please contact support." }, 400);
       }
       // Captured is not the same as granted: the call that captured this
       // order writes "captured" before it inserts the enrolment, and can fail
