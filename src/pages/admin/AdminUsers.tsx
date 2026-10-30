@@ -23,7 +23,7 @@ interface UserRow {
   member_number: number;
   created_at: string;
   enrolment_count: number;
-  // segmentation columns (from users_unified view / users table)
+  // segmentation columns (from admin_users_page / users table)
   is_legacy?: boolean;
   city?: string | null;
   state?: string | null;
@@ -34,20 +34,18 @@ interface UserRow {
   legacy_enrolment_count?: number;
 }
 
-/** PostgREST `or=` filter for the search box. The page used to filter only the
- *  50 rows it had already fetched, so a student outside the current page could
- *  never be found — search is server-side now. Digit-heavy input is treated as a
- *  phone fragment (spaces / dashes / "+" stripped, so "+91 98765" finds
- *  "919876…" and "+919876…" alike); anything else matches name or email.
- *  Commas and parentheses would break PostgREST's filter grammar, so they are
- *  dropped from the needle. */
-function buildSearchOr(raw: string): string | null {
+/** Search terms for admin_users_page. The page used to filter only the 50 rows
+ *  it had already fetched, so a student outside the current page could never be
+ *  found — search is server-side now. `text` matches name or email. Digit-heavy
+ *  input is treated as a phone fragment (spaces / dashes / "+" stripped, so
+ *  "+91 98765" finds "919876…" and "+919876…" alike). Commas and parentheses
+ *  are dropped, as they were when this built a PostgREST `or=` filter. */
+function buildSearch(raw: string): { text: string; phone: string } | null {
   const q = raw.trim().replace(/[,()]/g, "");
   if (q.length < 2) return null;
   const digits = q.replace(/\D/g, "");
   const looksLikePhone = digits.length >= 4 && digits.length / q.length > 0.6;
-  const needle = looksLikePhone ? digits : q;
-  return `full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${needle}%`;
+  return { text: q, phone: looksLikePhone ? digits : q };
 }
 
 const AdminUsers = () => {
@@ -120,34 +118,24 @@ const AdminUsers = () => {
     const stale = () => seq !== loadSeq.current;
     setLoading(true);
     const from = p * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
 
-    // Query the users_unified view - adds legacy flag, city, vertical, LTV.
-    const searchOr = buildSearchOr(debouncedSearch);
-    let countQuery = supabase
-      .from("users_unified" as any)
-      .select("id", { count: "exact", head: true });
-    if (scopeFilter === "active") countQuery = countQuery.eq("is_legacy", false);
-    if (scopeFilter === "legacy") countQuery = countQuery.eq("is_legacy", true);
-    if (verticalFilter !== "all") countQuery = countQuery.eq("program_vertical", verticalFilter);
-    if (roleFilter !== "all") countQuery = countQuery.eq("role", roleFilter);
-    if (searchOr) countQuery = countQuery.or(searchOr);
-    const { count } = await countQuery;
-    setTotalCount(count ?? 0);
-
-    let q = supabase
-      .from("users_unified" as any)
-      .select("id, full_name, email, phone, role, member_number, created_at, is_real, is_legacy, legacy_source, city, state, country, program_vertical, lifetime_revenue_inr, first_purchase_at, last_purchase_at, purchase_count")
-      // Ordering by lifetime_revenue_inr puts your biggest customers
-      // (legacy or not) at the top of the list.
-      .order("lifetime_revenue_inr", { ascending: false, nullsFirst: false })
-      .range(from, to);
-    if (scopeFilter === "active") q = q.eq("is_legacy", false);
-    if (scopeFilter === "legacy") q = q.eq("is_legacy", true);
-    if (verticalFilter !== "all") q = q.eq("program_vertical", verticalFilter);
-    if (roleFilter !== "all") q = q.eq("role", roleFilter);
-    if (searchOr) q = q.or(searchOr);
-    const { data: usersData, error: usersErr } = await q as any;
+    // One RPC returns the page and the total: real users plus legacy-only
+    // TagMango buyers, sorted by lifetime revenue so the biggest customers
+    // (legacy or not) are at the top. It reads the precomputed
+    // legacy_customers table (migration 20261031110000); the users_unified
+    // view it replaces regrouped all legacy rows twice per load.
+    const search = buildSearch(debouncedSearch);
+    const { data: pageData, error: usersErr } = await supabase.rpc("admin_users_page" as any, {
+      p_text: search?.text ?? null,
+      p_phone: search?.phone ?? null,
+      p_scope: scopeFilter,
+      p_role: roleFilter === "all" ? null : roleFilter,
+      p_vertical: verticalFilter === "all" ? null : verticalFilter,
+      p_limit: PAGE_SIZE,
+      p_offset: from,
+    });
+    const pageResult = pageData as { total_count: number; rows: UserRow[] } | null;
+    const usersData = pageResult?.rows;
 
     if (stale()) return; // a newer filter/page request is already in flight
     if (usersErr) {
@@ -157,6 +145,7 @@ const AdminUsers = () => {
       setLoading(false);
       return;
     }
+    setTotalCount(pageResult?.total_count ?? 0);
     if (!usersData) { setLoading(false); return; }
 
     // Only real users have an `id`; phantom legacy users have id=null.

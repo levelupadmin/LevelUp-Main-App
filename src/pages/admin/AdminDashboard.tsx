@@ -127,18 +127,20 @@ const AdminDashboard = () => {
     /* ── Two RPCs fired in parallel ──
        1) admin_dashboard_metrics - live-only stats, optimized SQL
           single-roundtrip (unchanged).
-       2) admin_dashboard_combined + offering_performance_in_range +
+       2) admin_dashboard_summary + admin_revenue_by_offering +
           daily_signups_combined - LEGACY-aware counterparts that
-          merge in the 73K legacy_enrolments rows. These ship as
-          their own RPCs so the dashboard reflects "all customer
-          activity" instead of just "new-app activity".
+          merge in the 83K legacy_enrolments rows. The first two read
+          the precomputed legacy_revenue_daily / legacy_customers
+          tables (migration 20261031110000) and return the same numbers
+          as admin_dashboard_combined / offering_performance_in_range,
+          which stay in the database until nothing calls them.
        The combined numbers are AUTHORITATIVE for what we render -
        the live-only payload is only used as a fallback if the new
        RPCs error out. */
     const [liveRes, combinedRes, offPerfRes, dailyRes] = await Promise.all([
       supabase.rpc("admin_dashboard_metrics", { p_from: from ?? undefined, p_to: to ?? undefined }),
-      supabase.rpc("admin_dashboard_combined" as any, { p_from: from, p_to: to }),
-      supabase.rpc("offering_performance_in_range" as any, { p_from: from, p_to: to }),
+      supabase.rpc("admin_dashboard_summary" as any, { p_from: from, p_to: to }),
+      supabase.rpc("admin_revenue_by_offering" as any, { p_from: from, p_to: to }),
       supabase.rpc("daily_signups_combined" as any, { p_from: from, p_to: to }),
     ]);
 
