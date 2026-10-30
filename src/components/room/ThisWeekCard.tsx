@@ -468,13 +468,13 @@ export interface ThisWeekCardProps {
   className?: string;
 }
 
-const EYEBROW = "font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground";
+const EYEBROW = "font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground";
 const PILL =
   "inline-flex shrink-0 items-center gap-1.5 rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider";
 
-/** `E04`, `E12`, and honest about a week number the server never set. */
+/** `WK 04`, `WK 12`, and honest about a week number the server never set. */
 export function episodeCode(weekNumber: number): string {
-  return `E${String(Math.max(0, weekNumber)).padStart(2, "0")}`;
+  return `WK ${String(Math.max(0, weekNumber)).padStart(2, "0")}`;
 }
 
 export function ThisWeekCard({
@@ -523,25 +523,21 @@ export function ThisWeekCard({
       className={cn("min-w-0 overflow-hidden rounded-xl border border-border bg-surface", className)}
     >
       <header className="border-b border-border p-5">
-        <div className="flex items-start justify-between gap-3">
-          <p className={cn(EYEBROW, "min-w-0 truncate")}>
-            {episodeCode(week.week_number)}
-            {week.theme ? ` · ${week.theme}` : ""}
-          </p>
+        <div className="flex items-center justify-between gap-3">
+          <p className={cn(EYEBROW, "min-w-0 truncate")}>{episodeCode(week.week_number)}</p>
           <span className={cn(PILL, STATUS_TONE_CLASS[weekStatusTone(week.week_status)])}>
             {weekStatusLabel(week.week_status)}
           </span>
         </div>
 
-        {/* The today-first line. Serif, and the largest thing in the module. */}
-        <p className="mt-2 font-serif text-2xl leading-tight text-foreground sm:text-3xl">
-          <span className={lead.kind === "none" ? undefined : STATUS_TONE_TEXT[lead.tone]}>
-            {lead.line}
-          </span>
-        </p>
-
+        {/* The week's topic is the headline; the date range sits under it. */}
+        {week.theme && (
+          <h2 className="mt-2 break-words font-display text-[21px] font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
+            {week.theme}
+          </h2>
+        )}
         {Number.isFinite(startsMs) && (
-          <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <p className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
             <CalendarDays size={13} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
             <span className="font-mono">
               {formatIstDayMonth(startsMs)}
@@ -550,8 +546,24 @@ export function ThisWeekCard({
           </p>
         )}
 
+        {/* The today-first line: the next timed thing this week, labelled. */}
+        <div className="mt-4 rounded-xl bg-surface-2 px-4 py-3">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+            {lead.kind === "assignment" ? "Assignment" : lead.kind === "none" ? "This week" : "Next up"}
+          </p>
+          <p className="mt-1 text-[17px] font-semibold leading-snug text-foreground">
+            <span
+              className={
+                lead.kind === "none" || lead.tone === "neutral" ? undefined : STATUS_TONE_TEXT[lead.tone]
+              }
+            >
+              {lead.line}
+            </span>
+          </p>
+        </div>
+
         {week.description && (
-          <p className="body-muted mt-3 max-w-prose break-words text-sm leading-relaxed">{week.description}</p>
+          <p className="body-muted mt-4 max-w-prose break-words text-sm leading-relaxed">{week.description}</p>
         )}
       </header>
 

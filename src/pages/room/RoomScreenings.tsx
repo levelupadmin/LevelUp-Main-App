@@ -558,7 +558,7 @@ const RoomScreenings = () => {
         id="room-module-recordings"
         className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground"
       >
-        Screenings
+        Recordings
       </h2>
 
       {rows.length === 0 ? (
@@ -589,7 +589,7 @@ const RoomScreenings = () => {
                       <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
                         {row.eyebrow}
                       </span>
-                      <span className="mt-1 line-clamp-2 font-serif text-base leading-tight text-foreground">
+                      <span className="mt-1 line-clamp-2 font-display font-semibold tracking-tight text-[15px] leading-tight text-foreground">
                         {row.title}
                       </span>
                       <span className="mt-2 text-xs text-room-accent">

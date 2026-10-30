@@ -305,7 +305,7 @@ const NoticeCard = ({
           pasted Zoom or Drive link, and a 60-character unbroken token would
           otherwise push the card sideways at 360px. */}
       {notice.title && (
-        <h3 className="mt-2 break-words font-serif text-lg leading-snug text-foreground">
+        <h3 className="mt-2 break-words font-display font-semibold tracking-tight text-[17px] leading-snug text-foreground">
           {notice.title}
         </h3>
       )}
@@ -547,7 +547,7 @@ const AnnouncementsModule = () => {
           </button>
         </p>
       ) : (
-        <p className="font-serif text-lg text-muted-foreground">Nothing on the board yet.</p>
+        <p className="font-display font-semibold tracking-tight text-[17px] text-muted-foreground">Nothing on the board yet.</p>
       )}
     </section>
   );

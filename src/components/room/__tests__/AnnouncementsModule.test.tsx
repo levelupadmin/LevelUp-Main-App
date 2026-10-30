@@ -486,12 +486,12 @@ describe("the amend verbs", () => {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 describe("the board", () => {
-  it("renders the empty line in the serif when there is nothing on it", async () => {
+  it("renders the empty line as a heading when there is nothing on it", async () => {
     renderBoard({ rows: [] });
 
     const empty = await screen.findByText("Nothing on the board yet.");
     expect(empty).toBeInTheDocument();
-    expect(empty.className).toContain("font-serif");
+    expect(empty.className).toContain("font-display");
   });
 
   it("does NOT claim the board is empty when the request failed", async () => {

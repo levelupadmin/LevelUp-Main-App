@@ -140,7 +140,7 @@ const RoomResources = () => {
           </p>
           <h2
             id="room-module-resources"
-            className="mt-1 font-serif text-3xl text-cream"
+            className="mt-1 font-display font-semibold tracking-tight text-2xl text-cream"
           >
             Resources
           </h2>

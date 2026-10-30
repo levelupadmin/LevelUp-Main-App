@@ -1,23 +1,20 @@
 /**
  * RoomMasthead.tsx — the title card of a cohort room (R1-T3).
  *
- * This is the surface that decides whether a room reads as a PLACE or as a page
- * with a header. It is the "Season One" masthead from
- * `design/cohorts/ROOMS-ARCHITECTURE.md` §4.1: landscape hero art behind a
- * scrim, the room's monogram, the wordmark in mono/tracking-widest at the room
- * accent, a serif-italic tagline, and one status line ("WEEK 4 OF 12").
+ * The room's name, its tagline, and the cohort's weeks drawn as the line from
+ * one segment per week (RoomWeekLine), with one status line under it ("WEEK 4 OF
+ * 12 · 8 WEEKS TO GO"). Optional hero art sits as a band above the name.
  *
  * Layout notes that are load-bearing, not decoration:
  *  - The art layer is ABSOLUTE. The block's height comes from the nameplate and
  *    its top padding, so a slow (or missing, or broken) hero can never resize
  *    the card — CLS stays at zero and there is never a collapsed void.
- *  - With no `heroUrl` the same box renders a monogram crest washed in the room
- *    accent, so an unarted room is a different-looking room, not an empty one.
+ *  - With no `heroUrl` the nameplate sits on the card with a faint accent wash;
+ *    the week line is what makes one room look different from the next.
  *  - Accent colours come from `--room-accent` via the `room-accent` Tailwind
  *    alias (R1-T2); `:root` defaults it to cream, so a masthead rendered outside
  *    a `RoomThemeProvider` still paints a legible nameplate.
- *  - `grain` is the EXISTING util (src/index.css) at its existing ≤4% opacity.
- *    No backdrop-filter, no per-room motion, no custom fonts — §4.1's hard rules.
+ *  - No grain, no backdrop-filter, no per-room motion, no custom fonts.
  *
  * Every `theme` field arrives from `resolveTheme()` already trimmed, length
  * capped and scheme checked, so nothing here re-validates or re-truncates; the
@@ -27,6 +24,7 @@ import { motion } from "framer-motion";
 import ArtworkImage from "@/components/media/ArtworkImage";
 import { useRoomEntrance, useRoomEntranceContext } from "@/components/room/RoomEntrance";
 import type { RoomTheme } from "@/lib/room";
+import RoomWeekLine from "@/components/room/RoomWeekLine";
 import { cn } from "@/lib/utils";
 
 /** The room's lifecycle phase (`cohort_room_configs.phase`). */
@@ -59,7 +57,7 @@ export interface RoomMastheadProps {
  * carrying the SAME artwork reading as two different places.
  */
 const ACCENT_WASH =
-  "radial-gradient(120% 85% at 50% 0%, hsl(var(--room-accent) / 0.16), transparent 68%)";
+  "radial-gradient(90% 120% at 100% 0%, hsl(var(--room-accent) / 0.10), transparent 62%)";
 
 /** Day-granularity date in the calendar members actually live in (R-D: IST). */
 const IST_DAY = new Intl.DateTimeFormat("en-IN", {
@@ -142,94 +140,108 @@ const RoomMasthead = ({
   const crest = crestGlyph(theme, title);
   const status = statusLine({ phase, weekNumber, weekCount, startsAt });
 
+  const kicker = phase === "alumni" ? "Alumni" : "Live cohort";
+  const weeksLeft =
+    phase === "live" && weekNumber && weekCount ? Math.max(0, weekCount - weekNumber) : null;
+
   return (
     <header
       data-testid="room-masthead"
       data-room-phase={phase}
       className={cn(
-        "relative isolate overflow-hidden rounded-2xl border border-border bg-canvas",
-        theme.texture === "grain" && "grain",
+        "relative isolate overflow-hidden rounded-2xl border border-border bg-surface",
         className,
       )}
     >
-      {/* ── Art layer ── absolute, so nothing it does can move the nameplate. */}
+      {/* ── Art layer ── a hero, when the room has one, sits as a band above
+          the nameplate; without one the room is the nameplate and its line,
+          over a faint wash of the room accent. Absolute either way, so a slow
+          or broken image never moves the text. */}
       <motion.div
         data-testid="room-masthead-art"
         className="absolute inset-0 z-0 transform-gpu"
         aria-hidden="true"
         {...entrance.art}
       >
-        {theme.heroUrl ? (
-          <ArtworkImage
-            src={theme.heroUrl}
-            alt=""
-            aspect="video"
-            priority
-            className="absolute inset-0 h-full w-full"
-          />
-        ) : (
-          <div
-            data-testid="room-masthead-crest"
-            className="absolute inset-0 grid place-items-center bg-gradient-to-b from-surface-2 to-canvas"
-          >
-            {crest && (
-              <span className="select-none font-mono text-[clamp(72px,26vw,148px)] uppercase leading-none tracking-[0.14em] text-room-accent opacity-[0.16]">
-                {crest}
-              </span>
-            )}
-          </div>
+        {theme.heroUrl && (
+          <>
+            <ArtworkImage
+              src={theme.heroUrl}
+              alt=""
+              aspect="video"
+              priority
+              className="absolute inset-0 h-full w-full"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/85 to-surface/20" />
+          </>
         )}
-
-        {/* Accent wash — the same art under two themes still reads as two rooms. */}
         <div className="absolute inset-0" style={{ backgroundImage: ACCENT_WASH }} />
-        {/* Scrim — owned here, not by ArtworkImage's own half-height one, so the
-            hero and the crest get identical legibility treatment. */}
-        <div className="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/80 to-canvas/25" />
       </motion.div>
 
       {/* ── Nameplate ── the block's height comes from here. */}
       <motion.div
         data-testid="room-masthead-plate"
         className={cn(
-          "relative z-10 transform-gpu px-5",
-          compact
-            ? "pb-5 pt-14 sm:px-6 sm:pb-6 sm:pt-16"
-            : "pb-6 pt-32 sm:px-8 sm:pb-8 sm:pt-44",
+          "relative z-10 transform-gpu px-5 sm:px-7",
+          compact ? "pb-4 pt-4" : theme.heroUrl ? "pb-5 pt-28 sm:pt-36" : "pb-5 pt-5 sm:pb-6 sm:pt-6",
         )}
         {...entrance.plate}
       >
-        {phase === "alumni" && (
-          <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.34em] text-room-accent-text">
-            Alumni
+        {!compact && (
+          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+            {kicker}
           </p>
         )}
-        <div className="flex items-start gap-3">
-          {/* The chip carries the mark when the hero does not; with no hero the
-              crest behind the plate is already doing that job. */}
+        <div className={cn("flex items-center gap-3", !compact && "mt-2")}>
           {crest && theme.heroUrl && (
             <span
               aria-hidden="true"
-              className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md border border-room-accent/30 bg-canvas/50 font-mono text-[12px] uppercase tracking-[0.06em] text-room-accent"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-room-accent/30 bg-surface/60 font-mono text-[12px] uppercase text-room-accent"
             >
               {crest}
             </span>
           )}
           {nameplate && (
-            <h1 className="line-clamp-2 break-words font-mono text-[17px] uppercase leading-[1.35] tracking-widest text-room-accent sm:text-[22px]">
+            <h1
+              className={cn(
+                "line-clamp-2 break-words font-display font-bold leading-[1.1] tracking-tight text-foreground",
+                compact ? "text-[19px]" : "text-[27px] sm:text-[32px]",
+              )}
+            >
               {nameplate}
             </h1>
           )}
         </div>
 
         {!compact && theme.tagline && (
-          <p className="mt-2 font-serif-italic text-[18px] leading-snug text-cream/75 sm:text-[22px]">
+          <p className="mt-1.5 font-serif-italic text-[17px] leading-snug text-room-accent-text/75 sm:text-[19px]">
             {theme.tagline}
           </p>
         )}
 
-        {status && (
-          <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-cream/55">
-            {status}
+        {weekCount && weekCount > 1 ? (
+          <RoomWeekLine
+            total={weekCount}
+            current={phase === "pre_start" ? null : weekNumber ?? null}
+            complete={phase === "alumni"}
+            className={compact ? "mt-3 max-w-[260px]" : "mt-5 max-w-[420px]"}
+          />
+        ) : null}
+
+        {(status || weeksLeft !== null) && (
+          <p
+            className={cn(
+              "flex items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground",
+              compact ? "mt-2 max-w-[260px]" : "mt-3 max-w-[420px]",
+            )}
+          >
+            {status && <span className="text-foreground/80">{status}</span>}
+            {weeksLeft !== null && weeksLeft > 0 && (
+              <span>
+                {weeksLeft} {weeksLeft === 1 ? "week" : "weeks"} to go
+              </span>
+            )}
+            {weeksLeft === 0 && <span>Final week</span>}
           </p>
         )}
       </motion.div>

@@ -376,7 +376,7 @@ export function WeeksModule({ renderAssignment, className }: WeeksModuleProps) {
   if (weeks.length === 0 || !selected) {
     return (
       <section className={cn("py-12 text-center", className)} aria-label="Weeks">
-        <p className="font-serif text-2xl leading-tight text-foreground">
+        <p className="font-display font-semibold tracking-tight text-xl leading-tight text-foreground">
           The schedule is being set.
         </p>
         <p className="body-muted mx-auto mt-2 max-w-sm text-sm">

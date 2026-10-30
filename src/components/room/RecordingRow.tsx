@@ -108,7 +108,7 @@ export function RecordingRow({
         <span className="block font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
           {eyebrow}
         </span>
-        <span className="mt-1 block truncate font-serif text-lg leading-tight text-foreground">
+        <span className="mt-1 block truncate font-display font-semibold tracking-tight text-[17px] leading-tight text-foreground">
           {title}
         </span>
         <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
