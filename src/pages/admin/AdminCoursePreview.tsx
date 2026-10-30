@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/accordion";
 import { ArrowLeft, Eye, Play, Lock, Clock, BookOpen } from "lucide-react";
 import AdminBreadcrumbs from "@/components/admin/AdminBreadcrumbs";
+import { formatRuntime } from "@/lib/thankYouCourse";
 
 interface Course {
   id: string;
@@ -167,7 +168,7 @@ export default function AdminCoursePreview() {
                 {course.duration_minutes && (
                   <span className="flex items-center gap-1">
                     <Clock className="h-3.5 w-3.5" />
-                    {Math.round(course.duration_minutes / 60)}h {course.duration_minutes % 60}m
+                    {formatRuntime(course.duration_minutes * 60)}
                   </span>
                 )}
                 <span className="flex items-center gap-1">
