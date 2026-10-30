@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchChapterOutline } from "@/lib/chapterOutline";
 import { TierBadge } from "@/components/TierBadge";
 import { ArtworkImage } from "@/components/media/ArtworkImage";
 import { ArrowRight, BookOpen, Clock, Sparkles, Award } from "lucide-react";
@@ -120,12 +121,7 @@ const fetchMyCourses = async (userId: string): Promise<MyCoursesData> => {
       .in("course_id", courseIds);
 
     const sectionIds = (sections ?? []).map((s) => s.id);
-    const { data: chapters } = sectionIds.length
-      ? await supabase
-          .from("chapters")
-          .select("id, section_id")
-          .in("section_id", sectionIds)
-      : { data: [] };
+    const { data: chapters } = await fetchChapterOutline<{ id: string; section_id: string }>(sectionIds, ["id", "section_id"]);
 
     // Get user progress
     const { data: progress } = await supabase

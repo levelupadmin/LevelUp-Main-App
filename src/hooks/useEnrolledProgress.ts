@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchChapterOutline } from "@/lib/chapterOutline";
 import type {
   OfferingCourseRow,
   SectionRow,
@@ -123,14 +124,7 @@ const fetchEnrolledProgress = async (
   const sectionsData = (sectionsRes.data ?? []) as SectionRow[];
   const sectionIds = sectionsData.map((s) => s.id);
 
-  const emptyChapters: ChapterRow[] = [];
-  const chaptersRes = sectionIds.length
-    ? await supabase
-        .from("chapters")
-        .select("id, section_id, sort_order")
-        .in("section_id", sectionIds)
-        .order("sort_order")
-    : { data: emptyChapters };
+  const chaptersRes = await fetchChapterOutline<ChapterRow>(sectionIds, ["id", "section_id", "sort_order"]);
 
   return {
     hasEnrolments: true,
