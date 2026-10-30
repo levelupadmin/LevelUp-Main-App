@@ -24,17 +24,3 @@ export interface CsvRow {
   phone: string;
   offering_id: string;
 }
-
-export interface CsvReadyRow extends CsvRow {
-  existing_user_id: string;
-}
-
-export interface CsvNewRow extends CsvRow {}
-
-export interface CsvConflictRow extends CsvRow {
-  existing_user_id: string;
-  existing_email: string;
-  existing_phone: string;
-  conflict_type: "email_match_phone_diff" | "phone_match_email_diff";
-  action: "force" | "skip" | null;
-}

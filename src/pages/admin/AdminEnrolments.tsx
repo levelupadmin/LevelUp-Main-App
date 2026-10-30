@@ -22,9 +22,33 @@ import { generateAndSaveCertificate, VariablePosition } from "@/lib/certificate-
 import { useAuth } from "@/contexts/AuthContext";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePaginatedTable } from "@/hooks/usePaginatedTable";
-import type { EnrolmentRow, CsvRow, CsvReadyRow, CsvNewRow, CsvConflictRow } from "@/components/admin/enrolments/types";
+import type { EnrolmentRow, CsvRow } from "@/components/admin/enrolments/types";
 import EnrolmentFilters from "@/components/admin/enrolments/EnrolmentFilters";
 import EnrolmentTable from "@/components/admin/enrolments/EnrolmentTable";
+
+/** One CSV row and what admin-grant-access did with it. */
+interface CsvGrantResult {
+  row: CsvRow;
+  status: string;
+  detail?: string;
+}
+
+/** admin-grant-access caps one call at 300 rows. */
+const CSV_CHUNK_SIZE = 100;
+
+/** admin-grant-access statuses that mean the student now has access. */
+const GRANTED_STATUSES = ["enrolled", "created_and_enrolled", "repaired_and_enrolled", "reactivated", "phone_belongs_to_another_account"];
+
+const CSV_RESULT_LABEL: Record<string, string> = {
+  enrolled: "granted",
+  created_and_enrolled: "account created + granted",
+  repaired_and_enrolled: "account repaired + granted",
+  reactivated: "re-activated",
+  already_enrolled: "already had access",
+  // Access WAS granted; phone login will not reach it until the accounts are merged.
+  phone_belongs_to_another_account: "granted, but the phone is on another account",
+  error: "failed",
+};
 
 const AdminEnrolments = () => {
   const PAGE_SIZE = 50;
@@ -53,13 +77,11 @@ const AdminEnrolments = () => {
   /* ── CSV Import state ── */
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [csvPreviewOpen, setCsvPreviewOpen] = useState(false);
-  const [csvReady, setCsvReady] = useState<CsvReadyRow[]>([]);
-  const [csvNew, setCsvNew] = useState<CsvNewRow[]>([]);
-  const [csvConflicts, setCsvConflicts] = useState<CsvConflictRow[]>([]);
+  const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvParseErrors, setCsvParseErrors] = useState<string[]>([]);
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvProgress, setCsvProgress] = useState(0);
-  const [csvTotal, setCsvTotal] = useState(0);
+  const [csvResults, setCsvResults] = useState<CsvGrantResult[] | null>(null);
 
   /* ── Load filter dropdown data ── */
   const loadFilterData = async () => {
@@ -471,7 +493,7 @@ const AdminEnrolments = () => {
     const phoneIdx = headers.findIndex((h) => h === "phone");
     const offeringIdx = headers.findIndex((h) => h === "offering_id");
 
-    if (emailIdx === -1) return { rows: [], errors: ["CSV must have an 'email' column."] };
+    if (emailIdx === -1 && phoneIdx === -1) return { rows: [], errors: ["CSV must have an 'email' or a 'phone' column."] };
 
     const rows: CsvRow[] = [];
     const errors: string[] = [];
@@ -479,13 +501,14 @@ const AdminEnrolments = () => {
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      const email = (cols[emailIdx] || "").trim().toLowerCase();
+      const email = emailIdx >= 0 ? (cols[emailIdx] || "").trim().toLowerCase() : "";
       const full_name = nameIdx >= 0 ? (cols[nameIdx] || "").trim() : "";
-      const phone = phoneIdx >= 0 ? (cols[phoneIdx] || "").trim().replace(/\D/g, "") : "";
+      // Kept as typed: admin-grant-access resolves it (10 digits = India).
+      const phone = phoneIdx >= 0 ? (cols[phoneIdx] || "").trim() : "";
       const offering_id = offeringIdx >= 0 ? (cols[offeringIdx] || "").trim() : "";
 
-      if (!email) { errors.push(`Row ${i + 1}: missing email`); continue; }
-      if (!emailRegex.test(email)) { errors.push(`Row ${i + 1}: invalid email "${email}"`); continue; }
+      if (!email && !phone) { errors.push(`Row ${i + 1}: needs an email or a phone`); continue; }
+      if (email && !emailRegex.test(email)) { errors.push(`Row ${i + 1}: invalid email "${email}"`); continue; }
       if (!offering_id) { errors.push(`Row ${i + 1}: missing offering_id`); continue; }
 
       rows.push({ full_name, email, phone, offering_id });
@@ -541,248 +564,94 @@ const AdminEnrolments = () => {
       return;
     }
 
-    // Now check users in DB
-    const ready: CsvReadyRow[] = [];
-    const newRows: CsvNewRow[] = [];
-    const conflicts: CsvConflictRow[] = [];
-    const parseErrors = [...errors];
-
-    // Batch lookup: get all users by email
-    const emails = [...new Set(rows.map((r) => r.email))];
-    const phones = [...new Set(rows.map((r) => r.phone).filter((p) => p.length > 0))];
-
-    // Fetch users matching any of these emails
-    let emailUsers: { id: string; email: string | null; phone: string | null; full_name: string | null }[] = [];
-    if (emails.length > 0) {
-      // Supabase .in() has a limit, so batch in chunks of 100
-      for (let i = 0; i < emails.length; i += 100) {
-        const chunk = emails.slice(i, i + 100);
-        const { data } = await supabase
-          .from("users")
-          .select("id, email, phone, full_name")
-          .in("email", chunk);
-        if (data) emailUsers = emailUsers.concat(data);
-      }
-    }
-
-    // Also fetch users matching phones (to detect phone conflicts)
-    let phoneUsers: { id: string; email: string | null; phone: string | null; full_name: string | null }[] = [];
-    if (phones.length > 0) {
-      for (let i = 0; i < phones.length; i += 100) {
-        const chunk = phones.slice(i, i + 100);
-        const { data } = await supabase
-          .from("users")
-          .select("id, email, phone, full_name")
-          .in("phone", chunk);
-        if (data) phoneUsers = phoneUsers.concat(data);
-      }
-    }
-
-    const emailMap = new Map(emailUsers.map((u) => [u.email, u]));
-    const phoneMap = new Map(phoneUsers.filter((u) => u.phone).map((u) => [u.phone!, u]));
-
-    for (const row of rows) {
-      const byEmail = emailMap.get(row.email);
-      const byPhone = row.phone ? phoneMap.get(row.phone) : undefined;
-
-      if (byEmail && byPhone && byEmail.id === byPhone.id) {
-        // Both match same user - ready to enroll
-        ready.push({ ...row, existing_user_id: byEmail.id });
-      } else if (byEmail && !row.phone) {
-        // Email matches, no phone in CSV - treat as ready
-        ready.push({ ...row, existing_user_id: byEmail.id });
-      } else if (byEmail) {
-        // Email matches but phone differs
-        const existingPhone = byEmail.phone || "";
-        if (existingPhone === row.phone || !existingPhone) {
-          // Phone matches or user has no phone - ready
-          ready.push({ ...row, existing_user_id: byEmail.id });
-        } else {
-          // Phone conflict
-          conflicts.push({
-            ...row,
-            existing_user_id: byEmail.id,
-            existing_email: byEmail.email || "",
-            existing_phone: existingPhone,
-            conflict_type: "email_match_phone_diff",
-            action: null,
-          });
-        }
-      } else if (byPhone) {
-        // Phone matches but email doesn't
-        conflicts.push({
-          ...row,
-          existing_user_id: byPhone.id,
-          existing_email: byPhone.email || "",
-          existing_phone: byPhone.phone || "",
-          conflict_type: "phone_match_email_diff",
-          action: null,
-        });
-      } else {
-        // No match at all - new user
-        newRows.push(row);
-      }
-    }
-
-    setCsvReady(ready);
-    setCsvNew(newRows);
-    setCsvConflicts(conflicts);
-    setCsvParseErrors(parseErrors);
+    setCsvRows(rows);
+    setCsvParseErrors(errors);
     setCsvProgress(0);
-    setCsvTotal(0);
+    setCsvResults(null);
     setCsvImporting(false);
     setCsvPreviewOpen(true);
   };
 
-  const setConflictAction = (idx: number, action: "force" | "skip") => {
-    setCsvConflicts((prev) => prev.map((c, i) => i === idx ? { ...c, action } : c));
-  };
+  /** Rows grouped by offering, in file order. */
+  const csvGroups = (() => {
+    const groups = new Map<string, CsvRow[]>();
+    for (const r of csvRows) groups.set(r.offering_id, [...(groups.get(r.offering_id) || []), r]);
+    return [...groups.entries()].map(([offering_id, rows]) => ({
+      offering_id,
+      title: allOfferings.find((o) => o.id === offering_id)?.title ?? null,
+      rows,
+    }));
+  })();
 
+  /* All writes go through admin-grant-access, the same edge function the
+     offering editor's Students tab uses. It finds or creates each account on
+     the server, writes source 'bulk_import' and logs each grant. The old
+     browser import inserted source 'admin_csv_import', which the enrolments
+     check constraint rejects, so every row failed and showed as "skipped". */
   const handleCsvImport = async () => {
     setCsvImporting(true);
-    let enrolled = 0;
-    let usersCreated = 0;
-    let skipped = 0;
+    setCsvProgress(0);
+    const results: CsvGrantResult[] = [];
+    const total = csvRows.length;
+    let done = 0;
 
-    const forcedConflicts = csvConflicts.filter((c) => c.action === "force");
-    const skippedConflicts = csvConflicts.filter((c) => c.action === "skip" || c.action === null);
-    skipped += skippedConflicts.length;
-
-    const totalItems = csvReady.length + csvNew.length + forcedConflicts.length;
-    setCsvTotal(totalItems);
-    let processed = 0;
-
-    const updateProgress = () => {
-      processed++;
-      setCsvProgress(Math.round((processed / totalItems) * 100));
-    };
-
-    // 1. Enrol ready users
-    for (const row of csvReady) {
-      // Check for duplicate
-      const { data: existing } = await supabase
-        .from("enrolments")
-        .select("id")
-        .eq("user_id", row.existing_user_id)
-        .eq("offering_id", row.offering_id)
-        .eq("status", "active")
-        .maybeSingle();
-
-      if (existing) {
-        skipped++;
-      } else {
-        const { error } = await supabase.from("enrolments").insert({
-          user_id: row.existing_user_id,
-          offering_id: row.offering_id,
-          source: "admin_csv_import",
-          status: "active",
-        });
-        if (!error) enrolled++;
-        else skipped++;
-      }
-      updateProgress();
-    }
-
-    // 2. Create new users and enrol
-    for (const row of csvNew) {
-      // Create user via auth.signUp with a random password (they can reset)
-      const tempPassword = crypto.randomUUID().slice(0, 20) + "Aa1!";
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: row.email,
-        password: tempPassword,
-        options: {
-          data: {
-            full_name: row.full_name,
-            phone: row.phone,
-          },
-        },
-      });
-
-      if (signUpError || !signUpData.user) {
-        skipped++;
-        updateProgress();
-        continue;
-      }
-
-      // Wait briefly for the trigger to create the users row, then enrol
-      // The user row should be created by the auth trigger
-      let userId = signUpData.user.id;
-      usersCreated++;
-
-      // Try to enrol - the users table row may take a moment
-      let retries = 3;
-      let enrollSuccess = false;
-      while (retries > 0) {
-        const { error } = await supabase.from("enrolments").insert({
-          user_id: userId,
-          offering_id: row.offering_id,
-          source: "admin_csv_import",
-          status: "active",
-        });
-        if (!error) {
-          enrolled++;
-          enrollSuccess = true;
-          break;
+    for (const group of csvGroups) {
+      // admin-grant-access takes one offering and at most 300 rows per call.
+      for (let i = 0; i < group.rows.length; i += CSV_CHUNK_SIZE) {
+        const slice = group.rows.slice(i, i + CSV_CHUNK_SIZE);
+        const students = slice.map((r) => ({
+          full_name: r.full_name || undefined,
+          email: r.email || undefined,
+          phone: r.phone || undefined,
+        }));
+        try {
+          if (!group.title) throw new Error("Offering not found");
+          const { data, error } = await supabase.functions.invoke("admin-grant-access", {
+            body: { offering_id: group.offering_id, students, source: "bulk_import" },
+          });
+          if (error) throw new Error(error.message || "Request failed");
+          if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+          const rowResults = (data as { results: { status: string; detail?: string }[] }).results;
+          slice.forEach((row, j) => results.push({ row, status: rowResults[j]?.status ?? "error", detail: rowResults[j]?.detail }));
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : "Request failed";
+          slice.forEach((row) => results.push({ row, status: "error", detail }));
         }
-        retries--;
-        if (retries > 0) await new Promise((r) => setTimeout(r, 1000));
+        done += slice.length;
+        setCsvProgress(Math.round((done / total) * 100));
+        setCsvResults([...results]);
       }
-      if (!enrollSuccess) skipped++;
-      updateProgress();
     }
 
-    // 3. Force-update conflicts and enrol
-    for (const row of forcedConflicts) {
-      // Update user's phone/email
-      if (row.conflict_type === "email_match_phone_diff") {
-        await supabase.from("users").update({ phone: row.phone }).eq("id", row.existing_user_id);
-      } else {
-        await supabase.from("users").update({ email: row.email }).eq("id", row.existing_user_id);
-      }
-
-      // Check for duplicate enrolment
-      const { data: existing } = await supabase
-        .from("enrolments")
-        .select("id")
-        .eq("user_id", row.existing_user_id)
-        .eq("offering_id", row.offering_id)
-        .eq("status", "active")
-        .maybeSingle();
-
-      if (existing) {
-        skipped++;
-      } else {
-        const { error } = await supabase.from("enrolments").insert({
-          user_id: row.existing_user_id,
-          offering_id: row.offering_id,
-          source: "admin_csv_import",
-          status: "active",
-        });
-        if (!error) enrolled++;
-        else skipped++;
-      }
-      updateProgress();
-    }
-
-    // Audit log
-    if (profile?.id) {
-      await (supabase as any).from("admin_audit_logs").insert({
-        actor_user_id: profile.id,
-        action: "csv_import",
-        target_table: "enrolments",
-        target_id: null,
-        metadata: { source: "csv_bulk", enrolled, users_created: usersCreated, skipped },
-      });
-    }
-
+    const counts: Record<string, number> = {};
+    for (const r of results) counts[r.status] = (counts[r.status] || 0) + 1;
+    const granted = GRANTED_STATUSES.reduce((n, st) => n + (counts[st] || 0), 0);
     setCsvImporting(false);
     toast({
       title: "CSV Import Complete",
-      description: `${enrolled} enrolled, ${usersCreated} users created, ${skipped} skipped`,
+      description: `${granted} granted, ${counts.already_enrolled || 0} already had access, ${counts.error || 0} failed`,
+      variant: counts.error ? "destructive" : undefined,
     });
-    setCsvPreviewOpen(false);
     load();
     loadFilterData();
+  };
+
+  const downloadCsvReport = () => {
+    if (!csvResults) return;
+    const esc = (v: string | undefined) => {
+      const str = v ?? "";
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const lines = ["full_name,email,phone,offering_id,status,detail"].concat(
+      csvResults.map((r) => [r.row.full_name, r.row.email, r.row.phone, r.row.offering_id, r.status, r.detail].map(esc).join(",")),
+    );
+    const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "enrolment_import_report.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   /* ── Client-side search filter (on already-loaded page) ── */
@@ -984,130 +853,36 @@ const AdminEnrolments = () => {
             </div>
           )}
 
-          {/* Ready to enroll */}
-          {csvReady.length > 0 && (
-            <div className="mb-4">
-              <h3 className="text-sm font-semibold text-green-400 mb-2">
-                Ready to enroll ({csvReady.length})
-              </h3>
-              <div className="bg-green-400/5 border border-green-400/20 rounded-lg overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-green-400/20 text-left text-muted-foreground">
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Email</th>
-                      <th className="px-3 py-2">Offering ID</th>
+          {/* Rows per offering */}
+          {csvGroups.length > 0 && (
+            <div className="mb-4 bg-surface border border-border rounded-lg overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted-foreground">
+                    <th className="px-3 py-2">Offering</th>
+                    <th className="px-3 py-2">Rows</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {csvGroups.map((g) => (
+                    <tr key={g.offering_id} className="border-b border-border last:border-0">
+                      <td className="px-3 py-1.5">
+                        {g.title ?? <span className="text-red-400">Unknown offering {g.offering_id.slice(0, 8)}... (these rows will fail)</span>}
+                      </td>
+                      <td className="px-3 py-1.5">{g.rows.length}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {csvReady.map((r, i) => (
-                      <tr key={i} className="border-b border-green-400/10 last:border-0">
-                        <td className="px-3 py-1.5">{r.full_name || "-"}</td>
-                        <td className="px-3 py-1.5">{r.email}</td>
-                        <td className="px-3 py-1.5 font-mono text-[10px]">{r.offering_id.slice(0, 8)}...</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
-          {/* New users */}
-          {csvNew.length > 0 && (
-            <div className="mb-4">
-              <h3 className="text-sm font-semibold text-blue-400 mb-2">
-                New users, will be created ({csvNew.length})
-              </h3>
-              <div className="bg-blue-400/5 border border-blue-400/20 rounded-lg overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-blue-400/20 text-left text-muted-foreground">
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Email</th>
-                      <th className="px-3 py-2">Phone</th>
-                      <th className="px-3 py-2">Offering ID</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {csvNew.map((r, i) => (
-                      <tr key={i} className="border-b border-blue-400/10 last:border-0">
-                        <td className="px-3 py-1.5">{r.full_name || "-"}</td>
-                        <td className="px-3 py-1.5">{r.email}</td>
-                        <td className="px-3 py-1.5">{r.phone || "-"}</td>
-                        <td className="px-3 py-1.5 font-mono text-[10px]">{r.offering_id.slice(0, 8)}...</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Conflicts */}
-          {csvConflicts.length > 0 && (
-            <div className="mb-4">
-              <h3 className="text-sm font-semibold text-yellow-400 mb-2">
-                Conflicts, review required ({csvConflicts.length})
-              </h3>
-              <div className="bg-yellow-400/5 border border-yellow-400/20 rounded-lg overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-yellow-400/20 text-left text-muted-foreground">
-                      <th className="px-3 py-2">CSV Email</th>
-                      <th className="px-3 py-2">CSV Phone</th>
-                      <th className="px-3 py-2">Existing Email</th>
-                      <th className="px-3 py-2">Existing Phone</th>
-                      <th className="px-3 py-2">Conflict</th>
-                      <th className="px-3 py-2">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {csvConflicts.map((c, i) => (
-                      <tr key={i} className="border-b border-yellow-400/10 last:border-0">
-                        <td className="px-3 py-1.5">{c.email}</td>
-                        <td className="px-3 py-1.5">{c.phone || "-"}</td>
-                        <td className="px-3 py-1.5">{c.existing_email}</td>
-                        <td className="px-3 py-1.5">{c.existing_phone || "-"}</td>
-                        <td className="px-3 py-1.5">
-                          {c.conflict_type === "email_match_phone_diff"
-                            ? "Email matches, phone differs"
-                            : "Phone matches, email differs"}
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => setConflictAction(i, "force")}
-                              className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
-                                c.action === "force"
-                                  ? "bg-yellow-500 text-black border-yellow-500"
-                                  : "border-yellow-400/40 text-yellow-400 hover:bg-yellow-400/10"
-                              }`}
-                            >
-                              Force Update
-                            </button>
-                            <button
-                              onClick={() => setConflictAction(i, "skip")}
-                              className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
-                                c.action === "skip"
-                                  ? "bg-muted text-foreground border-border"
-                                  : "border-border text-muted-foreground hover:bg-muted/50"
-                              }`}
-                            >
-                              Skip
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground mb-4">
+            Each student is matched by phone, then email. A student with no account gets one, and can sign in with the phone number from the file.
+          </p>
 
           {/* No data */}
-          {csvReady.length === 0 && csvNew.length === 0 && csvConflicts.length === 0 && (
+          {csvRows.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-6">No valid rows found in CSV.</p>
           )}
 
@@ -1122,11 +897,25 @@ const AdminEnrolments = () => {
             </div>
           )}
 
-          {/* Summary & confirm */}
-          {!csvImporting && (csvReady.length > 0 || csvNew.length > 0 || csvConflicts.some((c) => c.action === "force")) && (
+          {/* Results */}
+          {!csvImporting && csvResults && (
             <div className="flex items-center justify-between pt-2 border-t border-border">
               <p className="text-xs text-muted-foreground">
-                {csvReady.length} ready, {csvNew.length} new users, {csvConflicts.filter((c) => c.action === "force").length} force-updated, {csvConflicts.filter((c) => c.action === "skip" || c.action === null).length} skipped
+                {Object.entries(
+                  csvResults.reduce<Record<string, number>>((acc, r) => ({ ...acc, [r.status]: (acc[r.status] || 0) + 1 }), {}),
+                ).map(([status, n]) => `${n} ${CSV_RESULT_LABEL[status] || status}`).join(", ")}
+              </p>
+              <Button variant="outline" onClick={downloadCsvReport}>
+                <Download className="h-4 w-4 mr-2" /> Download report
+              </Button>
+            </div>
+          )}
+
+          {/* Confirm */}
+          {!csvImporting && !csvResults && csvRows.length > 0 && (
+            <div className="flex items-center justify-between pt-2 border-t border-border">
+              <p className="text-xs text-muted-foreground">
+                {csvRows.length} rows across {csvGroups.length} {csvGroups.length === 1 ? "offering" : "offerings"}
               </p>
               <Button
                 onClick={handleCsvImport}
