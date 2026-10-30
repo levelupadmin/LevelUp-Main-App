@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { AnimatePresence, motion, useMotionValue, useReducedMotion } from "framer-motion";
-import type { MotionValue } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -30,7 +29,7 @@ import HeroPlayChip from "@/components/offering/HeroPlayChip";
 import ArtworkImage from "@/components/media/ArtworkImage";
 import AmbientGlow from "@/components/media/AmbientGlow";
 import { durations, easings, useMotionSafe } from "@/lib/motion";
-import { resolveHandoff } from "./publicOfferingHandoff";
+import { STICKY_BAR_CLEARANCE_PX, stickyBarVisible } from "./publicOfferingHandoff";
 import { track } from "@/lib/analytics";
 import {
   Check,
@@ -130,80 +129,55 @@ interface Offering {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
-// Granular visibility steps so the IntersectionObserver reports the hero CTA's
-// intersectionRatio finely enough to scrub against (0, 0.05, … 1). The observer
-// still fires only when a step is crossed — not per frame — so this stays
-// off-main-thread work, not a scroll handler.
-const HANDOFF_THRESHOLDS = Array.from({ length: 21 }, (_, i) => i / 20);
+// Coarse steps are enough: the bar only needs to know which side of
+// INLINE_CTA_ON_SCREEN the inline CTA sits on.
+const STICKY_THRESHOLDS = [0, 0.25, 0.5, 0.75, 1];
 
 /**
- * Airbnb-style sticky→inline pay handoff for the mobile sticky bar
- * (INTERACTION-STEALS STEAL #1). Tracks how much of the in-flow hero CTA is
- * visible and *scrubs* the sticky bar out as that inline CTA takes over, so
- * exactly one champagne CTA is lit at any scroll offset — a smooth handoff
- * rather than a binary pop.
+ * Mobile sticky pay bar visibility. The bar shows whenever the in-flow hero
+ * CTA is off screen, above or below, and steps aside while that CTA is on
+ * screen, so the buyer always has exactly one price + Enrol in view (rule and
+ * history in publicOfferingHandoff).
  *
- * - `opacity` 1→0 and `scaleX` 1→0.92 map across the inline CTA's 25%→75%-visible
- *   band. Both are framer MotionValues so the scrub composites on one promoted
- *   layer and never triggers a React re-render.
- * - `mounted` gates AnimatePresence: the bar unmounts only once the inline CTA is
- *   majority-visible (ratio ≥ HANDOFF_END), by which point the scrub has already
- *   faded it to 0 — so the shipped slide-up/down tween (item-7's blur-safe
- *   entrance/exit) still plays cleanly with no frame where both CTAs are lit.
- * - `ceded` (opacity < 0.5) drives aria-hidden + pointer-events so the fading bar
- *   stops taking taps and leaves the a11y tree the moment it cedes primacy.
- * - Reduced motion: binary swap at the 50% threshold — no scrub, no scale.
+ * The observer root is the viewport minus the band the bar itself covers, so
+ * an inline CTA tucked behind the bar counts as off screen.
  *
  * Callback-ref based because the observed block mounts after the data loads.
  */
 function useStickyHandoff(): {
   setRef: (node: HTMLDivElement | null) => void;
-  mounted: boolean;
-  ceded: boolean;
-  opacity: MotionValue<number>;
-  scaleX: MotionValue<number>;
+  visible: boolean;
 } {
-  const reduced = useReducedMotion() ?? false;
-  const opacity = useMotionValue(1);
-  const scaleX = useMotionValue(1);
-  const [mounted, setMounted] = useState(false);
-  const [ceded, setCeded] = useState(false);
+  const [visible, setVisible] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  const setRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      observerRef.current?.disconnect();
-      observerRef.current = null;
-      if (!node || typeof IntersectionObserver === "undefined") {
-        // No observer available (SSR / unsupported): preserve the historical
-        // fallback of keeping the bar hidden rather than stranding it lit.
-        setMounted(false);
-        return;
-      }
-      const observer = new IntersectionObserver(
-        (entries) => {
-          const entry = entries[entries.length - 1];
-          const ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
-          const next = resolveHandoff(
-            ratio,
-            entry.boundingClientRect.top,
-            entry.rootBounds?.top ?? 0,
-            reduced,
-          );
-          opacity.set(next.opacity);
-          scaleX.set(next.scaleX);
-          setMounted(next.mounted);
-          setCeded(next.ceded);
-        },
-        { threshold: reduced ? [0, 0.5, 1] : HANDOFF_THRESHOLDS },
-      );
-      observer.observe(node);
-      observerRef.current = observer;
-    },
-    [reduced, opacity, scaleX],
-  );
+  const setRef = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!node) {
+      setVisible(false);
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      // No observer: keep the bar up. A doubled CTA beats no CTA.
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1];
+        setVisible(stickyBarVisible(entry.isIntersecting ? entry.intersectionRatio : 0));
+      },
+      {
+        threshold: STICKY_THRESHOLDS,
+        rootMargin: `0px 0px -${STICKY_BAR_CLEARANCE_PX}px 0px`,
+      },
+    );
+    observer.observe(node);
+    observerRef.current = observer;
+  }, []);
 
-  return { setRef, mounted, ceded, opacity, scaleX };
+  return { setRef, visible };
 }
 
 /* ────────────────────────────────────────────────── */
@@ -299,9 +273,17 @@ function CohortHeroArt({
   );
 }
 
+/** Hero box shape, shared by the hero and its loading skeleton. */
+const HERO_FRAME = "aspect-square sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl";
+
+/** Main column padding, shared by the page and its loading skeleton. Tight top
+ *  on phones so the hero, price and Enrol fit the first screen. */
+const PAGE_MAIN =
+  "px-4 sm:px-6 lg:px-10 xl:px-12 pt-4 sm:pt-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8";
+
 /**
- * Cinematic hero: image fills the full container at a portrait aspect on
- * mobile (so the instructor's face dominates the fold) and a wider 21:9
+ * Hero: image fills the full container at a square aspect on mobile (the
+ * face still leads, and the price makes the first screen) and a wider 21:9
  * on desktop. Title + subtitle sit overlaid at the bottom with a heavy
  * bottom-fade gradient for legibility. Matches the visual weight of
  * Masterclass / Reforge / Maven course pages.
@@ -358,7 +340,12 @@ function HeroBanner({
       className="w-full"
     >
       <motion.div
-        className="relative flex w-full flex-col sm:block aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
+        // Square on phones (was 4:5) so the price and Enrol reach the first
+        // screen. HERO_FRAME is shared with the loading skeleton so the page
+        // does not jump when data lands. On phones the clip lives on the art
+        // layer below, not here: a long title grows the box instead of being
+        // cut off. At sm+ the title is absolute, so the box clips as before.
+        className={`relative flex w-full flex-col sm:block ${HERO_FRAME} overflow-visible sm:overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]`}
         style={{ transformOrigin: "center" }}
         initial={{ scale: enabled ? 1.04 : 1, opacity: enabled ? 0 : 1 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -368,32 +355,35 @@ function HeroBanner({
             : springs.glide
         }
       >
-        {isApply ? (
-          // Cohort/apply: landscape wordmark poster → blurred-cover backdrop +
-          // sharp contained foreground (no voids, no wordmark crop) with a
-          // branded champagne-monogram fallback. See CohortHeroArt.
-          <CohortHeroArt
-            img={img}
-            smallSrc={offering.thumbnail_url}
-            alt={offering.title}
-          />
-        ) : (
-          // Cinematic cover: ArtworkImage (priority) kills letterboxing/void and
-          // fades the poster in on load without CLS. A missing/broken src falls
-          // back to the same branded champagne-monogram placeholder.
-          <ArtworkImage
-            src={img}
-            alt={offering.title}
-            priority
-            className="absolute inset-0 h-full w-full"
-          />
-        )}
-        {/* Title-legibility gradient: dense at the bottom where the type sits, fades out by midpoint */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
-        {/* Subtle left vignette so a busy background never compromises the cream title */}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
+        {/* Art layer: carries the rounded clip on every width. */}
+        <div className="absolute inset-0 overflow-hidden rounded-3xl">
+          {isApply ? (
+            // Cohort/apply: landscape wordmark poster → blurred-cover backdrop +
+            // sharp contained foreground (no voids, no wordmark crop) with a
+            // branded champagne-monogram fallback. See CohortHeroArt.
+            <CohortHeroArt
+              img={img}
+              smallSrc={offering.thumbnail_url}
+              alt={offering.title}
+            />
+          ) : (
+            // Cinematic cover: ArtworkImage (priority) kills letterboxing/void and
+            // fades the poster in on load without CLS. A missing/broken src falls
+            // back to the same branded champagne-monogram placeholder.
+            <ArtworkImage
+              src={img}
+              alt={offering.title}
+              priority
+              className="absolute inset-0 h-full w-full"
+            />
+          )}
+          {/* Title-legibility gradient: dense at the bottom where the type sits, fades out by midpoint */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
+          {/* Subtle left vignette so a busy background never compromises the cream title */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none" />
+        </div>
 
-        {/* Play-chip host. On the tall mobile aspect (4/5) it's a flow spacer
+        {/* Play-chip host. On the mobile square it's a flow spacer
             that fills the hero ABOVE the bottom title block, so the centred
             chip can never dip into the eyebrow/title band no matter how tall
             the title wraps (long titles + multi-line subtitles push it up).
@@ -652,7 +642,7 @@ function HeroActions({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 sm:py-2">
         <div className="space-y-1">
           <div className="flex items-baseline gap-3">
             <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
@@ -671,29 +661,33 @@ function HeroActions({
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {freeChapterId && (
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => {
-                const el = document.getElementById("free-preview");
-                if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-              }}
-              className="h-12 px-5 text-base font-medium border-[hsl(var(--cream))]/40 hover:bg-[hsl(var(--cream))]/10"
-            >
-              <Play className="h-4 w-4 mr-2 fill-current" />
-              Watch trailer
-            </Button>
-          )}
+        {/* Enrol first and full width on phones, so the thumb lands on it.
+            The free lesson is a plain link under it: a second boxed button
+            beside Enrol halved its width and put it second. On sm+ the link
+            sits to the left of Enrol (row-reverse keeps Enrol first in the
+            DOM and in tab order). */}
+        <div className="flex flex-col sm:flex-row-reverse sm:items-center gap-2 sm:gap-4">
           <Button
             onClick={goToCheckout}
             size="lg"
-            className="btn-champagne h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
+            className="btn-champagne w-full sm:w-auto h-12 px-7 text-base font-semibold rounded-2xl text-[hsl(var(--cream-text))] hover:-translate-y-0.5"
           >
             {ctaLabel}
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
+          {freeChapterId && (
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById("free-preview");
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+              className="inline-flex items-center justify-center gap-2 min-h-[44px] px-2 text-sm font-medium text-[hsl(var(--cream))] hover:underline underline-offset-4 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))]"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              Watch a free lesson
+            </button>
+          )}
         </div>
       </div>
       <GuaranteeBadge days={offering.refund_policy_days} productTier={offering.product_tier} />
@@ -1164,17 +1158,10 @@ export default function PublicOffering() {
   const [notFound, setNotFound] = useState(false);
   const [couponInfo, setCouponInfo] = useState<{code: string; discount_type: string; discount_value: number} | null>(null);
 
-  // Hero-CTA visibility drives the mobile sticky bar: it slides up once the
-  // in-flow CTA scrolls out of view, then SCRUBS back out (opacity + scaleX)
-  // as that inline CTA re-enters, handing primacy across so exactly one
-  // champagne CTA is lit at a time (INTERACTION-STEALS STEAL #1).
-  const {
-    setRef: heroCtaRef,
-    mounted: stickyMounted,
-    ceded: stickyCeded,
-    opacity: stickyOpacity,
-    scaleX: stickyScaleX,
-  } = useStickyHandoff();
+  // Hero-CTA visibility drives the mobile sticky bar: the bar is up whenever
+  // the in-flow CTA is off screen, so a phone buyer always sees a price and
+  // an Enrol button, and never two at once.
+  const { setRef: heroCtaRef, visible: stickyVisible } = useStickyHandoff();
 
   // Free-preview playback is lifted here so three surfaces can trigger the
   // same player: the hero play chip, the in-flow FreePreviewPlayer poster,
@@ -1370,41 +1357,41 @@ export default function PublicOffering() {
 
   /* ── Loading / 404 ── */
   if (loading) {
-    // Structured skeleton matches the eventual page layout so users see
-    // shape immediately and don't experience a jarring layout shift when
-    // the data lands.
+    // Same frame as the loaded page: header height, main padding, hero shape
+    // (HERO_FRAME), then the outcome line, instructor row, price and a
+    // full-width Enrol. Nothing moves when the data lands.
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background" aria-busy="true">
         <header className="border-b border-border bg-[hsl(var(--surface))] safe-top">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-            <div className="h-6 w-24 rounded skeleton-shimmer" />
-            <div className="h-6 w-16 rounded skeleton-shimmer" />
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 min-h-16 flex items-center justify-between gap-3">
+            <div className="h-7 w-28 rounded skeleton-shimmer" />
+            <div className="h-5 w-14 rounded skeleton-shimmer" />
           </div>
         </header>
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 lg:flex lg:gap-8">
-          <div className="lg:w-[60%] space-y-6">
-            <div className="aspect-[16/9] md:aspect-[21/9] rounded-2xl skeleton-shimmer" />
-            <div className="space-y-3">
-              <div className="h-8 w-3/4 rounded skeleton-shimmer" />
-              <div className="h-5 w-1/2 rounded skeleton-shimmer" />
-            </div>
-            <div className="h-20 rounded-xl skeleton-shimmer" />
-            <div className="space-y-2">
-              <div className="h-5 w-40 rounded skeleton-shimmer" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="h-14 rounded-lg skeleton-shimmer" />
-                <div className="h-14 rounded-lg skeleton-shimmer" />
-                <div className="h-14 rounded-lg skeleton-shimmer" />
-                <div className="h-14 rounded-lg skeleton-shimmer" />
+        <main className={`mx-auto ${PAGE_MAIN} max-w-5xl lg:max-w-7xl`}>
+          <div className="lg:flex lg:gap-10">
+            <div className="space-y-5 sm:space-y-6 lg:flex-1 lg:min-w-0">
+              <div className={`${HERO_FRAME} skeleton-shimmer`} />
+              <div className="space-y-3">
+                <div className="h-5 w-11/12 rounded skeleton-shimmer" />
+                <div className="h-5 w-2/3 rounded skeleton-shimmer" />
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full skeleton-shimmer" />
+                  <div className="h-4 w-48 rounded skeleton-shimmer" />
+                </div>
+              </div>
+              <div className="space-y-3 lg:hidden">
+                <div className="h-9 w-32 rounded skeleton-shimmer" />
+                <div className="h-12 w-full sm:w-44 rounded-2xl skeleton-shimmer" />
               </div>
             </div>
-          </div>
-          <div className="hidden lg:block lg:w-[40%]">
-            <div className="rounded-2xl bg-[hsl(var(--surface))] p-6 space-y-4">
-              <div className="h-8 w-32 rounded skeleton-shimmer" />
-              <div className="h-12 rounded skeleton-shimmer" />
-              <div className="h-12 rounded skeleton-shimmer" />
-              <div className="h-12 rounded skeleton-shimmer" />
+            <div className="hidden lg:block w-[360px] shrink-0">
+              <div className="rounded-2xl bg-[hsl(var(--surface))] p-6 space-y-4">
+                <div className="h-8 w-32 rounded skeleton-shimmer" />
+                <div className="h-12 rounded skeleton-shimmer" />
+                <div className="h-12 rounded skeleton-shimmer" />
+                <div className="h-12 rounded skeleton-shimmer" />
+              </div>
             </div>
           </div>
         </main>
@@ -1511,7 +1498,7 @@ export default function PublicOffering() {
         </div>
       </header>
 
-      <main className={`mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8 ${railEligible ? "max-w-5xl lg:max-w-7xl" : "max-w-5xl xl:max-w-6xl"}`}>
+      <main className={`mx-auto ${PAGE_MAIN} ${railEligible ? "max-w-5xl lg:max-w-7xl" : "max-w-5xl xl:max-w-6xl"}`}>
         {/* Marketing flow + (on lg, web only) a sticky purchase rail.
             Checkout lives on its own route (/checkout/&lt;offeringId&gt;) so
             this page can stay purely about helping the buyer decide. The
@@ -1729,48 +1716,27 @@ export default function PublicOffering() {
         </div>
       </main>
 
-      {/* Mobile sticky CTA: hidden on Android (Path B compliance) and
-          on archived offerings (no longer for sale). Slides up once the
-          in-flow hero CTA scrolls out of view, then scrubs back out as it
-          re-enters (useStickyHandoff above) so exactly one champagne CTA is
-          lit at a time. The Masterclass iOS pattern, Airbnb handoff on top.
+      {/* Mobile sticky CTA: hidden on native for masterclasses (Path B, and
+          Apple 3.1.1 / 3.1.3 on iOS, where applyUrl is always null) and on
+          archived offerings (no longer for sale). Up whenever the in-flow
+          hero CTA is off screen, from the first paint on (useStickyHandoff
+          above), so exactly one champagne CTA is in view at a time.
           Navigates to the dedicated checkout route. */}
       {(applyUrl || !isNative()) && offering.status !== "archived" && (
-      <AnimatePresence>
-        {stickyMounted && (
+      <AnimatePresence initial={false}>
+        {stickyVisible && (
         <motion.div
           key="sticky-pay-bar"
-          initial={{ y: 96 }}
-          animate={{ y: 0 }}
-          exit={{ y: 96 }}
-          // opacity + scaleX are scroll-SCRUBBED (see useStickyHandoff), not on
-          // `animate`: they hand primacy to the inline CTA frame-by-frame as it
-          // scrolls in, so keeping them out of the y-tween lets framer compose the
-          // scaleX with the animated y into one transform on one promoted layer.
-          // transform-origin center-bottom = the bar narrows toward its own base
-          // as it cedes (Airbnb width-shrink), never lifting off the safe area.
-          style={{
-            opacity: stickyOpacity,
-            scaleX: stickyScaleX,
-            transformOrigin: "center bottom",
-            pointerEvents: stickyCeded ? "none" : "auto",
-          }}
-          // Once faded past halfway it has ceded primacy: drop it from the a11y
-          // tree and stop it taking taps so only the inline CTA is actionable.
-          aria-hidden={stickyCeded || undefined}
-          // Tokenized decelerate tween, NOT springs.glide, for the y slide only.
-          // This surface is a SOLID near-black fill (bg-surface at ~0.97) with NO
-          // backdrop-filter: opacity + scaleX are scroll-scrubbed onto this layer
-          // frame-by-frame, and a backdrop-blur here would force Blink to re-sample
-          // the blur every one of those frames — the #1 dark-app jank source per
-          // DESIGN-STRATEGY. On the pure-black canvas an opaque near-black surface
-          // reads identically to a blurred one, so we drop the filter entirely and
-          // the per-frame scrub composites as a plain transform/opacity write. The
-          // tween (over a spring) still keeps the slide-up ending cleanly with no
-          // sub-pixel settling tail. Still collapses to an instant cut under
-          // reduced motion.
-          transition={ms.reduced ? { duration: 0 } : { duration: durations.slow, ease: easings.out }}
-          className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface)/0.97)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+          initial={{ y: 96, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 96, opacity: 0 }}
+          // Tokenized decelerate tween for a short slide. The surface is a
+          // SOLID near-black fill with NO backdrop-filter: a blur here would be
+          // re-sampled on every frame of the slide, and on the black canvas an
+          // opaque surface reads the same. No scaleX: scaling a bar with text in
+          // it squashes the text. Instant cut under reduced motion.
+          transition={ms.reduced ? { duration: 0 } : { duration: durations.base, ease: easings.out }}
+          className="lg:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-[hsl(var(--surface))] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
         >
         {applyUrl ? (
           <div className="space-y-2">
@@ -1782,12 +1748,6 @@ export default function PublicOffering() {
               href={applyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              // While ceded the bar is aria-hidden + pointer-events:none, but a
-              // bare <a> stays in the tab order — keyboard focus could land on an
-              // invisible control (WCAG 4.1.2). Pull it out of the sequence until
-              // the bar is lit again (below lg this bar shows, so tablets/laptops
-              // driving by keyboard reach it).
-              tabIndex={stickyCeded ? -1 : undefined}
               className="btn-champagne pressable flex w-full items-center justify-center text-[hsl(var(--cream-text))] font-semibold h-12 text-base rounded-2xl"
             >
               Apply for an invite
@@ -1798,7 +1758,7 @@ export default function PublicOffering() {
         <div className="space-y-1.5">
           {/* Quiet trust line, same reassurance pill wording as checkout. */}
           {!isFree && (
-            <p className="text-[10px] text-muted-foreground text-center">
+            <p className="text-xs text-muted-foreground text-center">
               Secured by Razorpay ·{" "}
               {offering.refund_policy_days
                 ? `${offering.refund_policy_days}-day refund`
@@ -1827,10 +1787,6 @@ export default function PublicOffering() {
                 track({ name: "pay_cta_tapped", slug: offering.slug, surface: "sticky" });
                 navigate(`/checkout/${offering.id}`);
               }}
-              // See the apply anchor above: keep this out of the tab order while the
-              // bar is ceded (aria-hidden + pointer-events:none) so keyboard focus
-              // can't land on an invisible control (WCAG 4.1.2), restored when lit.
-              tabIndex={stickyCeded ? -1 : undefined}
               className="btn-champagne text-[hsl(var(--cream-text))] font-semibold h-12 px-5 text-base shrink-0 rounded-2xl"
             >
               {isStaged ? "Apply now" : isFree ? "Start watching" : "Enrol now"}

@@ -12,7 +12,7 @@ import { claimPurchaseOnce } from "@/lib/purchaseOnce";
 import { contentCategoryForTier, purchaseEventId } from "@shared/metaEvents";
 import { isNative } from "@/lib/platform";
 import { hapticNotification } from "@/lib/haptics";
-import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
+import { useMotionSafe, durations } from "@/lib/motion";
 import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
 import { isCalendlyUrl } from "@/hooks/useInterviewSlots";
 import { InterviewSlots } from "@/components/interview/SlotButtons";
@@ -22,13 +22,17 @@ import type { Variants } from "framer-motion";
 import { SuccessCheck, DownloadInvoiceButton } from "@/components/checkout/SuccessMoment";
 import type { InvoiceOrder } from "@/lib/invoice";
 import { firstLessonId, formatRuntime, measuredRuntimeSeconds, type OutlineChapter, type OutlineSection } from "@/lib/thankYouCourse";
+import { CAPTURE_MAX_READS, CAPTURE_POLL_MS, type ThankYouPhase } from "@/lib/thankYouWait";
+import { supportWhatsAppLink } from "@/lib/support";
 import {
   CheckCircle2,
   Loader2,
   ArrowRight,
   Mail,
-  AlertCircle,
   ShoppingBag,
+  Lock,
+  MessageCircle,
+  RotateCw,
 } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -106,8 +110,6 @@ interface OrderOffering {
   thankyou_body: string | null;
   thankyou_cta_label: string | null;
   thankyou_cta_url: string | null;
-  thankyou_auto_redirect: boolean | null;
-  thankyou_redirect_seconds: number | null;
   thankyou_show_calendly: boolean | null;
   calendly_url: string | null;
   /** null = lifetime access (the "Lifetime access" chip shows only then). */
@@ -252,15 +254,11 @@ function UpsellCard({
   onBuy,
   purchased,
   buying,
-  onActiveChange,
 }: {
   upsell: Upsell;
   onBuy: () => void;
   purchased: boolean;
   buying: boolean;
-  // Fires while the card is hovered/pressed so the parent can pause the
-  // signed-in auto-redirect countdown (parent gates this on a fine pointer).
-  onActiveChange?: (active: boolean) => void;
 }) {
   const off = upsell.upsell_offering;
   const price = Number(off.price_inr);
@@ -270,14 +268,7 @@ function UpsellCard({
   const thumb = off.thumbnail_url?.trim() || null;
 
   return (
-    <div
-      className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden flex flex-col"
-      onMouseEnter={() => onActiveChange?.(true)}
-      onMouseLeave={() => onActiveChange?.(false)}
-      onPointerDown={() => onActiveChange?.(true)}
-      onPointerUp={() => onActiveChange?.(false)}
-      onPointerCancel={() => onActiveChange?.(false)}
-    >
+    <div className="rounded-xl border border-border bg-[hsl(var(--surface))] overflow-hidden flex flex-col">
       {thumb ? (
         <img src={thumb} alt={off.title} className="w-full h-36 object-cover" />
       ) : (
@@ -320,6 +311,145 @@ function UpsellCard({
 }
 
 /* ────────────────────────────────────────────────── */
+/*  Before capture: confirming, delayed, wrong account */
+/* ────────────────────────────────────────────────── */
+/**
+ * What the buyer sees until the captured order loads. Same header and column
+ * as the receipt, so nothing jumps when it lands: a 96 px mark where the
+ * check sits, then eyebrow, headline, body and a 56 px action slot.
+ *
+ * - waiting: a slow ring and "Confirming your payment". No haptic: the one
+ *   success haptic fires when capture is confirmed.
+ * - delayed: after the full wait. Says what is true (money is not lost,
+ *   receipt follows), offers "Check again", sign-in when there is no session
+ *   (the order is only readable by its owner), and the support WhatsApp with
+ *   the order id filled in.
+ * - wrong_account: signed in as someone else.
+ */
+function NotReadyState({
+  phase,
+  paymentOrderId,
+  signedIn,
+  reduced,
+  onCheckAgain,
+}: {
+  phase: Exclude<ThankYouPhase, "ready">;
+  paymentOrderId: string;
+  signedIn: boolean;
+  reduced: boolean;
+  onCheckAgain: () => void;
+}) {
+  const orderRef = paymentOrderId.slice(0, 8).toUpperCase();
+  const supportHref = supportWhatsAppLink(
+    `Hi! I paid for a course and the confirmation page is still waiting. Order ${paymentOrderId}.`,
+  );
+  const signInHref = `/login?next=${encodeURIComponent(`/thank-you/${paymentOrderId}`)}`;
+  const copy = {
+    waiting: {
+      eyebrow: "Confirming your payment",
+      title: "Almost there.",
+      body: "We're confirming your payment. This usually takes a few seconds. Keep this page open.",
+    },
+    delayed: {
+      eyebrow: "Still confirming",
+      title: "This is taking longer than usual.",
+      body: "If money has left your account, it isn't lost. Most orders confirm within a few minutes, and we email your receipt when it does.",
+    },
+    wrong_account: {
+      eyebrow: "Different account",
+      title: "This order is on another account.",
+      body: "You're signed in with a different account from the one that paid. Sign out, then sign in with the phone number you paid with.",
+    },
+  }[phase];
+
+  return (
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      <header className="relative border-b border-border bg-[hsl(var(--surface))]/60 backdrop-blur-md">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+          <Link to="/" aria-label="LevelUp Learning home" className="inline-flex items-center">
+            <LevelUpWordmark className="h-7 w-auto text-foreground" />
+          </Link>
+        </div>
+      </header>
+
+      <main className="relative max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+        <div className="text-center space-y-7 sm:space-y-8" role="status" aria-live="polite">
+          <div className="relative inline-flex items-center justify-center h-24 w-24 mx-auto">
+            <span aria-hidden className="absolute inset-0 rounded-full ring-1 ring-[hsl(var(--cream))]/20" />
+            {phase === "waiting" && (
+              <span
+                aria-hidden
+                className={`absolute inset-0 rounded-full border-2 border-transparent border-t-[hsl(var(--cream))]/80 ${
+                  reduced ? "" : "animate-[spin_1.6s_linear_infinite]"
+                }`}
+              />
+            )}
+            <Lock aria-hidden className="h-7 w-7 text-[hsl(var(--cream))]/70" />
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--cream))]/70">
+              {copy.eyebrow}
+            </p>
+            <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.02em] leading-[1.1] max-w-[22ch] mx-auto">
+              {copy.title}
+            </h1>
+            <p className="mt-3 text-base text-muted-foreground max-w-[44ch] mx-auto leading-relaxed">
+              {copy.body}
+            </p>
+          </div>
+
+          <div className="max-w-md mx-auto space-y-3">
+            {phase === "waiting" && (
+              <div aria-hidden className="h-14 w-full rounded-2xl skeleton-shimmer" />
+            )}
+
+            {phase === "delayed" && (
+              <>
+                <Button
+                  onClick={onCheckAgain}
+                  variant="champagne"
+                  size="lg"
+                  className="w-full h-14 text-base font-semibold"
+                >
+                  <RotateCw className="h-5 w-5 mr-2" /> Check again
+                </Button>
+                {!signedIn && (
+                  <Button asChild variant="outline" size="lg" className="w-full min-h-[48px] text-sm">
+                    <Link to={signInHref}>Sign in with the phone you paid with</Link>
+                  </Button>
+                )}
+              </>
+            )}
+
+            {phase === "wrong_account" && (
+              <Button asChild variant="outline" size="lg" className="w-full min-h-[48px] text-sm">
+                <Link to="/home">Back to Home</Link>
+              </Button>
+            )}
+
+            {phase !== "waiting" && (
+              <a
+                href={supportHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 min-h-[44px] px-2 text-sm text-[hsl(var(--cream))] hover:underline underline-offset-4 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))]"
+              >
+                <MessageCircle className="h-4 w-4" /> Message us on WhatsApp
+              </a>
+            )}
+          </div>
+
+          {phase !== "waiting" && orderRef && (
+            <p className="text-xs text-muted-foreground/80 font-mono">Order {orderRef}</p>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────── */
 /*  Main Page                                         */
 /* ────────────────────────────────────────────────── */
 export default function ThankYou() {
@@ -329,10 +459,9 @@ export default function ThankYou() {
   const [order, setOrder] = useState<PaymentOrder | null>(null);
   const [originalGuestEmail, setOriginalGuestEmail] = useState<string | null>(null);
   const [upsells, setUpsells] = useState<Upsell[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [countdown, setCountdown] = useState(10);
-  const [redirectCancelled, setRedirectCancelled] = useState(false);
+  const [phase, setPhase] = useState<ThankYouPhase>("waiting");
+  // Bumped by "Check again" to start a fresh wait.
+  const [checkRound, setCheckRound] = useState(0);
   const [purchasedUpsells, setPurchasedUpsells] = useState<Set<string>>(new Set());
   const [buyingUpsell, setBuyingUpsell] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
@@ -345,16 +474,12 @@ export default function ThankYou() {
   const [outline, setOutline] = useState<{ firstLessonId: string | null; runtimeSeconds: number | null } | null>(null);
 
   const pixelsFired = useRef(false);
-  // One-shot success haptic on the produced arrival (native only; no-ops on web).
+  // One-shot success haptic when capture is confirmed (native only; no-ops on web).
   const successHapticFired = useRef(false);
-  // Pauses the signed-in auto-redirect while an upsell card is hovered/pressed.
-  // A ref (not state) so toggling it never restarts the countdown interval.
-  const redirectPausedRef = useRef(false);
 
-  const finePointer = useFinePointer();
   const { reduced, springs: motionSprings } = useMotionSafe();
 
-  usePageTitle("Payment Successful | LevelUp Learning");
+  usePageTitle(phase === "ready" ? "Payment Successful | LevelUp Learning" : "Confirming payment | LevelUp Learning");
 
   // Staged entrance for the celebration column: one glide sequence that
   // assembles the receipt top-to-bottom (check-orb → headline → chips →
@@ -366,9 +491,8 @@ export default function ThankYou() {
   // settle — under the ≤1.2s arrival budget on both the masterclass and
   // Calendly paths. Under reduced motion every block is visible instantly (the
   // container skips its hidden state below).
-  // Memoized so the 1s redirect countdown's re-renders don't rebuild the
-  // variants objects (which would otherwise churn a new object identity into
-  // every motion child each second).
+  // Memoized so re-renders (outline, upsell state) don't rebuild the variants
+  // objects and churn a new object identity into every motion child.
   const arrivalContainer = useMemo<Variants>(
     () => ({
       hidden: {},
@@ -396,16 +520,6 @@ export default function ThankYou() {
     [motionSprings.glide],
   );
 
-  // Pause the redirect only on a fine (mouse/trackpad) pointer, per spec —
-  // touch users get no hover intent and must never be stranded.
-  const handleUpsellActive = useCallback(
-    (active: boolean) => {
-      if (!finePointer) return;
-      redirectPausedRef.current = active;
-    },
-    [finePointer],
-  );
-
   const isGuest = !session && order?.guest_email !== null && order?.guest_email !== undefined;
 
   /* ── Load Razorpay script (for upsells) ── */
@@ -420,12 +534,35 @@ export default function ThankYou() {
     document.body.appendChild(s);
   }, []);
 
-  /* ── Fetch order + upsells ── */
+  /* ── Wait for capture, then fetch order + upsells ──
+     Reads the order every CAPTURE_POLL_MS, up to CAPTURE_MAX_READS times
+     (about 30 s), while a calm "confirming" state is on screen. Only after
+     that does the page say it is still confirming, with a retry and a support
+     line. A buyer who just paid is never told "not found". Only a captured
+     row counts: never trust client-side state. */
   useEffect(() => {
     if (!paymentOrderId) return;
-    (async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let reads = 0;
+
+    const loadUpsells = async (offeringId: string) => {
       try {
-        // Always verify payment from database; never trust client-side state
+        const { data: upsellData } = await supabase
+          .from("offering_upsells")
+          .select("id, headline, description, sort_order, upsell_offering:offerings!upsell_offering_id(id, title, subtitle, price_inr, mrp_inr, thumbnail_url, slug)")
+          .eq("parent_offering_id", offeringId)
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true });
+        if (!cancelled && upsellData) setUpsells(upsellData as any);
+      } catch {
+        /* the page works without upsells */
+      }
+    };
+
+    const readOrder = async () => {
+      reads += 1;
+      try {
         const { data: orderData, error } = await supabase
           .from("payment_orders")
           // created_at (receipt time), slug (share URL), and the
@@ -433,42 +570,46 @@ export default function ThankYou() {
           // all read by the render below; they must be selected here or the
           // receipt prints the current time, a broken /p/ share link, and
           // no benefit chips.
-          .select("id, offering_id, application_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, product_tier, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_auto_redirect, thankyou_redirect_seconds, thankyou_show_calendly, calendly_url, validity_days, offering_courses(course_id, courses(total_lessons)))")
+          .select("id, offering_id, application_id, total_inr, status, razorpay_payment_id, guest_email, guest_name, guest_phone, user_id, created_at, offerings(title, subtitle, thumbnail_url, slug, product_tier, meta_pixel_id, google_ads_conversion, custom_tracking_script, thankyou_thumbnail_url, thankyou_headline, thankyou_body, thankyou_cta_label, thankyou_cta_url, thankyou_show_calendly, calendly_url, validity_days, offering_courses(course_id, courses(total_lessons)))")
           .eq("id", paymentOrderId)
           .eq("status", "captured")
           .single();
+        if (cancelled) return;
 
-        if (error || !orderData) {
-          setNotFound(true);
-          return;
-        }
-
-        if (session) {
-          if (orderData.user_id && orderData.user_id !== session.user.id) {
-            setNotFound(true);
+        if (!error && orderData) {
+          if (session && orderData.user_id && orderData.user_id !== session.user.id) {
+            setPhase("wrong_account");
             return;
           }
-        } else {
-          setOriginalGuestEmail(orderData.guest_email);
+          if (!session) setOriginalGuestEmail(orderData.guest_email);
+          setOrder(orderData as any);
+          setPhase("ready");
+          void loadUpsells(orderData.offering_id);
+          return;
         }
-
-        setOrder(orderData as any);
-
-        const { data: upsellData } = await supabase
-          .from("offering_upsells")
-          .select("id, headline, description, sort_order, upsell_offering:offerings!upsell_offering_id(id, title, subtitle, price_inr, mrp_inr, thumbnail_url, slug)")
-          .eq("parent_offering_id", orderData.offering_id)
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true });
-
-        if (upsellData) setUpsells(upsellData as any);
       } catch {
-        setNotFound(true);
-      } finally {
-        setLoading(false);
+        if (cancelled) return;
+        /* a failed read counts as "not captured yet" */
       }
-    })();
-  }, [paymentOrderId, session]);
+
+      if (reads >= CAPTURE_MAX_READS) {
+        setPhase("delayed");
+        return;
+      }
+      timer = setTimeout(readOrder, CAPTURE_POLL_MS);
+    };
+
+    void readOrder();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [paymentOrderId, session, checkRound]);
+
+  const checkAgain = () => {
+    setPhase("waiting");
+    setCheckRound((n) => n + 1);
+  };
 
   /* ── Course outline: lesson 1 and the measured runtime ──
      Only for a purchase that grants the course. An application payment buys
@@ -508,10 +649,9 @@ export default function ThankYou() {
     };
   }, [grantsCourse, courseId]);
 
-  // Where "Start lesson 1" and the auto-redirect go when the offering sets no
-  // custom URL: lesson 1, else the course page, else Home (application
-  // payments, offerings with no course). Read through a ref by the countdown so
-  // the outline arriving does not restart it.
+  // Where "Start lesson 1" goes when the offering sets no custom URL: lesson
+  // 1, else the course page, else Home (application payments, offerings with
+  // no course).
   const lessonPath = outline?.firstLessonId ? `/chapters/${outline.firstLessonId}` : null;
   const defaultDestination = grantsCourse ? (lessonPath ?? `/courses/${courseId}`) : "/home";
   const destinationRef = useRef(defaultDestination);
@@ -551,16 +691,16 @@ export default function ThankYou() {
     });
   }, [order]);
 
-  /* ── One-shot success haptic on the produced arrival ── */
+  /* ── One-shot success haptic when capture is confirmed ── */
   useEffect(() => {
-    if (!order || notFound) return;
+    if (!order) return;
     if (successHapticFired.current) return;
     successHapticFired.current = true;
     // Native-only; hapticNotification no-ops on web (see lib/haptics).
     void hapticNotification("success");
-  }, [order, notFound]);
+  }, [order]);
 
-  /* ── Countdown: respects custom thank you page settings ──
+  /* ── Custom CTA URL ──
      thankyou_cta_url is admin-authored and gets shoved directly into
      window.location.href. We validate it client-side to prevent an admin
      (or a stolen admin session) from using it as an open redirect:
@@ -569,7 +709,13 @@ export default function ThankYou() {
        - absolute URLs only
      The DB CHECK constraint in 20260408160300 enforces the same, but
      we double-check here so existing rows that predate the migration
-     don't break the page. */
+     don't break the page.
+
+     No auto-redirect. The page used to leave on its own after 10 s by
+     default (thankyou_auto_redirect defaults to true on every row), racing
+     the buyer reading the receipt, the upsells and the invoice button. The
+     buyer now leaves when they tap. The two offering columns stay in the
+     database but nothing reads them. */
   const rawCtaUrl = order?.offerings?.thankyou_cta_url || null;
   const customCtaUrl = useMemo(() => {
     if (!rawCtaUrl) return null;
@@ -581,35 +727,6 @@ export default function ThankYou() {
       return null;
     }
   }, [rawCtaUrl]);
-  const autoRedirect = order?.offerings?.thankyou_auto_redirect ?? true;
-  const redirectSeconds = order?.offerings?.thankyou_redirect_seconds ?? 10;
-
-  useEffect(() => {
-    if (!order) return;
-    if (!autoRedirect || redirectSeconds <= 0) return;
-    if (redirectCancelled) return;
-
-    setCountdown(redirectSeconds);
-    const timer = setInterval(() => {
-      // Hold the timer while an upsell card is hovered/pressed (fine pointer).
-      if (redirectPausedRef.current) return;
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          if (session) {
-            if (isSafeRedirectUrl(customCtaUrl)) {
-              window.location.href = customCtaUrl!;
-            } else {
-              navigate(destinationRef.current);
-            }
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [order, session, navigate, autoRedirect, redirectSeconds, customCtaUrl, redirectCancelled]);
 
   /* ── Resend magic link ── */
   const handleResendLink = async () => {
@@ -751,27 +868,16 @@ export default function ThankYou() {
     }
   }, [session, order]);
 
-  /* ── Loading / Error states ── */
-  if (loading) {
+  /* ── Before the captured order is on screen ── */
+  if (phase !== "ready" || !order) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--cream))]" />
-      </div>
-    );
-  }
-
-  if (notFound || !order) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6">
-        <AlertCircle className="h-12 w-12 text-muted-foreground" />
-        <h1 className="text-xl font-semibold text-foreground">Order not found</h1>
-        <p className="text-muted-foreground text-sm text-center max-w-md">
-          This order doesn't exist or hasn't been confirmed yet. If you just completed a payment, please wait a moment and refresh.
-        </p>
-        <Link to="/home" className="inline-flex items-center gap-2 mt-4 text-sm text-cream hover:underline">
-          ← Back to Home
-        </Link>
-      </div>
+      <NotReadyState
+        phase={phase === "ready" ? "waiting" : phase}
+        paymentOrderId={paymentOrderId ?? ""}
+        signedIn={!!session}
+        reduced={reduced}
+        onCheckAgain={checkAgain}
+      />
     );
   }
 
@@ -1002,18 +1108,6 @@ export default function ThankYou() {
                 <>{ctaLabel} <ArrowRight className="h-5 w-5 ml-2" /></>
               )}
             </Button>
-            {!isGuest && session && autoRedirect && !redirectCancelled && countdown > 0 && (
-              <p className="caption text-center">
-                {lessonPath && !customCtaUrl ? `Opening lesson 1 in ${countdown}s` : `Redirecting in ${countdown}s`} &middot;{" "}
-                <button
-                  type="button"
-                  onClick={() => setRedirectCancelled(true)}
-                  className="underline hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--cream))] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
-                >
-                  stay here instead
-                </button>
-              </p>
-            )}
             {isGuest && (
               <Button
                 variant="ghost"
@@ -1148,7 +1242,6 @@ export default function ThankYou() {
                     onBuy={() => handleBuyUpsell(u)}
                     purchased={purchasedUpsells.has(u.id)}
                     buying={buyingUpsell === u.id}
-                    onActiveChange={handleUpsellActive}
                   />
                 ))}
               </div>
