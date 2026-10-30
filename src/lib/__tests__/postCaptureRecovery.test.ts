@@ -199,6 +199,25 @@ const baseOrder = {
   captured_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
 };
 
+// What the Razorpay sheet hands the checkout for pay_1 on order_1.
+const CHECKOUT_SIGNATURE = await hmacSha256Hex("order_1|pay_1", "rzp_secret");
+
+// Razorpay's record of the order, which verify reads before it grants on an
+// already-captured row (_shared/capturedOrderProof.ts). Each test starts with
+// the real payment and the order our checkout made for po_1.
+type RzpAnswer = { status: number; body?: unknown };
+const rzp = {
+  payment: null as unknown as RzpAnswer,
+  order: null as unknown as RzpAnswer,
+  calls: [] as string[],
+};
+const rzpFetch = vi.fn(async (url: string | URL | Request) => {
+  const u = String(url);
+  rzp.calls.push(u);
+  const a = u.includes("/v1/payments/") ? rzp.payment : rzp.order;
+  return new Response(JSON.stringify(a.body ?? {}), { status: a.status });
+});
+
 async function deliverWebhook() {
   const body = JSON.stringify({
     event: "payment.captured",
@@ -215,7 +234,7 @@ function callVerify(extra: Record<string, unknown> = {}) {
       body: JSON.stringify({
         razorpay_payment_id: "pay_1",
         razorpay_order_id: "order_1",
-        razorpay_signature: "sig",
+        razorpay_signature: CHECKOUT_SIGNATURE,
         payment_order_id: "po_1",
         is_guest: true,
         ...extra,
@@ -254,6 +273,10 @@ const strangers = () => [
 ];
 
 beforeEach(() => {
+  vi.stubGlobal("fetch", rzpFetch);
+  rzp.payment = { status: 200, body: { id: "pay_1", status: "captured", order_id: "order_1", amount: 99900 } };
+  rzp.order = { status: 200, body: { id: "order_1", receipt: "po_1", status: "paid" } };
+  rzp.calls = [];
   fake.schedule.mockClear();
   fake.state.po = { ...baseOrder };
   fake.state.enrolments = [enrolment({}), ...strangers()];
@@ -482,6 +505,80 @@ describe("a captured order whose course was never granted", () => {
     expect(await (await statusCheck()).json()).toEqual({ status: "captured", razorpay_payment_id: "pay_1" });
     expect(enrolmentInserts()).toHaveLength(0);
     expect(fake.schedule).not.toHaveBeenCalled();
+  });
+});
+
+describe("a captured row is not payment proof", () => {
+  // Until migration 20261030120000 a signed-in user could insert a
+  // payment_orders row of their own, with status "captured". Verify must not
+  // grant from such a row: it asks Razorpay first, and a refusal leaves the
+  // row as it is.
+  beforeEach(() => {
+    fake.state.enrolments = strangers();
+  });
+
+  const untouched = () => {
+    expect(enrolmentInserts()).toHaveLength(0);
+    expect(fake.state.poWrites).toHaveLength(0);
+    expect(fake.schedule).not.toHaveBeenCalled();
+    expect(fake.state.po.status).toBe("captured");
+  };
+
+  it("a made-up row that borrows a real, cheaper payment gets no course", async () => {
+    fake.state.po = { ...baseOrder, total_inr: 99 };
+    rzp.payment = { status: 200, body: { id: "pay_1", status: "captured", order_id: "order_1", amount: 9900 } };
+    rzp.order = { status: 200, body: { id: "order_1", receipt: "po_someone_elses" } };
+    const res = await callVerify({ is_guest: true });
+    expect(res.status).toBe(400);
+    expect((await res.json()).success).toBeUndefined();
+    untouched();
+  });
+
+  it("a made-up row with made-up ids gets no course", async () => {
+    fake.state.po = { ...baseOrder, razorpay_order_id: "order_x", razorpay_payment_id: "x" };
+    rzp.payment = { status: 400, body: { error: { code: "BAD_REQUEST_ERROR" } } };
+    rzp.order = { status: 400, body: { error: { code: "BAD_REQUEST_ERROR" } } };
+    const res = await callVerify({ razorpay_order_id: "order_x", razorpay_payment_id: "x", razorpay_signature: "x" });
+    expect(res.status).toBe(400);
+    untouched();
+  });
+
+  it("a caller who sends another Razorpay order id gets no course, and Razorpay is not asked", async () => {
+    const res = await callVerify({ razorpay_order_id: "order_2" });
+    expect(res.status).toBe(400);
+    expect(rzp.calls).toEqual([]);
+    untouched();
+  });
+
+  it("when Razorpay cannot be asked, nothing is granted and the buyer is told to check again", async () => {
+    rzp.payment = { status: 503 };
+    const res = await callVerify();
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toMatch(/don't pay again/);
+    untouched();
+    // The status check still reads the row, so Pay stays locked.
+    expect(await (await statusCheck()).json()).toEqual({ status: "needs_review" });
+  });
+
+  it("when Razorpay cannot be asked but the buyer already holds the course, a signed call still answers success", async () => {
+    fake.state.enrolments = [enrolment({}), ...strangers()];
+    rzp.order = { status: 502 };
+    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    untouched();
+    // Without the checkout's signature the same call waits for Razorpay.
+    expect((await callVerify({ razorpay_signature: "junk" })).status).toBe(503);
+  });
+
+  it("the real order still gets its course, and the webhook needs no Razorpay call", async () => {
+    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    expect(rzp.calls.sort()).toEqual(["https://api.razorpay.com/v1/orders/order_1", "https://api.razorpay.com/v1/payments/pay_1"]);
+    expect(enrolmentInserts()).toHaveLength(1);
+    rzp.calls = [];
+    fake.state.enrolments = strangers();
+    fake.state.inserts = [];
+    expect(await (await deliverWebhook()).json()).toEqual({ received: true, status: "captured" });
+    expect(enrolmentInserts()).toHaveLength(1);
+    expect(rzp.calls).toEqual([]);
   });
 });
 
