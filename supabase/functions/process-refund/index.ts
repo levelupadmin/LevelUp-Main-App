@@ -130,19 +130,23 @@ Deno.serve(async (req) => {
       link: null,
     });
 
-    // Audit log
-    await admin.from("admin_audit_logs").insert({
-      admin_user_id: user.id,
+    // Audit log. These are the table's real columns; the old insert named
+    // admin_user_id / entity_type / entity_id / details, so it always failed
+    // and no refund was ever logged. A failure here is logged, not returned:
+    // the refund has already gone through at Razorpay.
+    const { error: auditErr } = await admin.from("admin_audit_logs").insert({
+      actor_user_id: user.id,
       action: "refund_completed",
-      entity_type: "refund",
-      entity_id: refund_id,
-      details: {
+      target_table: "refunds",
+      target_id: refund_id,
+      metadata: {
         payment_order_id: refund.payment_order_id,
         amount: refund.amount_inr,
         refund_type: refund.refund_type,
         razorpay_refund_id: rzpData.id,
       },
     });
+    if (auditErr) console.error("process-refund audit insert failed:", auditErr.message);
 
     return jsonRes({ success: true, razorpay_refund_id: rzpData.id });
   } catch (err: any) {
