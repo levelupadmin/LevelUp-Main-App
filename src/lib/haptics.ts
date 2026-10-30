@@ -28,6 +28,7 @@ const NOTIFICATION_ENUM: Record<NotificationType, "SUCCESS" | "WARNING" | "ERROR
 interface HapticsPlugin {
   impact(opts: { style: string }): Promise<void>;
   notification(opts: { type: string }): Promise<void>;
+  selectionStart(): Promise<void>;
   selectionChanged(): Promise<void>;
 }
 
@@ -97,10 +98,23 @@ export const hapticNotification = async (type: NotificationType = "success"): Pr
   try { await Haptics.notification({ type: NOTIFICATION_ENUM[type] }); } catch { /* swallow */ }
 };
 
+// The native plugin ignores selectionChanged() until selectionStart() has run:
+// iOS has no UISelectionFeedbackGenerator before it, and Android checks a
+// `selectionStarted` flag. Nothing called it, so every selection tick was
+// silent on device. Start once and leave it started; the next WebView load
+// resets this flag and starts again.
+let selectionStarted = false;
+
 export const hapticSelection = async (): Promise<void> => {
   const Haptics = await loadHaptics();
   if (!Haptics) return;
-  try { await Haptics.selectionChanged(); } catch { /* swallow */ }
+  try {
+    if (!selectionStarted) {
+      await Haptics.selectionStart();
+      selectionStarted = true;
+    }
+    await Haptics.selectionChanged();
+  } catch { /* swallow */ }
 };
 
 // Doctrine helpers — thin, intention-named wrappers over the primitives above.
