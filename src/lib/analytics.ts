@@ -18,6 +18,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { purchaseEventId } from "@shared/metaEvents";
 import { claimPurchaseOnce } from "@/lib/purchaseOnce";
+import { isIOSShell } from "@/lib/storeCopy";
 
 declare global {
   interface Window {
@@ -321,13 +322,18 @@ async function bootAnalyticsRun(): Promise<AnalyticsSettings | null> {
   if (s.clarity_enabled && s.clarity_project_id) {
     try { loadClarity(s.clarity_project_id); } catch (e) { devWarn("Clarity load failed", e); }
   }
-  if (s.meta_pixel_enabled && s.meta_pixel_id) {
+  // The ad pixels (Meta, X) link app activity to ad profiles, which Apple
+  // counts as tracking: it needs the App Tracking Transparency prompt
+  // (Guideline 5.1.2). The iOS app has no such prompt, so it loads neither.
+  // First-party analytics (Clarity, GA4, PostHog) still load there.
+  const adPixelsAllowed = !isIOSShell();
+  if (adPixelsAllowed && s.meta_pixel_enabled && s.meta_pixel_id) {
     try { loadMetaPixel(s.meta_pixel_id); } catch (e) { devWarn("Meta Pixel load failed", e); }
   }
   if (s.ga4_enabled && s.ga4_measurement_id) {
     try { loadGA4(s.ga4_measurement_id); } catch (e) { devWarn("GA4 load failed", e); }
   }
-  if (s.twitter_pixel_enabled && s.twitter_pixel_id) {
+  if (adPixelsAllowed && s.twitter_pixel_enabled && s.twitter_pixel_id) {
     try { loadTwitterPixel(s.twitter_pixel_id); } catch (e) { devWarn("Twitter Pixel load failed", e); }
   }
   return s;
