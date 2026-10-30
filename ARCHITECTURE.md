@@ -23,6 +23,8 @@ The web app is authoritative; the native shells wrap it and are read-only on buy
   (or a free/legacy grant).
 - **Payment order** (`payment_orders`) — one purchase attempt: the priced line items
   (subtotal/discount/gst/total), the Razorpay order id, and capture state.
+  Only the server writes it: the browser can read its own rows but has no
+  insert, update or delete (migration `20261030120000`).
 - **Bump** (`offering_bumps`) — an order-bump add-on offered on the checkout of a parent
   offering. **Coupon** (`coupons`) — a discount code (percent or flat). Both feed pricing.
 - **Cohort application** (`cohort_applications`) + **staged payments** — live-cohort
@@ -80,7 +82,13 @@ Captured is not the same as granted: verify writes `status = 'captured'` before 
 inserts the enrolment, and can answer 500 in between. So the already-captured early
 returns of both capture paths first grant the course if the buyer does not hold it
 (`_shared/captureGrant.ts`, the same idempotent insert), and answer success only
-after that. They never grant again a course this order granted and later lost (a
+after that. The row alone is never payment proof: before verify's
+already-captured return grants anything, it asks Razorpay whether the row's payment
+is captured on the row's Razorpay order for the row's total, and whether that order's
+`receipt` is the row's id (`_shared/capturedOrderProof.ts`). If Razorpay cannot be
+asked, it grants nothing and answers 503, or success when the checkout's signature is
+valid and the buyer already holds the course. The webhook needs no such check: its
+delivery is signed. They never grant again a course this order granted and later lost (a
 revoke, a refund). A cancelled or expired enrolment from the buyer's earlier order
 does not block a new paid order. A free order (no Razorpay payment id, or a total of
 0) skips this step: verify answers it `{ success: true, already_captured: true }` and
