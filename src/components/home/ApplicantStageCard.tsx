@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { claimRoute } from "@/hooks/useClaimApplication";
+import { isIOSShell } from "@/lib/storeCopy";
 import type { ApplicantStage, ApplicantStageView } from "@/hooks/useApplicantStage";
 
 // ── Applicant stage card (REQ-IDENT-4) ──
@@ -126,7 +127,13 @@ const ApplicantStageCard = ({ view }: { view: ApplicantStageView }) => {
     <CardFrame
       chip={copy.chip}
       title={title}
-      body={copy.body}
+      body={
+        // No mention of the fee on iOS (Apple 3.1.1 / 3.1.3): it is paid
+        // outside the app, and naming it there points the reader to it.
+        view.stage === "fee-pending" && isIOSShell()
+          ? "Your application is in. Track where it stands here."
+          : copy.body
+      }
       action={
         copy.action
           ? { to: `/my-application/${view.applicationId}`, label: copy.action }

@@ -25,6 +25,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useMotionSafe } from "@/lib/motion";
 import type { Notification } from "@/hooks/useNotifications";
+import { isIOSShell } from "@/lib/storeCopy";
 
 /**
  * Per-type thumbnail treatment. The notifications table carries no image, so
@@ -234,7 +235,10 @@ export default function NotificationDropdown({
   const handleClick = (notif: Notification) => {
     void tapTick();
     if (!notif.is_read) onMarkRead(notif.id);
-    if (notif.link) {
+    // Admin-typed links may point at an offering or checkout page; iOS must
+    // not open those (Apple 3.1.1 / 3.1.3), so the tap only marks it read.
+    const purchaseLink = !!notif.link && /^\/(p|checkout|thank-you)\//.test(notif.link);
+    if (notif.link && !(purchaseLink && isIOSShell())) {
       navigate(notif.link);
       onClose();
     }

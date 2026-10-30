@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Countdown } from "@/components/live/Countdown";
 import { supabase } from "@/integrations/supabase/client";
 import { isNative } from "@/lib/platform";
+import { isIOSShell, nativePaymentNote } from "@/lib/storeCopy";
 import { DECISION_FLOW, flag } from "@/lib/flags";
 import { useDecision } from "@/hooks/useDecision";
 
@@ -482,12 +483,14 @@ const ClaimSeat = () => {
            is the one thing `EnrollmentDetails.tsx` is careful to tell them on
            the very same platform. Neither line carries a figure or an href. */
         <>
-          <p className="mt-6 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
-            The exact amount due to confirm is shown on the checkout screen when
-            you open this page in a web browser, before you pay anything.
-          </p>
+          {!isIOSShell() && (
+            <p className="mt-6 rounded-lg border border-border bg-surface p-4 text-xs leading-relaxed text-muted-foreground">
+              The exact amount due to confirm is shown on the checkout screen when
+              you open this page in a web browser, before you pay anything.
+            </p>
+          )}
           <p className="mt-3 text-xs text-muted-foreground">
-            Complete this step from a web browser.
+            {nativePaymentNote()}
           </p>
         </>
       ) : (

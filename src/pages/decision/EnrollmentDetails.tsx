@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { DECISION_FLOW, flag } from "@/lib/flags";
 import { isNative } from "@/lib/platform";
+import { isIOSShell, nativePaymentNote } from "@/lib/storeCopy";
 import { useDecision } from "@/hooks/useDecision";
 
 /**
@@ -327,10 +328,12 @@ const EnrollmentDetails = () => {
                   returned.
                 </p>
               )}
-              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                The exact figures for this cohort are shown when you open this
-                page in a web browser.
-              </p>
+              {!isIOSShell() && (
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                  The exact figures for this cohort are shown when you open this
+                  page in a web browser.
+                </p>
+              )}
             </>
           )}
           {/* Only rendered when there is at least one real figure: an empty
@@ -450,7 +453,7 @@ const EnrollmentDetails = () => {
             a browser without knowing what they are going to find there. */}
         {native ? (
           <p className="mt-8 text-xs text-muted-foreground">
-            Complete this step from a web browser.
+            {nativePaymentNote()}
           </p>
         ) : (
           <Link to={`/decision/${applicationId}/claim`} className="mt-8 block">
