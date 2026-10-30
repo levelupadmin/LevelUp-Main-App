@@ -299,13 +299,13 @@ export function SessionSlot({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {eyebrow && (
-            <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               {eyebrow}
             </p>
           )}
           <Heading
             className={cn(
-              "mt-1 break-words font-serif text-lg leading-snug text-foreground sm:text-xl",
+              "mt-1 break-words font-display font-semibold tracking-tight text-[17px] leading-snug text-foreground sm:text-lg",
               cancelled && "text-muted-foreground line-through",
             )}
           >
@@ -331,7 +331,7 @@ export function SessionSlot({
       {hasDate && (
         <p
           className={cn(
-            "mt-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground",
+            "mt-1.5 font-mono text-xs text-muted-foreground",
             cancelled && "line-through",
           )}
         >

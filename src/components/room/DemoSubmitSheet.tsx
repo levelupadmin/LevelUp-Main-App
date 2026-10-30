@@ -121,7 +121,7 @@ const DemoSubmitSheet = ({
           <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-room-accent-text">
             The finale
           </p>
-          <h2 className="mt-2 font-serif text-3xl text-foreground">
+          <h2 className="mt-2 font-display font-semibold tracking-tight text-2xl text-foreground">
             {existing ? "Edit your entry." : "Put your work on screen."}
           </h2>
         </div>

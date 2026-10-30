@@ -456,7 +456,8 @@ describe("offering-wide batch selection", () => {
 
     const selector = await screen.findByRole("combobox", { name: "Cohort batch" });
     expect(selector).toHaveValue("batch-2");
-    expect(screen.getByText("A2 curriculum")).toBeInTheDocument();
+    // The topic shows on the rail and as the week card's headline.
+    expect(screen.getAllByText("A2 curriculum").length).toBeGreaterThan(0);
     expect(screen.queryByText("A1 curriculum")).toBeNull();
     expect(screen.getByText("A2 session")).toBeInTheDocument();
     expect(screen.queryByText("A1 session")).toBeNull();
@@ -482,10 +483,11 @@ describe("offering-wide batch selection", () => {
     });
 
     const selector = await screen.findByRole("combobox", { name: "Cohort batch" });
-    expect(screen.getByText("A1 curriculum")).toBeInTheDocument();
+    // The topic shows on the rail and as the week card's headline.
+    expect(screen.getAllByText("A1 curriculum").length).toBeGreaterThan(0);
     fireEvent.change(selector, { target: { value: "batch-2" } });
 
-    await waitFor(() => expect(screen.getByText("A2 curriculum")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("A2 curriculum").length).toBeGreaterThan(0));
     expect(screen.queryByText("A1 curriculum")).toBeNull();
     expect(screen.getByTestId("room-location")).toHaveTextContent(
       "/room/the-forge/weeks/1?batch=batch-2",
@@ -498,7 +500,7 @@ describe("offering-wide batch selection", () => {
 
   it("does not render a selector for a member's single resolved batch", async () => {
     renderModule({ rows: [weekRow()] });
-    await screen.findByText("Blocking and coverage");
+    await screen.findAllByText("Blocking and coverage");
     expect(screen.queryByRole("combobox", { name: "Cohort batch" })).toBeNull();
   });
 });

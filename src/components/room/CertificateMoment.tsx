@@ -61,7 +61,7 @@ const CertificateMoment = () => {
         <div aria-hidden className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,hsl(var(--room-accent)/0.16),transparent_62%)]" />
         <Award className="mx-auto h-6 w-6 text-room-accent" strokeWidth={1.5} aria-hidden />
         <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.3em] text-room-accent-text">Completion</p>
-        <h2 id="certificate-moment-title" className="mt-3 font-serif text-4xl text-foreground">You finished.</h2>
+        <h2 id="certificate-moment-title" className="mt-3 font-display font-semibold tracking-tight text-[28px] text-foreground">You finished.</h2>
         <p className="body-muted mx-auto mt-3 max-w-md text-sm">
           One season completed. Your attendance record stays in the room; it does not grade this artifact.
         </p>
@@ -76,15 +76,15 @@ const CertificateMoment = () => {
           <CertificateCard certificate={hero} />
         ) : data.isError || claim.isError ? (
           <div className="py-6 text-center">
-            <p className="font-serif text-2xl text-foreground">Your certificate is safe.</p>
+            <p className="font-display font-semibold tracking-tight text-xl text-foreground">Your certificate is safe.</p>
             <p className="body-muted mt-2 text-sm">The certificate service is unavailable right now. This room will keep the moment waiting.</p>
           </div>
         ) : (
           <div className="py-6 text-center">
-            <p className="font-serif text-2xl text-foreground">Your completion record is being prepared.</p>
+            <p className="font-display font-semibold tracking-tight text-xl text-foreground">Your completion record is being prepared.</p>
             <p className="body-muted mx-auto mt-2 max-w-md text-sm">Finish the remaining course chapters, then reopen this room to mint the certificate.</p>
             <Link to="screenings" className="focus-ring mt-4 inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm text-room-accent-text">
-              <Film size={15} strokeWidth={1.5} aria-hidden /> Open the Screening Shelf
+              <Film size={15} strokeWidth={1.5} aria-hidden /> Open the recordings
             </Link>
           </div>
         )}

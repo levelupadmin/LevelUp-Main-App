@@ -377,7 +377,7 @@ const RoomHome = () => {
               <Film size={12} strokeWidth={1.5} className="mr-2 inline align-[-1px]" />
               The finale
             </p>
-            <p className="mt-2 font-serif text-2xl text-foreground">Demo Day.</p>
+            <p className="mt-2 font-display font-semibold tracking-tight text-xl text-foreground">Demo Day.</p>
             <p className="body-muted mt-1 text-sm">The cohort&apos;s finished work, on one slate.</p>
           </SurfaceCard>
         )}

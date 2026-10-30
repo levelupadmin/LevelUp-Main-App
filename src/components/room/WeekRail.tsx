@@ -177,7 +177,7 @@ export function WeekRail({ weeks, activeWeekId, onSelect, finaleAt, finaleHref, 
                 </span>
 
                 {/* The theme, as the episode title. */}
-                <span className="mt-2 line-clamp-2 font-serif text-lg leading-snug text-foreground">
+                <span className="mt-2 line-clamp-2 font-display font-semibold tracking-tight text-[17px] leading-snug text-foreground">
                   {week.theme ?? `Week ${week.week_number}`}
                 </span>
 
@@ -211,7 +211,7 @@ export function WeekRail({ weeks, activeWeekId, onSelect, finaleAt, finaleHref, 
               <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-room-accent-text">
                 The finale
               </span>
-              <span className="mt-2 font-serif text-lg leading-snug text-foreground">Demo Day</span>
+              <span className="mt-2 font-display font-semibold tracking-tight text-[17px] leading-snug text-foreground">Demo Day</span>
               <span className="body-muted mt-auto pt-3 font-mono text-[11px]">
                 {finaleAt && Number.isFinite(parseMs(finaleAt))
                   ? formatIstDayMonth(parseMs(finaleAt))
@@ -223,7 +223,7 @@ export function WeekRail({ weeks, activeWeekId, onSelect, finaleAt, finaleHref, 
               <span className="flex w-full items-center gap-2 font-mono text-[11px] uppercase tracking-[0.24em] text-room-accent-text">
                 The finale <Lock size={11} strokeWidth={1.5} className="ml-auto" aria-hidden />
               </span>
-              <span className="mt-2 font-serif text-lg leading-snug text-foreground">Demo Day</span>
+              <span className="mt-2 font-display font-semibold tracking-tight text-[17px] leading-snug text-foreground">Demo Day</span>
               <span className="body-muted mt-auto pt-3 font-mono text-[11px]">
                 {finaleAt && Number.isFinite(parseMs(finaleAt))
                   ? formatIstDayMonth(parseMs(finaleAt))

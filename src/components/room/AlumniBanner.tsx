@@ -7,7 +7,7 @@ const AlumniBanner = () => (
     </span>
     <div>
       <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-room-accent-text">Alumni room</p>
-      <p className="mt-2 font-serif text-2xl text-foreground">This room stays open. You keep it.</p>
+      <p className="mt-2 font-display font-semibold tracking-tight text-xl text-foreground">This room stays open. You keep it.</p>
       <p className="body-muted mt-1 text-sm">The feed, people, recordings, resources and Demo Day gallery remain here.</p>
     </div>
   </aside>

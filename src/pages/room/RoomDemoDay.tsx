@@ -43,7 +43,7 @@ const RoomDemoDay = () => {
     return (
       <section className="rounded-2xl border border-border bg-surface px-6 py-12 text-center">
         <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-room-accent-text">The finale</p>
-        <h1 className="mt-4 font-serif text-4xl text-foreground">Demo Day is coming.</h1>
+        <h1 className="mt-4 font-display font-semibold tracking-tight text-[28px] text-foreground">Demo Day is coming.</h1>
         <p className="body-muted mx-auto mt-3 max-w-md text-sm">The slate opens when this season enters wrap.</p>
       </section>
     );
@@ -56,7 +56,7 @@ const RoomDemoDay = () => {
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-room-accent-text">The finale</p>
-            <h1 id="demo-day-title" className="mt-3 font-serif text-4xl text-foreground sm:text-5xl">Demo Day.</h1>
+            <h1 id="demo-day-title" className="mt-3 font-display font-semibold tracking-tight text-[28px] text-foreground sm:text-[36px]">Demo Day.</h1>
             <p className="body-muted mt-3 max-w-xl text-sm">One finished work from every member. The room is the audience.</p>
           </div>
           {writable && user && envelope.batch_id && (
@@ -84,7 +84,7 @@ const RoomDemoDay = () => {
       ) : (entries.data?.length ?? 0) === 0 ? (
         <div className="rounded-2xl border border-border bg-surface p-10 text-center">
           <Film className="mx-auto h-6 w-6 text-room-accent" strokeWidth={1.5} aria-hidden />
-          <p className="mt-4 font-serif text-3xl text-foreground">The screening goes on.</p>
+          <p className="mt-4 font-display font-semibold tracking-tight text-2xl text-foreground">The screening goes on.</p>
           <p className="body-muted mt-2 text-sm">Entries can still land before the event ends.</p>
         </div>
       ) : (

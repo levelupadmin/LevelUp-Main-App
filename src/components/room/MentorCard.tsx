@@ -55,7 +55,7 @@ const MentorCard = ({ name, avatarUrl, wordmark, line, className }: MentorCardPr
       <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-room-accent">
         {wordmark}
       </p>
-      <p className="mt-1 break-words font-serif text-[19px] leading-tight text-foreground">
+      <p className="mt-1 break-words font-display font-semibold tracking-tight text-[17px] leading-tight text-foreground">
         {name}
       </p>
       {line && (

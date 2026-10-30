@@ -28,7 +28,7 @@ const DemoEntryCard = ({ entry, memberName, city, isOwn, onEdit }: DemoEntryCard
         <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-room-accent-text">
           Demo Day
         </p>
-        <h2 className="mt-4 line-clamp-3 break-words font-serif text-2xl leading-tight text-foreground">
+        <h2 className="mt-4 line-clamp-3 break-words font-display font-semibold tracking-tight text-xl leading-tight text-foreground">
           {entry.title}
         </h2>
       </div>

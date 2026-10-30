@@ -181,7 +181,7 @@ const RoomFeed = () => {
           </p>
           <h2
             id="room-module-feed"
-            className="mt-1 font-serif text-3xl text-cream"
+            className="mt-1 font-display font-semibold tracking-tight text-2xl text-cream"
           >
             The room feed
           </h2>

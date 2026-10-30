@@ -46,7 +46,7 @@ import RoomSwitcher from "@/components/room/RoomSwitcher";
 /** The module rail, in the order the room reads. */
 const ROOM_TABS: ReadonlyArray<{ to: string; label: string; module: RoomModuleKey }> = [
   { to: "weeks", label: "Weeks", module: "weeks" },
-  { to: "screenings", label: "Screenings", module: "recordings" },
+  { to: "screenings", label: "Recordings", module: "recordings" },
   { to: "feed", label: "Feed", module: "feed" },
   { to: "people", label: "People", module: "roster" },
   { to: "resources", label: "Resources", module: "resources" },
@@ -63,10 +63,10 @@ const LAST_ROOM_KEY = "lu_last_room";
 /** ≥44px targets (h-11), horizontal scroll contained to the rail itself. */
 const tabClasses = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "focus-ring pressable inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-sm transition-colors",
+    "focus-ring pressable inline-flex h-10 shrink-0 items-center rounded-full px-4 text-sm transition-colors",
     isActive
-      ? "border-room-accent/40 bg-room-accent/10 text-room-accent"
-      : "border-border text-muted-foreground hover:text-foreground",
+      ? "bg-cream font-medium text-cream-text"
+      : "text-muted-foreground hover:bg-surface hover:text-foreground",
   );
 
 const RoomShell = () => {

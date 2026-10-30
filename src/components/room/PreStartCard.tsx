@@ -384,7 +384,7 @@ export function PreStartCard({
           <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
             {openNow ? (isLobby ? "Already started" : "Doors are open") : "Doors open"}
           </p>
-          <p className="mt-2 font-serif text-2xl leading-none text-foreground sm:text-3xl">
+          <p className="mt-2 font-display font-semibold tracking-tight text-xl leading-none text-foreground sm:text-2xl">
             {openNow ? (
               openedLine
             ) : (
@@ -496,7 +496,7 @@ export function PreStartCard({
             aside={Number.isFinite(noticeMs) ? noticeDateFormat.format(noticeMs) : undefined}
           />
           {announcement.title && (
-            <h3 className="mt-2 break-words font-serif text-lg leading-snug text-foreground">
+            <h3 className="mt-2 break-words font-display font-semibold tracking-tight text-[17px] leading-snug text-foreground">
               {announcement.title}
             </h3>
           )}
