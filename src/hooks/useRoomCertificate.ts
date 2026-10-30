@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { supabase } from "@/integrations/supabase/client";
+import { fetchChapterOutline } from "@/lib/chapterOutline";
 import { checkAndGenerateCertificate } from "@/hooks/useCertificateAutoGenerate";
 
 export interface RoomCertificateCourse {
@@ -64,10 +65,7 @@ async function fetchRoomCertificateData(
       if (sectionIds.length === 0) {
         return { id: course.id, title: course.title, completedCount: 0, totalCount: 0 };
       }
-      const { data: chapters, error: chapterError } = await supabase
-        .from("chapters")
-        .select("id")
-        .in("section_id", sectionIds);
+      const { data: chapters, error: chapterError } = await fetchChapterOutline<{ id: string }>(sectionIds, ["id"]);
       if (chapterError) throw new Error(chapterError.message);
       const chapterIds = (chapters ?? []).map((chapter) => chapter.id);
       if (chapterIds.length === 0) {

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { LayoutGroup, motion, useMotionValue, useTransform, animate } from "framer-motion";
 import type { AnimationPlaybackControls } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchChapterOutline } from "@/lib/chapterOutline";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -471,11 +472,12 @@ const ChapterViewer = () => {
           ),
         );
         const sectionIds = allSections.map((s) => s.id);
-        const { data: allChapters } = await supabase
-          .from("chapters")
-          .select("id, title, section_id, sort_order, duration_seconds, content_type, thumbnail_url, vdocipher_thumbnail_url, description")
-          .in("section_id", sectionIds)
-          .order("sort_order");
+        const { data: allChapters } = await fetchChapterOutline<{
+          id: string; title: string; section_id: string; sort_order: number; duration_seconds: number | null;
+          content_type: string; thumbnail_url: string | null; vdocipher_thumbnail_url: string | null; description: string | null;
+        }>(sectionIds, [
+          "id", "title", "section_id", "sort_order", "duration_seconds", "content_type", "thumbnail_url", "vdocipher_thumbnail_url", "description",
+        ]);
 
         if (allChapters) {
           // Sort by section order then chapter order
@@ -913,10 +915,7 @@ const ChapterViewer = () => {
         totalCount = 0;
         liveChapterIds = new Set();
       } else {
-        const { data: chapRows, error: countErr } = await supabase
-          .from("chapters")
-          .select("id")
-          .in("section_id", sectionIds);
+        const { data: chapRows, error: countErr } = await fetchChapterOutline<{ id: string }>(sectionIds, ["id"]);
         if (!countErr && chapRows) {
           liveChapterIds = new Set(chapRows.map((c) => c.id));
           totalCount = chapRows.length;

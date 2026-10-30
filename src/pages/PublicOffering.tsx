@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { AnimatePresence, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import type { MotionValue } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchChapterOutline } from "@/lib/chapterOutline";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
@@ -1203,10 +1204,7 @@ export default function PublicOffering() {
                 instructor_display_name, instructor_bio, instructor_avatar_url,
                 instructor_credentials, portfolio_pieces, outcomes, faqs,
                 duration_minutes, total_lessons,
-                sections!sections_course_id_fkey(
-                  id, title, sort_order,
-                  chapters(id, title, description, duration_seconds, make_free, sort_order, thumbnail_url, vdocipher_thumbnail_url)
-                )
+                sections!sections_course_id_fkey(id, title, sort_order)
               )
             )
           `)
@@ -1223,6 +1221,14 @@ export default function PublicOffering() {
         if (error || !data) {
           setNotFound(true);
         } else {
+          // Chapters come in a second read: visitors and non-buyers get the
+          // outline from chapters_public, which carries no video URLs.
+          const sections = (data.offering_courses ?? []).flatMap((oc) => oc.courses?.sections ?? []) as SectionRow[];
+          const { data: chapters } = await fetchChapterOutline<ChapterRow & { section_id: string }>(
+            sections.map((sec) => sec.id),
+            ["id", "section_id", "title", "description", "duration_seconds", "make_free", "sort_order", "thumbnail_url", "vdocipher_thumbnail_url"],
+          );
+          for (const sec of sections) sec.chapters = chapters.filter((ch) => ch.section_id === sec.id);
           setOffering(data as any);
           // Fire view_content once the offering data is in. Pixels
           // configured via /admin/analytics-settings (Meta Pixel, GA4,

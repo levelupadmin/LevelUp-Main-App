@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchChapterOutline } from "@/lib/chapterOutline";
 import { useAuth } from "@/contexts/AuthContext";
 import { ErrorState, SkeletonBlock, SkeletonLine } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
@@ -152,12 +153,10 @@ const fetchCourseDetail = async (
   const sectionIds = sections.map((s) => s.id);
   let chapters: Chapter[] = [];
   if (sectionIds.length > 0) {
-    const { data: chapData } = await supabase
-      .from("chapters")
-      .select("id, title, section_id, sort_order, content_type, duration_seconds, make_free")
-      .in("section_id", sectionIds)
-      .order("sort_order");
-    chapters = (chapData || []) as Chapter[];
+    const { data: chapData } = await fetchChapterOutline<Chapter>(sectionIds, [
+      "id", "title", "section_id", "sort_order", "content_type", "duration_seconds", "make_free",
+    ]);
+    chapters = chapData;
   }
 
   // Entitlement — RPC first, course-scoped enrolment fallback on RPC error.

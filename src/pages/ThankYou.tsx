@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchChapterOutline } from "@/lib/chapterOutline";
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
@@ -487,11 +488,10 @@ export default function ThankYou() {
           .eq("course_id", courseId);
         const sectionRows = (sections ?? []) as OutlineSection[];
         if (sectionRows.length === 0) return;
-        const { data: chapters } = await supabase
-          .from("chapters")
-          .select("id, section_id, sort_order, content_type, duration_seconds")
-          .in("section_id", sectionRows.map((r) => r.id));
-        const chapterRows = (chapters ?? []) as OutlineChapter[];
+        const { data: chapterRows } = await fetchChapterOutline<OutlineChapter>(
+          sectionRows.map((r) => r.id),
+          ["id", "section_id", "sort_order", "content_type", "duration_seconds"],
+        );
         if (cancelled) return;
         setOutline({
           firstLessonId: firstLessonId(sectionRows, chapterRows),
