@@ -1,7 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 
 interface Props {
   form: Record<string, any>;
@@ -73,31 +72,9 @@ export default function ThankYouFields({ form, f }: Props) {
           </p>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex items-center gap-3">
-          <Switch
-            checked={form.thankyou_auto_redirect}
-            onCheckedChange={(checked) => f("thankyou_auto_redirect", checked)}
-          />
-          <div>
-            <Label>Auto-redirect after countdown</Label>
-            <p className="text-xs text-muted-foreground">Automatically redirect logged-in users after the timer</p>
-          </div>
-        </div>
-        <div>
-          <Label>Countdown seconds</Label>
-          <Input
-            type="number"
-            min={0}
-            max={120}
-            value={form.thankyou_redirect_seconds}
-            onChange={(e) => f("thankyou_redirect_seconds", Number(e.target.value))}
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            How many seconds before auto-redirect (0–120). Set to 0 to disable.
-          </p>
-        </div>
-      </div>
+      {/* No auto-redirect controls: the thank-you page no longer leaves on its
+          own (it raced buyers reading their receipt). The buyer taps the
+          button above when ready. */}
     </div>
   );
 }
