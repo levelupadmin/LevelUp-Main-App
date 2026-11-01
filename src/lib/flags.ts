@@ -102,7 +102,20 @@ export const INSTALL_NUDGE = "VITE_INSTALL_NUDGE";
 export const COHORT_ROOMS = "VITE_COHORT_ROOMS";
 
 /** Known flags and their default when neither localStorage nor env speaks. */
+/**
+ * The Stage brand (design/stage/STAGE-BRAND-SPEC.md). Default off: with it
+ * down, `initAppearance()` sets no attributes, the Stage tokens and fonts stay
+ * inert, and every screen renders exactly as before. On for the `supercharged`
+ * staging site only.
+ */
+export const BRAND_STAGE = "VITE_BRAND_STAGE";
+
+/** Stage light mode (spec S4). Default off; Stage is dark-only until then. */
+export const BRAND_LIGHT = "VITE_BRAND_LIGHT";
+
 const REGISTRY: Record<string, boolean> = {
+  [BRAND_STAGE]: false,
+  [BRAND_LIGHT]: false,
   [FUNNEL_RECON]: false,
   [EMAIL_OTP_TAB]: false,
   [COHORT_INTERVIEW]: false,

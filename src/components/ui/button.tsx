@@ -5,9 +5,10 @@ import { motion, type HTMLMotionProps, type MotionProps } from "framer-motion";
 
 import { useFinePointer, useMotionSafe } from "@/lib/motion";
 import { tapTick } from "@/lib/haptics";
+import { STAGE_ENABLED } from "@/lib/appearance";
 import { cn } from "@/lib/utils";
 
-const buttonVariants = cva(
+const legacyButtonVariants = cva(
   // ⚠️ CLOBBER CLASS — keep this `transition-colors`, NEVER `transition-all`.
   // The motion path (motion.button below) owns the inline `transform` via framer's
   // per-frame `whileTap`/`whileHover` writes. A `transition-*` that includes
@@ -82,9 +83,45 @@ const buttonVariants = cva(
   },
 );
 
+// Stage (design/stage/STAGE-BRAND-SPEC.md 7.1). Same variant names, so no call
+// site changes: the primary action is a flat Ember block with white type, 16px
+// radius, 44 high; `champagne` renders exactly like `default`; secondary and
+// outline are filled neutral blocks (filled, not outlined, 2.3); a disabled
+// filled button turns surface-3 with subtle text, never a faded accent. The
+// legacy map above stays byte-identical for the flag-off look.
+const stageButtonVariants = cva(
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-button text-[15px] font-[640] tracking-[-0.005em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-[18px] [&_svg]:shrink-0",
+  {
+    variants: {
+      variant: {
+        default: "bg-brand text-brand-foreground [@media(hover:hover)]:hover:bg-brand/90 disabled:opacity-100 disabled:bg-surface-3 disabled:text-subtle",
+        destructive: "bg-destructive text-destructive-foreground [@media(hover:hover)]:hover:bg-destructive/90",
+        outline: "bg-surface-2 text-foreground [@media(hover:hover)]:hover:bg-surface-3",
+        secondary: "bg-surface-2 text-foreground [@media(hover:hover)]:hover:bg-surface-3 disabled:opacity-100 disabled:text-subtle",
+        ghost: "text-foreground [@media(hover:hover)]:hover:bg-surface-2",
+        link: "text-brand-text underline-offset-4 hover:underline",
+        champagne: "bg-brand text-brand-foreground [@media(hover:hover)]:hover:bg-brand/90 disabled:opacity-100 disabled:bg-surface-3 disabled:text-subtle",
+      },
+      size: {
+        default: "h-11 px-[18px]",
+        sm: "h-[34px] rounded-md px-3.5 text-sm",
+        lg: "h-[52px] px-[22px] text-base",
+        xl: "h-14 px-10 text-base",
+        icon: "h-11 w-11",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  },
+);
+
+const buttonVariants = STAGE_ENABLED ? stageButtonVariants : legacyButtonVariants;
+
 export interface ButtonProps
   extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, keyof MotionProps>,
-    VariantProps<typeof buttonVariants> {
+    VariantProps<typeof legacyButtonVariants> {
   children?: React.ReactNode;
   style?: React.CSSProperties;
   asChild?: boolean;

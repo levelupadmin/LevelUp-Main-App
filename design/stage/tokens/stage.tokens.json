@@ -1,0 +1,125 @@
+{
+  "name": "Stage",
+  "default": {
+    "theme": "dark",
+    "accent": "ember"
+  },
+  "neutrals": {
+    "dark": {
+      "bg": "#0c0d0f",
+      "bg-tint": "#101215",
+      "surface": "#15171a",
+      "surface-2": "#1c1f23",
+      "surface-3": "#262a2f",
+      "line": "#262a2f",
+      "line-strong": "#373c43",
+      "text": "#f4f6f8",
+      "text-2": "#a8afb8",
+      "text-3": "#8a929c",
+      "live": "#ff453a",
+      "live-text": "#ff7a70",
+      "success": "#34c38f",
+      "success-text": "#34c38f",
+      "warning": "#f5a524",
+      "warning-text": "#f5a524"
+    },
+    "light": {
+      "bg": "#f3f4f6",
+      "bg-tint": "#eaecef",
+      "surface": "#ffffff",
+      "surface-2": "#e8ebef",
+      "surface-3": "#dde1e6",
+      "line": "#e0e3e8",
+      "line-strong": "#c6cbd2",
+      "text": "#0f1216",
+      "text-2": "#4d5560",
+      "text-3": "#626b76",
+      "live": "#d42a20",
+      "live-text": "#c0271d",
+      "success": "#1f9e6f",
+      "success-text": "#136e4c",
+      "warning": "#b86e00",
+      "warning-text": "#8a5300"
+    }
+  },
+  "accents": {
+    "ember": {
+      "dark": {
+        "brand": "#f0561a",
+        "brand-foreground": "#ffffff",
+        "brand-text": "#ff9362",
+        "brand-line": "#f0561a",
+        "soft": 0.16
+      },
+      "light": {
+        "brand": "#f0561a",
+        "brand-foreground": "#ffffff",
+        "brand-text": "#b63f0b",
+        "brand-line": "#f0561a",
+        "soft": 0.12
+      }
+    },
+    "mono": {
+      "dark": {
+        "brand": "#f4f6f8",
+        "brand-foreground": "#0c0d0f",
+        "brand-text": "#ffffff",
+        "brand-line": "#f4f6f8",
+        "soft": 0.1
+      },
+      "light": {
+        "brand": "#0f1216",
+        "brand-foreground": "#ffffff",
+        "brand-text": "#0f1216",
+        "brand-line": "#0f1216",
+        "soft": 0.07
+      }
+    }
+  },
+  "type": {
+    "display": {
+      "family": "Bricolage Grotesque",
+      "weight": 720,
+      "tracking": "-0.035em",
+      "axes": "opsz 12-96, wdth 75-100, wght 200-800"
+    },
+    "body": {
+      "family": "Geist",
+      "weight": 400,
+      "strong": 620
+    },
+    "mono": {
+      "family": "Geist Mono",
+      "use": "timecodes, counters, file sizes"
+    },
+    "scale_px": {
+      "display": 38,
+      "h1": 30,
+      "h2": 22,
+      "h3": 17,
+      "body": 15,
+      "small": 13,
+      "micro": 11,
+      "countdown": 56
+    }
+  },
+  "radius_px": {
+    "xs": 8,
+    "sm": 12,
+    "md": 16,
+    "lg": 22,
+    "xl": 28,
+    "pill": 999,
+    "button": 16
+  },
+  "size_px": {
+    "button": 44,
+    "button_lg": 52,
+    "button_sm": 34,
+    "chip": 38,
+    "icon": 20,
+    "icon_nav": 22,
+    "touch_min": 44,
+    "gutter": 20
+  }
+}
