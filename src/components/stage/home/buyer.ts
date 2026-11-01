@@ -206,9 +206,9 @@ export function pickLoud(items: OwnedThing[], nowMs: number): Loud | null {
   return cands[0] ?? null;
 }
 
-/** From now to IST midnight seven days on; the loud card's own session is left out. */
-export function buildAgenda(items: OwnedThing[], nowMs: number, loud: Loud | null): AgendaRow[] {
-  const end = (istDay(nowMs) + 7) * DAY - IST;
+/** From now to IST midnight `days` days on; the loud card's own session is left out. */
+export function buildAgenda(items: OwnedThing[], nowMs: number, loud: Loud | null, days = 7): AgendaRow[] {
+  const end = (istDay(nowMs) + days) * DAY - IST;
   const rows: AgendaRow[] = [];
   for (const i of items) {
     if (i.kind === "cohort") {

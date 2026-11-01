@@ -113,7 +113,7 @@ function NextCard({ loud, onOpen }: { loud: Loud; onOpen: (path: string) => void
   );
 }
 
-interface CardView { key: string; fmt: React.ReactNode; title: string; img: string | null; prog: React.ReactNode; next: React.ReactNode; where: React.ReactNode | null; go: string; path: string; side: React.ReactNode }
+export interface CardView { key: string; fmt: React.ReactNode; title: string; img: string | null; prog: React.ReactNode; next: React.ReactNode; where: React.ReactNode | null; go: string; path: string; side: React.ReactNode }
 
 export function cardView(i: OwnedThing, now: number): CardView {
   const img = i.offering.thumbnail_url;
@@ -163,6 +163,21 @@ export function cardView(i: OwnedThing, now: number): CardView {
   };
 }
 
+/** One thing owned: format, name, where you are, what is next, where it happens, the way in. */
+export function OwnCard({ o, onOpen }: { o: CardView; onOpen: (path: string) => void }) {
+  return (
+    <button className="oc" type="button" onClick={() => onOpen(o.path)} aria-label={`${o.title}. ${o.go}`}>
+      <span className="oc-art">{o.img && <img src={o.img} alt="" loading="lazy" />}</span>
+      <span className="oc-head"><span className="fmt">{o.fmt}</span><span className="oc-t">{o.title}</span></span>
+      <span className="oc-body">
+        {o.prog}
+        <span className="oc-next">{o.next}</span>
+        <span className="oc-foot">{o.where ? <span className="oc-where">{o.where}</span> : <span />}<span className="oc-go">{o.go}<ChevronRight className="ic" /></span></span>
+      </span>
+    </button>
+  );
+}
+
 function OwnCards({ items, now, onOpen }: { items: OwnedThing[]; now: number; onOpen: (path: string) => void }) {
   const cards = items.map((i) => cardView(i, now));
   return (
@@ -171,30 +186,40 @@ function OwnCards({ items, now, onOpen }: { items: OwnedThing[]; now: number; on
         <h2 className="sec-h" id="ownH">My learning</h2>
         {cards.length > 4 && <button className="sec-link" type="button" onClick={() => onOpen("/learn")}>See all</button>}
       </div>
-      <div className="own">
-        {cards.slice(0, 4).map((o) => (
-          <button className="oc" type="button" key={o.key} onClick={() => onOpen(o.path)} aria-label={`${o.title}. ${o.go}`}>
-            <span className="oc-art">{o.img && <img src={o.img} alt="" loading="lazy" />}</span>
-            <span className="oc-head"><span className="fmt">{o.fmt}</span><span className="oc-t">{o.title}</span></span>
-            <span className="oc-body">
-              {o.prog}
-              <span className="oc-next">{o.next}</span>
-              <span className="oc-foot">{o.where ? <span className="oc-where">{o.where}</span> : <span />}<span className="oc-go">{o.go}<ChevronRight className="ic" /></span></span>
-            </span>
-          </button>
-        ))}
-      </div>
+      <div className="own">{cards.slice(0, 4).map((o) => <OwnCard key={o.key} o={o} onOpen={onOpen} />)}</div>
     </section>
+  );
+}
+
+/** Agenda rows (classes and assignments due), grouped by day. Shared with My learning's Schedule. */
+export function AgendaList({ rows, now, onOpen }: { rows: AgendaRow[]; now: number; onOpen: (path: string) => void }) {
+  let prev = "";
+  return (
+    <div className="agenda">
+      {rows.map((x) => {
+        const k = dayKey(x.at), same = k === prev;
+        prev = k;
+        const today = k === dayKey(now);
+        const who = x.item.kind === "cohort" ? x.item.batchName : "Workshop";
+        const path = x.item.kind === "cohort" ? x.item.roomPath : x.item.path;
+        return (
+          <button className={`ag-row${same ? " same-day" : ""}`} type="button" key={x.key} onClick={() => onOpen(path)}>
+            <span className={`ag-day${today ? " is-today" : ""}`}>{!same && <><span className="dl">{today ? "Today" : DAYS[ist(x.at).getUTCDay()].slice(0, 3)}</span><span className="dn">{ist(x.at).getUTCDate()}</span></>}</span>
+            <span className={`ag-bar t-${x.kind}`} />
+            <span className="ag-main"><span className="ag-t">{x.title}</span><span className="ag-m"><b>{time(x.at)}</b><span>·</span><span>{x.kind === "due" ? "Assignment due" : "On Zoom"} · {who}</span></span></span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 function Week({ agenda, now, sfx, onOpen }: { agenda: AgendaRow[]; now: number; sfx: string; onOpen: (path: string) => void }) {
   if (!agenda.length) return null;
   const days = Array.from({ length: 7 }, (_, k) => now + k * 864e5);
-  let prev = "";
   return (
     <section className="sec wk" aria-labelledby={`wkH${sfx}`}>
-      <div className="sec-head"><h2 className="sec-h" id={`wkH${sfx}`}>Next 7 days</h2><button className="sec-link" type="button" onClick={() => onOpen("/learn?seg=calendar")}>Calendar</button></div>
+      <div className="sec-head"><h2 className="sec-h" id={`wkH${sfx}`}>Next 7 days</h2><button className="sec-link" type="button" onClick={() => onOpen("/learn?seg=live")}>Schedule</button></div>
       <div className="wk-strip" aria-hidden="true">
         {days.map((d, k) => (
           <div className={`wk-d${k === 0 ? " is-today" : ""}`} key={k}>
@@ -204,22 +229,7 @@ function Week({ agenda, now, sfx, onOpen }: { agenda: AgendaRow[]; now: number; 
           </div>
         ))}
       </div>
-      <div className="agenda">
-        {agenda.map((x) => {
-          const k = dayKey(x.at), same = k === prev;
-          prev = k;
-          const today = k === dayKey(now);
-          const who = x.item.kind === "cohort" ? x.item.batchName : "Workshop";
-          const path = x.item.kind === "cohort" ? x.item.roomPath : x.item.path;
-          return (
-            <button className={`ag-row${same ? " same-day" : ""}`} type="button" key={x.key} onClick={() => onOpen(path)}>
-              <span className={`ag-day${today ? " is-today" : ""}`}>{!same && <><span className="dl">{today ? "Today" : DAYS[ist(x.at).getUTCDay()].slice(0, 3)}</span><span className="dn">{ist(x.at).getUTCDate()}</span></>}</span>
-              <span className={`ag-bar t-${x.kind}`} />
-              <span className="ag-main"><span className="ag-t">{x.title}</span><span className="ag-m"><b>{time(x.at)}</b><span>·</span><span>{x.kind === "due" ? "Assignment due" : "On Zoom"} · {who}</span></span></span>
-            </button>
-          );
-        })}
-      </div>
+      <AgendaList rows={agenda} now={now} onOpen={onOpen} />
     </section>
   );
 }

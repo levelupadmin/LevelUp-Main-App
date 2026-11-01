@@ -47,6 +47,7 @@ const StageLogin = lazy(() => import("@/components/stage/firstopen/StageLogin"))
 const StageShell = lazy(() => import("@/components/stage/StageShell"));
 const StageHome = lazy(() => import("@/components/stage/home/StageHome"));
 const StageExplore = lazy(() => import("@/components/stage/home/StageExplore"));
+const StageLearn = lazy(() => import("@/components/stage/learn/StageLearn"));
 
 /** /login and /signup: the Stage first open, or the page as it was. `?classic=1`
  *  keeps the old page under Stage (email sign-in, numbers outside India). */
@@ -328,7 +329,7 @@ const AppContent = () => {
               <Route element={<RequireAuth>{STAGE_ENABLED ? <StageShell /> : <StudentLayout />}</RequireAuth>}>
                 <Route path="/home" element={STAGE_ENABLED ? <StageHome /> : <Home />} />
                 {STAGE_ENABLED && <Route path="/explore" element={<StageExplore />} />}
-                <Route path="/learn" element={<Learn />} />
+                <Route path="/learn" element={STAGE_ENABLED ? <StageLearn /> : <Learn />} />
                 <Route path="/courses/:courseId" element={<CourseDetail />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/community" element={<CommunityComingSoon />} />
