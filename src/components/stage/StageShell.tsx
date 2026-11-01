@@ -10,7 +10,9 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useStudioEnabled } from "@/hooks/useStudio";
 import { useCohortRoomsSurfaceValue } from "@/contexts/CohortRoomsSurfaceContext";
 import { hapticSelection, tapTick } from "@/lib/haptics";
-import { useOwnedOfferings } from "@/components/stage/home/catalog";
+import { useBuyerHome } from "@/components/stage/home/buyer";
+import { cardView } from "@/components/stage/home/BuyerHome";
+import "@/components/stage/home/home.css";
 import "@/styles/stage-ui.css";
 import "./shell.css";
 
@@ -31,7 +33,6 @@ const NAV = [
   { label: "Community", icon: Users, path: "/community" },
 ];
 const STUDIO = { label: "Studio", icon: Brain, path: "/studio" };
-const TIER_WORD: Record<string, string> = { live_cohort: "Live cohort", masterclass: "Masterclass", workshop: "Workshop" };
 
 const initials = (name?: string | null) =>
   (name ?? "").trim().split(/\s+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 2).toUpperCase() || "?";
@@ -51,7 +52,8 @@ export default function StageShell() {
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
   const { data: studioEnabled } = useStudioEnabled();
   const { enabled: roomsEnabled } = useCohortRoomsSurfaceValue();
-  const { data: owned = [] } = useOwnedOfferings();
+  const { data: buyer } = useBuyerHome();
+  const owned = useMemo(() => (buyer?.items ?? []).map((i) => cardView(i, Date.now())), [buyer]);
 
   useEffect(() => {
     if (!notifOpen) return;
@@ -91,9 +93,9 @@ export default function StageShell() {
         {roomsEnabled && <RoomNavSlot variant="desktop" />}
         <div className="side-k">My learning</div>
         {owned.length ? owned.map((o) => (
-          <Link key={o.id} to="/learn" className="yi">
-            <span className="yi-art">{o.thumbnail_url && <img src={o.thumbnail_url} alt="" />}</span>
-            <span><span className="yi-t">{o.title}</span><span className="yi-m">{TIER_WORD[o.product_tier ?? ""] ?? "Program"}</span></span>
+          <Link key={o.key} to={o.path} className="yi">
+            <span className="yi-art">{o.img && <img src={o.img} alt="" />}</span>
+            <span><span className="yi-t">{o.title}</span><span className="yi-m">{o.side}</span></span>
           </Link>
         )) : (
           <div className="side-empty">Nothing here yet. What you buy shows up here, one click from every page.</div>

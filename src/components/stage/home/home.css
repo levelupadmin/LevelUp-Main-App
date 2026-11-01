@@ -377,3 +377,13 @@
 .pd-meta > span { display: contents; }
 .ex-head { display: flex; flex-direction: column; gap: 14px; }
 @media (min-width: 900px) { .chips { overflow: visible; flex-wrap: wrap; } }
+
+/* Buyer Home bits the mockup styled inline or in its lab layer */
+.next-unlock { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; font: 600 13.5px/1.3 var(--font-body); opacity: .92; }
+.next-unlock .ic { width: 15px; height: 15px; }
+@media (min-width: 900px) { .next-unlock { justify-content: flex-start; } }
+.oc-next .pulse { color: var(--s-live); }
+.hm-rail .wk .sec-h { font-size: 19px; }
+/* the sidebar's own-item meta, live marker */
+.yi-m .live-t { color: var(--s-live-text); font-weight: 650; letter-spacing: .06em; font-size: 10.5px; display: inline-flex; align-items: center; gap: 6px; }
+.yi-m .pulse { width: 6px; height: 6px; color: var(--s-live); }
