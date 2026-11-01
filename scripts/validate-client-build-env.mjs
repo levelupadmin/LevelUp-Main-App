@@ -8,10 +8,12 @@ export const PRODUCTION_SUPABASE_URL =
   `https://${PRODUCTION_SUPABASE_REF}.supabase.co`;
 
 // The redesign's staging project (fake data, no crons, no live integrations).
-// Accepted ONLY on a Vercel preview build, so neither a production deploy nor a
-// local/native store build can ever ship pointing at it.
+// Accepted ONLY on a Vercel preview build or a build of the dedicated
+// `levelup-staging` Vercel project, so neither a production deploy of the live
+// app nor a local/native store build can ever ship pointing at it.
 export const STAGING_SUPABASE_REF = "kjjkkfajnjmyictimmew";
 export const STAGING_SUPABASE_URL = `https://${STAGING_SUPABASE_REF}.supabase.co`;
+export const STAGING_VERCEL_PROJECT_ID = "prj_lKgk3Kn1h7EyGcxPL0MOJPTm9lSI";
 
 const MODERN_PUBLISHABLE_KEY = /^sb_publishable_[A-Za-z0-9_-]{16,}$/;
 
@@ -36,7 +38,8 @@ export function validateClientBuildEnvironment(environment) {
   }
 
   const isStagingPreview =
-    environment.VERCEL_ENV === "preview" &&
+    (environment.VERCEL_ENV === "preview" ||
+      environment.VERCEL_PROJECT_ID === STAGING_VERCEL_PROJECT_ID) &&
     parsedUrl.origin === STAGING_SUPABASE_URL;
   const expectedRef = isStagingPreview
     ? STAGING_SUPABASE_REF

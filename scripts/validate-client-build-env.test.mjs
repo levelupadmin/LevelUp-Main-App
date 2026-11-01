@@ -6,6 +6,7 @@ import {
   PRODUCTION_SUPABASE_URL,
   STAGING_SUPABASE_REF,
   STAGING_SUPABASE_URL,
+  STAGING_VERCEL_PROJECT_ID,
   validateClientBuildEnvironment,
 } from "./validate-client-build-env.mjs";
 
@@ -73,6 +74,18 @@ test("accepts the staging endpoint on a Vercel preview build", () => {
     validateClientBuildEnvironment(stagingEnvironment("preview")).projectRef,
     STAGING_SUPABASE_REF,
   );
+});
+
+test("accepts the staging endpoint on a production build of the levelup-staging project", () => {
+  const environment = stagingEnvironment("production");
+  environment.VERCEL_PROJECT_ID = STAGING_VERCEL_PROJECT_ID;
+  assert.equal(validateClientBuildEnvironment(environment).projectRef, STAGING_SUPABASE_REF);
+});
+
+test("rejects the staging endpoint on a production build of any other project", () => {
+  const environment = stagingEnvironment("production");
+  environment.VERCEL_PROJECT_ID = "prj_live_app_project";
+  assert.throws(() => validateClientBuildEnvironment(environment));
 });
 
 for (const [label, vercelEnv] of [
