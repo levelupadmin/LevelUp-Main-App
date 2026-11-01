@@ -14,8 +14,8 @@ const StagingBadge = () => {
   return (
     <div
       aria-hidden="true"
-      className="fixed left-2 z-[9999] pointer-events-none select-none rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-black shadow"
-      style={{ bottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+      className="fixed left-1/2 z-[9999] -translate-x-1/2 pointer-events-none select-none rounded-b-md bg-amber-400 px-2 py-[2px] text-[9.5px] font-semibold uppercase leading-[12px] tracking-wider text-black"
+      style={{ top: "env(safe-area-inset-top, 0px)" }}
     >
       Staging · test data
     </div>
