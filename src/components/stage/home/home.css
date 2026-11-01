@@ -233,11 +233,6 @@
   .hm-grid:not(.has-rail) .only-narrow-week { display: block; }
 }
 
-/* ---------- Where each field comes from ---------- */
-  content: attr(data-src); position: absolute; z-index: 8; left: 2px; top: 2px; max-width: calc(100% - 4px);
-  padding: 2px 5px; border-radius: 4px; background: var(--src-c, #34c38f); color: #0b0c0e;
-  font: 600 9.5px/1.25 var(--font-mono); letter-spacing: 0; text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
-}
 /* the class has ended today: a quiet card, not a loud one */
 .next--done { background: var(--s-surface-2); color: var(--s-text); }
 .next--done .next-pill { background: var(--s-surface-3); color: var(--s-text); }
