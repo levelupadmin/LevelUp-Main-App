@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, supabaseUrl } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,8 +30,9 @@ import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 const EMAIL_ONLY_AUTH = false;
 
-const VERIFY_MSG91_OTP_URL =
-  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
+// Built from the client's resolved project URL (not hard-coded) so a staging
+// build verifies OTPs on staging instead of creating accounts on production.
+const VERIFY_MSG91_OTP_URL = `${supabaseUrl}/functions/v1/verify-msg91-otp`;
 
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 

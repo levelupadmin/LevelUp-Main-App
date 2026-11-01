@@ -250,6 +250,25 @@ npx -y supabase@latest functions deploy <name>                   # server-side b
   config.toml default; always `link --project-ref ivkvluezuiojovpotlyb` first.**
 - Secrets live in `~/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/.env.supabase`.
 
+### Staging (the `supercharged` redesign branch)
+
+- **STAGING project ref = `kjjkkfajnjmyictimmew`** ("LevelUp Main App STAGING", same
+  org, Micro, Tokyo). Built 2026-11-01 as an exact structural copy of prod (tables,
+  columns, RLS, functions, triggers, buckets, migration history all fingerprint-match)
+  with **fake data only, no cron jobs, and no live integrations** (no Razorpay live
+  keys, MSG91, Brevo, TeleCRM, Tally, Interakt, VdoCipher).
+- Vercel previews of the `supercharged` branch ONLY get `VITE_SUPABASE_URL` /
+  `VITE_SUPABASE_PUBLISHABLE_KEY` / `VITE_SUPABASE_PROJECT_ID` pointing at staging
+  (branch-scoped Preview env vars). Every other branch preview still hits PROD.
+  `StagingBadge` shows a corner tag whenever the build is not on the prod ref.
+- Database changes for the redesign are migration files in `supabase/migrations/`:
+  `db push` them to STAGING first (`link --project-ref kjjkkfajnjmyictimmew`), and to
+  prod only when that slice merges to `main`. Renames keep an old-name compatibility
+  view until the bundled Android/iOS apps, edge functions and n8n stop using the old
+  name.
+- Never hard-code a project URL in `src/`; build it from `supabaseUrl`
+  (`@/integrations/supabase/client`) so staging builds stay on staging.
+
 ### Chapter thumbnails
 
 Every chapter card / Up Next rail / offering tile renders

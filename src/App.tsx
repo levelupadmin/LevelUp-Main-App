@@ -15,6 +15,7 @@ import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
+import StagingBadge from "@/components/StagingBadge";
 import FloatingSupport from "@/components/FloatingSupport";
 import { UploadProvider } from "@/contexts/UploadContext";
 import UploadDock from "@/components/UploadDock";
@@ -457,6 +458,7 @@ const AppContent = () => {
           (this app has no next-themes provider). */}
       <SonnerToaster theme="dark" />
       <OfflineBanner />
+      <StagingBadge />
     </AuthProvider>
   );
 };
