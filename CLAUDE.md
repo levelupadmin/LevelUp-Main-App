@@ -266,6 +266,15 @@ npx -y supabase@latest functions deploy <name>                   # server-side b
   prod only when that slice merges to `main`. Renames keep an old-name compatibility
   view until the bundled Android/iOS apps, edge functions and n8n stop using the old
   name.
+- **Dummy login (staging only):** any +91 number + the `STAGING_TEST_LOGIN_CODE`
+  secret signs in/up through `verify-msg91-otp`'s reviewCode path, no SMS. Three
+  locks keep it off in prod: the function ignores the secret on the prod ref, prod
+  has no such secret, and `isStagingTestLogin` needs `VITE_STAGING_TEST_LOGIN=true`
+  (supercharged previews only) plus a non-prod `supabaseUrl`, so it compiles to
+  `false` in a prod build. `EXTRA_ALLOWED_ORIGINS` (staging-only secret) adds the
+  staging web origins to `_shared/cors.ts` and the four inline-CORS functions.
+- Staging chapters point at staging-owned sample files (`staging-sample/…` in the
+  staging `workshop-archive` and `protected-video` buckets), never at prod storage.
 - Never hard-code a project URL in `src/`; build it from `supabaseUrl`
   (`@/integrations/supabase/client`) so staging builds stay on staging.
 
