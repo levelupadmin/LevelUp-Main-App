@@ -1,0 +1,220 @@
+/* Ported from 15_LMS_Experience_Lab/first-open.html (round 4). Variables are the
+   --s-* aliases in src/styles/stage-ui.css. Prototype-only rules dropped. */
+
+/* ==========================================================================
+   The first open, round 4.
+   Phone: the wall fills the screen, the words sit on the solid end of the
+   gradient, Continue is the one loud thing. The wall shrinks into a header
+   above the number and code steps, still drifting, never re-drawn.
+   Desktop: the same wall becomes the right side of the window and stays put
+   through every step; the words and forms live in a quiet panel on the left.
+   ========================================================================== */
+.fo { position: absolute; inset: 0; overflow: hidden; background: var(--s-wall); color: #fff; }
+
+/* ---- the wall ---- */
+.fo-wall { position: absolute; z-index: 0; left: 0; right: 0; top: 0; height: 74%; overflow: hidden; background: var(--s-wall);
+  transition: height .62s var(--s-ease-out), border-radius .62s var(--s-ease-out), opacity .5s; }
+.fo-wall--desk { display: none; }
+.wl-cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 8px; }
+.wl-col { position: relative; overflow: visible; min-width: 0; }
+.wl-track { display: flex; flex-direction: column; gap: 8px; will-change: transform; animation: driftUp 80s linear infinite; }
+.wl-col:nth-child(2) .wl-track { animation-name: driftDown; animation-duration: 100s; }
+.wl-col:nth-child(3) .wl-track { animation-duration: 70s; margin-top: -90px; }
+.wl-col:nth-child(4) .wl-track { animation-name: driftDown; animation-duration: 92s; margin-top: -40px; }
+.wl-col:nth-child(5) .wl-track { animation-duration: 76s; margin-top: -150px; }
+@keyframes driftUp { from { transform: translateY(0); } to { transform: translateY(calc(-50% - var(--hg, 4px))); } }
+@keyframes driftDown { from { transform: translateY(calc(-50% - var(--hg, 4px))); } to { transform: translateY(0); } }
+.wl-ph { position: relative; display: block; width: 100%; padding: 0; border: 0; border-radius: 12px; overflow: hidden; background: #16181b; cursor: pointer; }
+.wl-ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.wl-ph span { position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 6px 9px; border-radius: 9px; background: rgba(11, 12, 14, .86);
+  font: 560 12px/1.3 var(--font-body); color: #fff; text-align: left; opacity: 0; transform: translateY(4px); transition: opacity .25s, transform .3s var(--s-ease-out); pointer-events: none; }
+.fo.is-paused .wl-track { animation-play-state: paused; }
+
+/* gradients so the logo and the words always read, whatever drifts behind */
+.fo-fade { position: absolute; inset: 0; z-index: 1; pointer-events: none; transition: opacity .5s;
+  background:
+    linear-gradient(180deg, rgba(11, 12, 14, .86) 0%, rgba(11, 12, 14, .5) 9%, rgba(11, 12, 14, 0) 18%),
+    linear-gradient(180deg, rgba(11, 12, 14, 0) min(30%, calc(var(--ft, 60%) - 150px)), rgba(11, 12, 14, .74) min(46%, calc(var(--ft, 60%) - 44px)), #0b0c0e min(60%, calc(var(--ft, 60%) + 4px))); }
+.fo-wall--phone::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .5s;
+  background: linear-gradient(180deg, rgba(8, 9, 10, .66) 0%, rgba(8, 9, 10, 0) 26%, rgba(8, 9, 10, 0) 64%, rgba(8, 9, 10, .5) 100%); }
+
+/* ---- top: logo, or back on the form steps ---- */
+.fo-top { position: absolute; z-index: 3; top: calc(var(--s-sat) + 8px); left: 20px; right: 20px; height: 40px; display: flex; align-items: center; }
+.fo-logo { display: flex; color: #fff; transition: opacity .3s; }
+.fo-logo .lu-logo { height: 28px; width: auto; }
+.fo-back { position: absolute; left: 0; top: 0; width: 40px; height: 40px; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  background: rgba(11, 12, 14, .55); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); color: #fff;
+  opacity: 0; pointer-events: none; transition: opacity .3s; }
+.fo-back .ic { width: 20px; height: 20px; }
+
+/* ---- the steps ---- */
+.fo-step { position: absolute; z-index: 2; left: 0; right: 0; padding: 0 20px; display: flex; flex-direction: column; gap: 14px;
+  visibility: hidden; opacity: 0; transition: opacity .35s, visibility 0s .35s; }
+.fo-step.is-on { visibility: visible; opacity: 1; transition: opacity .35s, visibility 0s; }
+.fo-step[data-s="wall"] { bottom: 0; padding-bottom: calc(var(--s-sab) + 14px); }
+.fo-step[data-s="phone"] { top: 300px; bottom: 0; padding-top: 26px; padding-bottom: calc(var(--s-sab) + 16px); background: var(--s-bg); }
+.fo-step[data-s="code"] { top: 240px; bottom: 0; padding-top: 26px; padding-bottom: calc(var(--s-sab) + 16px); background: var(--s-bg); }
+.fo-step.is-arrive .rv { animation: rise .6s calc(var(--k, 0) * 38ms + 40ms) var(--s-ease-out) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+
+.fo-h { margin: 0; font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-tracking); font-size: 42px; line-height: .98; font-variation-settings: "opsz" 96; text-wrap: balance; }
+.fo-h span { display: block; }
+.fo-sub { margin: 0; font-size: 15.5px; line-height: 1.45; color: rgba(255, 255, 255, .8); text-wrap: pretty; max-width: 34em; }
+.fo-cta { margin-top: 8px; }
+.fo-alt { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.fo-alt button { min-height: 44px; padding: 0 4px; border: 0; background: none; color: rgba(255, 255, 255, .86); font: 600 14.5px/1 var(--font-body); cursor: pointer; }
+.fo-alt i { width: 3px; height: 3px; border-radius: 50%; background: rgba(255, 255, 255, .5); }
+.fo-legal { margin: 0; padding: 0 10px; text-align: center; font-size: 11px; line-height: 1.45; color: rgba(255, 255, 255, .5); }
+.fo-legal a { color: rgba(255, 255, 255, .72); text-decoration: underline; text-underline-offset: 2px; }
+
+/* the forms */
+.fo-k { font: 650 11px/1.3 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--s-text-3); }
+.fo-t { margin: -4px 0 0; font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-tracking); font-size: 30px; line-height: 1.06; }
+.fo-s { margin: -4px 0 4px; font-size: 15px; line-height: 1.45; color: var(--s-text-2); }
+.fo-s b { color: var(--s-text); font-weight: 600; }
+.linkish { padding: 0; border: 0; background: none; color: var(--s-brand-text); font: 600 inherit/inherit var(--font-body); font-size: inherit; cursor: pointer; text-decoration: none; }
+.field { display: flex; flex-direction: column; gap: 8px; }
+.input-wrap { display: flex; align-items: center; height: 52px; border-radius: 16px; background: var(--s-surface-2); box-shadow: inset 0 0 0 1px transparent; transition: box-shadow .2s; }
+.input-wrap:focus-within { box-shadow: inset 0 0 0 2px var(--s-brand); }
+.field.is-error .input-wrap { box-shadow: inset 0 0 0 2px var(--s-live); }
+.cc { display: flex; align-items: center; height: 24px; padding: 0 12px 0 16px; margin-right: 2px; border-right: 1px solid var(--s-line-strong); font: 600 16px/1 var(--font-body); color: var(--s-text); font-variant-numeric: tabular-nums; }
+.input { flex: 1; min-width: 0; height: 100%; padding: 0 16px 0 12px; border: 0; background: none; color: var(--s-text); font: 500 16px/1 var(--font-body); letter-spacing: .02em; outline: none; font-variant-numeric: tabular-nums; }
+.input::placeholder { color: var(--s-text-3); }
+.input-wrap--email .input { padding-left: 16px; }
+.err { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13.5px; color: var(--s-live-text); }
+.err .ic { width: 16px; height: 16px; }
+.via { display: flex; padding: 3px; border-radius: 999px; background: var(--s-surface-2); }
+.via button { flex: 1; height: 38px; border: 0; border-radius: 999px; background: none; color: var(--s-text-2); font: 600 14px/1 var(--font-body); display: flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; transition: background-color .25s, color .25s; }
+.via button .ic { width: 17px; height: 17px; }
+.via button.is-on { background: var(--s-text); color: var(--s-bg); }
+[data-accent="mono"] .via button.is-on { background: var(--s-surface-3); color: var(--s-text); }
+.fo-swap { align-self: center; min-height: 44px; padding: 0 6px; border: 0; background: none; color: var(--s-text-2); font: 600 14px/1 var(--font-body); cursor: pointer; }
+.otp { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.otp input { width: 100%; height: 56px; padding: 0; border: 0; border-radius: 14px; background: var(--s-surface-2); color: var(--s-text); text-align: center; font: 600 24px/1 var(--font-body); font-variant-numeric: tabular-nums; outline: none; box-shadow: inset 0 0 0 1px transparent; transition: box-shadow .2s; caret-color: var(--s-brand); }
+.otp input:focus { box-shadow: inset 0 0 0 2px var(--s-brand); }
+.otp input.is-filled { background: var(--s-surface-3); }
+.otp.is-error input { box-shadow: inset 0 0 0 2px var(--s-live); }
+.otp.is-error { animation: nudge .32s var(--s-ease-in-out); }
+@keyframes nudge { 25% { transform: translateX(-6px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+.otp-foot { font-size: 13.5px; color: var(--s-text-3); }
+.otp-foot b { color: var(--s-text-2); font-weight: 500; }
+
+/* the code arrives: a WhatsApp notification you can tap */
+.sysnote { position: absolute; z-index: 65; left: 10px; right: 10px; top: calc(var(--s-sat) + 4px); display: flex; gap: 11px; padding: 12px 14px; border: 0; border-radius: 20px; text-align: left; cursor: pointer;
+  background: rgba(40, 43, 48, .86); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); color: #fff; box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+  animation: noteIn .5s var(--s-ease-out) both; font: 400 13.5px/1.35 var(--font-body); }
+.sysnote.is-out { animation: noteOut .3s var(--s-ease-in-out) forwards; }
+@keyframes noteIn { from { opacity: 0; transform: translateY(-18px); } }
+@keyframes noteOut { to { opacity: 0; transform: translateY(-14px); } }
+.sysnote .sn-ic { flex: none; width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: #25d366; color: #fff; }
+.sysnote .sn-ic.sms { background: #34c759; }
+.sysnote .sn-ic .ic { width: 22px; height: 22px; }
+.sysnote .sn-app { display: flex; justify-content: space-between; font-size: 12px; color: rgba(255, 255, 255, .62); margin-bottom: 2px; }
+.sysnote b { font-weight: 650; }
+
+/* ---- signed in: where the prototype stops ---- */
+.fo-done { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--s-bg); color: var(--s-text); visibility: hidden; opacity: 0; transition: opacity .4s, visibility 0s .4s; }
+.fo-done.is-on { visibility: visible; opacity: 1; transition: opacity .4s, visibility 0s; }
+.fo-done-top { padding: calc(var(--s-sat) + 12px) 20px 0; }
+.fo-done-top .lu-logo { height: 28px; width: auto; color: var(--s-text); }
+.fo-done-top .lg-graph { color: var(--s-brand-text); }
+.fo-done-body { margin-top: auto; padding: 0 20px calc(var(--s-sab) + 22px); display: flex; flex-direction: column; gap: 12px; max-width: 520px; }
+.fo-done-k { font: 650 11px/1.3 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--s-text-3); }
+.fo-done-h { margin: 0; font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-tracking); font-size: 34px; line-height: 1.04; }
+.fo-done-s { margin: 0 0 10px; color: var(--s-text-2); font-size: 15px; line-height: 1.5; }
+
+/* ---- step states, phone ---- */
+.fo[data-step="phone"] .fo-wall--phone { height: 300px; border-radius: 0 0 28px 28px; }
+.fo[data-step="code"] .fo-wall--phone { height: 240px; border-radius: 0 0 28px 28px; }
+.fo[data-step="phone"] .fo-wall--phone::after, .fo[data-step="code"] .fo-wall--phone::after { opacity: 1; }
+.fo[data-step="phone"] .fo-fade, .fo[data-step="code"] .fo-fade, .fo[data-step="done"] .fo-fade { opacity: 0; }
+.fo[data-step="phone"] .fo-logo, .fo[data-step="code"] .fo-logo { opacity: 0; }
+.fo[data-step="phone"] .fo-back, .fo[data-step="code"] .fo-back { opacity: 1; pointer-events: auto; }
+.fo[data-step="phone"], .fo[data-step="code"] { background: var(--s-bg); }
+
+@media (min-width: 600px) and (max-width: 899px) {
+  .fo-step { padding-left: max(20px, calc((100vw - 520px) / 2)); padding-right: max(20px, calc((100vw - 520px) / 2)); }
+  .fo-top { left: max(20px, calc((100vw - 520px) / 2)); }
+}
+
+/* ==========================================================================
+   Desktop: the window splits. Words on the left, the wall on the right.
+   ========================================================================== */
+@media (min-width: 900px) {
+  .fo { --pw: clamp(520px, 44vw, 720px); --pad: clamp(48px, 4vw, 72px); }
+  .fo-wall--phone { display: none; }
+  .fo-wall--desk { display: block; top: 0; bottom: 0; left: var(--pw); right: 0; height: auto; }
+  .fo-wall--desk .wl-cols { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 0 10px; --hg: 5px; }
+  .fo-wall--desk .wl-track { gap: 10px; }
+  .fo-wall--desk .wl-ph { border-radius: 14px; }
+  .fo-wall--desk .wl-ph:hover span, .fo-wall--desk .wl-ph:focus-visible span { opacity: 1; transform: none; }
+  .fo-wall--desk .wl-col:hover .wl-track { animation-play-state: paused; }
+  /* the wall dims a little while you type, and keeps drifting */
+  .fo[data-step="phone"] .fo-wall--desk, .fo[data-step="code"] .fo-wall--desk { opacity: .5; }
+  .fo-fade { background:
+    linear-gradient(90deg, #0b0c0e calc(var(--pw) - 1px), rgba(11, 12, 14, .82) var(--pw), rgba(11, 12, 14, 0) calc(var(--pw) + 180px)),
+    linear-gradient(180deg, rgba(11, 12, 14, .55) 0%, rgba(11, 12, 14, 0) 14%, rgba(11, 12, 14, 0) 86%, rgba(11, 12, 14, .55) 100%); }
+  .fo[data-step="phone"] .fo-fade, .fo[data-step="code"] .fo-fade { opacity: 1; }
+  .fo[data-step="phone"], .fo[data-step="code"] { background: var(--s-wall); }
+
+  .fo-top { top: var(--pad); left: var(--pad); right: auto; width: calc(var(--pw) - var(--pad) * 2); height: 56px; }
+  .fo-logo .lu-logo { height: 44px; }
+  .fo[data-step="phone"] .fo-logo, .fo[data-step="code"] .fo-logo { opacity: 1; }
+  .fo-back { display: none; }
+
+  .fo-step { left: var(--pad); right: auto; width: calc(var(--pw) - var(--pad) * 2); max-width: 560px; padding: 0; gap: 16px; background: none !important; }
+  .fo-step[data-s="wall"] { top: auto; bottom: var(--pad); padding: 0; }
+  .fo-step[data-s="phone"], .fo-step[data-s="code"] { top: 50%; bottom: auto; padding: 0; transform: translateY(-46%); }
+  .fo-h { font-size: clamp(46px, 4.25vw, 82px); line-height: .96; }
+  .fo-h span { white-space: nowrap; }
+  .fo-sub { font-size: 17.5px; line-height: 1.5; color: rgba(255, 255, 255, .78); max-width: 26em; margin-top: 4px; }
+  .fo-cta { margin-top: 18px; }
+  .fo-alt { justify-content: flex-start; gap: 14px; }
+  .fo-alt button { font-size: 15px; }
+  .fo-legal { text-align: left; padding: 0; font-size: 12px; max-width: 34em; margin-top: 6px; }
+  .fo-dback { display: inline-flex !important; }
+  .fo-t { font-size: 40px; }
+  .fo-s { font-size: 16px; }
+  .otp input { height: 62px; font-size: 26px; border-radius: 16px; }
+  .fo-swap { align-self: flex-start; padding: 0; }
+  .sysnote { left: auto; right: 24px; top: 24px; width: 380px; }
+  .fo-done-top { padding: var(--pad) var(--pad) 0; }
+  .fo-done-top .lu-logo { height: 44px; }
+  .fo-done-body { margin: auto; padding: 0 24px; align-items: stretch; width: 100%; max-width: 560px; text-align: left; }
+  .fo-done-h { font-size: 56px; }
+  .fo .fo-done-btns { flex-direction: row; gap: 12px; }
+  .fo .fo-done-btns .btn { flex: 1 1 0; }
+}
+.fo-dback { display: none; align-self: flex-start; align-items: center; gap: 6px; min-height: 36px; padding: 0; margin-bottom: 4px; border: 0; background: none; color: var(--s-text-2); font: 600 14px/1 var(--font-body); cursor: pointer; }
+.fo-dback .ic { width: 16px; height: 16px; }
+.fo-done-btns { display: flex; flex-direction: column; gap: 10px; }
+
+/* ==========================================================================
+   App fit (not in the mockup): the page frame, the 4-digit code this app's
+   SMS sends, links styled as the mockup's text buttons, the staging hint,
+   and the plain layout for deep links (no wall, handover section 4).
+   ========================================================================== */
+.stage-login { position: fixed; inset: 0; z-index: 1; overflow: hidden; background: var(--s-wall); }
+.fo-logo .lu-logo { display: block; height: 28px; width: auto; color: #fff; }
+.otp { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 304px; }
+.fo-alt .fo-alt-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; color: rgba(255, 255, 255, .86); font: 600 14.5px/1 var(--font-body); text-decoration: none; }
+a.fo-swap { display: inline-flex; align-items: center; text-decoration: none; }
+.fo-test { margin: -6px 0 2px; padding: 9px 12px; border-radius: 12px; background: var(--s-brand-soft); color: var(--s-brand-text); font: 560 13.5px/1.35 var(--font-body); }
+.otp-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.otp-foot .linkish { min-height: 32px; }
+.otp-sep { color: var(--s-text-3); }
+.otp-err { margin-top: -6px; }
+.fo-dback .ic { width: 16px; height: 16px; }
+.fo-back .ic { width: 20px; height: 20px; }
+.err .ic { width: 16px; height: 16px; }
+.btn .lu-loader, .btn [role="status"] { color: currentColor; }
+
+.fo--plain { background: var(--s-bg); }
+.fo--plain .fo-step[data-s="phone"], .fo--plain .fo-step[data-s="code"] { top: 0; padding-top: calc(var(--s-sat) + 72px); }
+.fo--plain .fo-logo { opacity: 1 !important; }
+.fo--plain .fo-logo .lu-logo { color: var(--s-text); }
+.fo--plain .fo-back { left: auto; right: 0; }
+@media (min-width: 900px) {
+  .fo-logo .lu-logo { height: 44px; }
+  .fo--plain .fo-step[data-s="phone"], .fo--plain .fo-step[data-s="code"] { top: 50%; padding-top: 0; }
+}

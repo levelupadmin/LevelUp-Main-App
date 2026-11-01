@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { STAGE_ENABLED } from "@/lib/appearance";
 import { bootAnalytics } from "@/lib/analytics";
 import { DECISION_FLOW, flag } from "@/lib/flags";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
@@ -39,6 +40,21 @@ import NotFoundPage from "@/pages/NotFoundPage";
 // course cards + hero carousel) doesn't ride along with the main bundle.
 const Home = lazy(() => import("@/pages/Home"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
+
+// Stage (VITE_BRAND_STAGE): the round-4 first open, frame, Home and Explore.
+// Lazy, so with the flag off none of it is ever fetched.
+const StageLogin = lazy(() => import("@/components/stage/firstopen/StageLogin"));
+const StageShell = lazy(() => import("@/components/stage/StageShell"));
+const StageHome = lazy(() => import("@/components/stage/home/StageHome"));
+const StageExplore = lazy(() => import("@/components/stage/home/StageExplore"));
+
+/** /login and /signup: the Stage first open, or the page as it was. `?classic=1`
+ *  keeps the old page under Stage (email sign-in, numbers outside India). */
+const LoginEntry = ({ legacy }: { legacy: ReactNode }) => {
+  const { search } = useLocation();
+  if (!STAGE_ENABLED || new URLSearchParams(search).has("classic")) return <>{legacy}</>;
+  return <StageLogin />;
+};
 
 // Lazy-loaded student pages
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
@@ -274,8 +290,8 @@ const AppContent = () => {
             <Routes>
               {/* Public */}
               <Route path="/" element={<RootRedirect />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
+              <Route path="/login" element={<LoginEntry legacy={<Login />} />} />
+              <Route path="/signup" element={<LoginEntry legacy={<Signup />} />} />
               {/* Full-bleed post-OTP onboarding, self-guards, renders OUTSIDE
                   the StudentLayout shell (no bottom nav). */}
               <Route path="/onboarding" element={<Onboarding />} />
@@ -309,8 +325,9 @@ const AppContent = () => {
               <Route path="/sessions" element={<Navigate to="/learn?seg=live" replace />} />
 
               {/* ─── Student routes share a single persistent layout ─── */}
-              <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>
-                <Route path="/home" element={<Home />} />
+              <Route element={<RequireAuth>{STAGE_ENABLED ? <StageShell /> : <StudentLayout />}</RequireAuth>}>
+                <Route path="/home" element={STAGE_ENABLED ? <StageHome /> : <Home />} />
+                {STAGE_ENABLED && <Route path="/explore" element={<StageExplore />} />}
                 <Route path="/learn" element={<Learn />} />
                 <Route path="/courses/:courseId" element={<CourseDetail />} />
                 <Route path="/profile" element={<ProfilePage />} />
