@@ -257,9 +257,15 @@ npx -y supabase@latest functions deploy <name>                   # server-side b
   columns, RLS, functions, triggers, buckets, migration history all fingerprint-match)
   with **fake data only, no cron jobs, and no live integrations** (no Razorpay live
   keys, MSG91, Brevo, TeleCRM, Tally, Interakt, VdoCipher).
-- Vercel previews of the `supercharged` branch ONLY get `VITE_SUPABASE_URL` /
-  `VITE_SUPABASE_PUBLISHABLE_KEY` / `VITE_SUPABASE_PROJECT_ID` pointing at staging
-  (branch-scoped Preview env vars). Every other branch preview still hits PROD.
+- **The public staging site is https://levelup-staging.vercel.app**: the production
+  deployment of a SEPARATE Vercel project, `levelup-staging`
+  (`prj_lKgk3Kn1h7EyGcxPL0MOJPTm9lSI`, no Git link, env vars all point at staging).
+  Publish after every push: `vercel deploy --prod --yes --scope level-up4` from a
+  checkout of `supercharged` whose `.vercel/project.json` links to that project (remote
+  build). Production aliases are public under Standard Protection, which is why this
+  project exists: previews of `levelup-main-app` sit behind Vercel sign-in.
+- `levelup-main-app` previews of `supercharged` ALSO point at staging (branch-scoped
+  Preview env vars). Every other branch preview still hits PROD.
   `StagingBadge` shows a corner tag whenever the build is not on the prod ref.
 - Database changes for the redesign are migration files in `supabase/migrations/`:
   `db push` them to STAGING first (`link --project-ref kjjkkfajnjmyictimmew`), and to
