@@ -25,6 +25,7 @@ import { isNative } from "@/lib/platform";
 import { hapticImpact } from "@/lib/haptics";
 import { MotionButton } from "@/components/motion/MotionButton";
 import { springs, instant, otpSuccess, useMotionSafe } from "@/lib/motion";
+import { isStagingTestLogin } from "@/lib/stagingLogin";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
 
 // After a session is minted, brand-new phone-first accounts haven't told us
@@ -255,7 +256,9 @@ const Login = () => {
   // exactly this reserved number we skip the MSG91 widget and let
   // verify-msg91-otp validate the typed 4-digit code against its
   // REVIEW_LOGIN_CODE secret (server-side kill switch). See the edge fn.
-  const isReviewLogin = phone === "+918888777666";
+  // Staging builds extend the same path to every +91 number (dummy accounts,
+  // no SMS); see isStagingTestLogin.
+  const isReviewLogin = phone === "+918888777666" || isStagingTestLogin(phone);
 
   const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
     try {

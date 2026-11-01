@@ -32,6 +32,12 @@ const ALLOWED_ORIGINS = new Set<string>([
   "capacitor://app.leveluplearning.in", // iOS (capacitor scheme + server.hostname)
   "capacitor://localhost", // iOS fallback if hostname isn't applied
   "https://localhost", // Android/WebView fallback
+  // Extra web origins, comma-separated. Set only on the staging project (its
+  // custom domain + the Vercel branch alias); unset in production.
+  ...(Deno.env.get("EXTRA_ALLOWED_ORIGINS") ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
 ]);
 
 const BASE_HEADERS = {
