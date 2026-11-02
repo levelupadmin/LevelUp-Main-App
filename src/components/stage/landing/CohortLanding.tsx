@@ -1,7 +1,7 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowUpRight, Check } from "lucide-react";
 import { Cta, Faqs, Loop, Player, Section, StickyBar } from "./parts";
-import { media, priceFree, type CohortLanding as Data, type LandingAction, type Story } from "./landing";
+import { media, priceFree, type CohortLanding as Data, type CommunityTile, type LandingAction, type Story } from "./landing";
 
 /**
  * A live cohort's sales page (/p/:slug under Stage), v2. Every cohort has the
@@ -138,12 +138,14 @@ export default function CohortLanding({ d, action, after }: { d: Data; action: L
         )}
       </Section>
 
-      {/* 8 · proof */}
-      <Section id="ld-proof" eyebrow="The community" title={d.proof.title}>
+      {/* 8 · proof: the community the way the program's website shows it, then its people */}
+      <Section id="ld-proof" eyebrow="The community" title={d.proof.community?.title ?? d.proof.title} body={d.proof.community?.body}>
+        {d.proof.community?.film && <Player video={d.proof.community.film} caption={d.proof.community.film.title} />}
         <dl className="ld-stats">
           {d.proof.stats.map((s) => <div key={s.label}><dd>{s.value}</dd><dt>{s.label}</dt></div>)}
         </dl>
-        {d.proof.photos && d.proof.photos.length > 0 && (
+        {d.proof.community && d.proof.community.tiles.length > 0 && <Tiles tiles={d.proof.community.tiles} />}
+        {!d.proof.community && d.proof.photos && d.proof.photos.length > 0 && (
           <div className={`ld-gallery${d.proof.photos.length > 4 ? " is-many" : ""}`}>
             {d.proof.photos.map((m) => <img key={m} className="ld-gallery-m ld-photo" src={media(m)} alt="" loading="lazy" decoding="async" />)}
           </div>
@@ -272,6 +274,22 @@ function LogoStrip({ items }: { items: string[] }) {
         {items.map((m) => <img key={`${m}-2`} className="ld-marquee-dup" src={media(m)} alt="" aria-hidden loading="lazy" decoding="async" />)}
       </div>
     </div>
+  );
+}
+
+/** The community's photos with their captions, as the program's website lays them out: wide ones first, then the small ones in pairs. */
+function Tiles({ tiles }: { tiles: CommunityTile[] }) {
+  const wide = tiles.filter((t) => t.wide).length;
+  const shape = tiles.length === 1 ? " ld-net--solo" : wide === 1 ? " ld-net--lead" : "";
+  return (
+    <ul className={`ld-net${shape}`}>
+      {tiles.map((t) => (
+        <li key={t.title} className={`ld-net-t${t.wide ? " is-wide" : ""}`}>
+          <img src={media(t.image)} alt="" loading="lazy" decoding="async" />
+          <span className="ld-net-c"><b>{t.title}</b>{t.body && <span>{t.body}</span>}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -116,6 +116,8 @@ export interface CohortLanding {
     /** one line that sums the brands up, then the logos as a single flowing strip */
     logos?: { title: string; summary?: string | null; items: string[] } | null;
     photos?: string[];
+    /** the program website's own community section: its words, its film and its captioned photos */
+    community?: { title: string; body?: string | null; film?: Video | null; tiles: CommunityTile[] } | null;
   };
   fit: { yes: { title: string; body: string }[]; no?: string | null } | null;
   admission: { title: string; steps: { title: string; body?: string | null }[] };
@@ -131,6 +133,9 @@ export interface Story {
   stats: { value: string; label: string }[];
   before: string; after: string; how?: string | null; quote?: string | null;
 }
+
+/** One photo of the community with its caption; a wide one takes two columns. */
+export interface CommunityTile { image: string; title: string; body?: string | null; wide?: boolean }
 
 export type Landing = MasterclassLanding | CohortLanding;
 

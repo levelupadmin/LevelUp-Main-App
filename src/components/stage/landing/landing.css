@@ -365,3 +365,26 @@ html[data-theme="light"] .ld-marquee img { filter: brightness(0); opacity: .72; 
   .ld-hero-media--wide + .ld-hero-body { margin-top: 0; }
   .ld-gallery.is-many.ld-work { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 }
+
+/* The community, as each program's website shows it: photos with their captions
+   on a solid strip (no blur). Phone: two columns, a wide tile across both.
+   Laptop: four columns; a single wide tile takes a 2x2 block, so a lead photo
+   and four small ones fill two rows. One tile alone keeps its own shape. */
+.ld-net { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ld-net-t { position: relative; aspect-ratio: 394 / 412; border-radius: 16px; overflow: hidden; background: var(--s-surface-2); }
+.ld-net-t.is-wide { grid-column: span 2; aspect-ratio: 801 / 412; }
+.ld-net-t img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.ld-net-c { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px; border-radius: 11px; background: rgba(10, 10, 10, .74); color: #fff; font-size: 12.5px; line-height: 1.35; }
+.ld-net-c b { font: 640 13.5px/1.25 var(--font-body); }
+.ld-net-c span { color: rgba(255, 255, 255, .78); }
+.ld-net--solo { grid-template-columns: minmax(0, 1fr); }
+.ld-net--solo .ld-net-t { aspect-ratio: auto; background: none; }
+.ld-net--solo .ld-net-t img { position: static; height: auto; border-radius: 16px; }
+.ld-net--solo .ld-net-c { position: static; padding: 10px 2px 0; background: none; color: var(--s-text-2); }
+.ld-net--solo .ld-net-c b { color: var(--s-text); }
+.ld-net--solo .ld-net-c span { color: var(--s-text-2); }
+@media (min-width: 900px) {
+  .ld-net { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .ld-net--lead .ld-net-t.is-wide { grid-row: span 2; aspect-ratio: auto; }
+  .ld-net--solo { grid-template-columns: minmax(0, 1fr); max-width: 760px; }
+}
