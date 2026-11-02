@@ -222,3 +222,7 @@ a.fo-swap { display: inline-flex; align-items: center; text-decoration: none; }
   .fo-logo .lu-logo { height: 44px; }
   .fo--plain .fo-step[data-s="phone"], .fo--plain .fo-step[data-s="code"] { top: 50%; padding-top: 0; }
 }
+
+/* "Sign in with email" under Send code: outlined, so it reads as the other way
+   in and never as a second, greyed-out Send code. */
+.stage-ui .btn.fo-line { background: none; color: var(--s-text); box-shadow: inset 0 0 0 1px var(--s-line-strong); }

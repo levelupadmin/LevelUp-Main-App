@@ -24,7 +24,8 @@ import "./firstopen.css";
  * The first open, round 4 (design/stage/HANDOVER_first_open.md, mockup
  * 15_LMS_Experience_Lab/first-open.html). Rendered for /login and /signup
  * under VITE_BRAND_STAGE; `?classic=1` keeps the old page (email sign-in and
- * numbers outside India live there).
+ * numbers outside India live there; "Sign in with email" opens it straight on
+ * its email step with `method=email`, keeping `next`).
  *
  *   first visit on this device -> BrandIntro over 12 of LevelUp's photos
  *   -> the wall -> Continue -> your number -> the code -> SignInMoment
@@ -116,6 +117,13 @@ export default function StageLogin() {
   const phone = `+91${digits}`;
   const reviewLike = phone === REVIEW_PHONE || isStagingTestLogin(phone);
   const testHint = isStagingTestLogin(phone);
+  // Email sign-in lives on the classic page; `method=email` opens it on that
+  // step, and `next` brings them back to what they tapped.
+  const emailHref = `/login?${new URLSearchParams({
+    classic: "1",
+    method: "email",
+    ...(redirectTarget !== "/home" ? { next: redirectTarget } : {}),
+  }).toString()}`;
 
   const go = useCallback((next: Step) => {
     setStep(next);
@@ -340,7 +348,7 @@ export default function StageLogin() {
             Continue
           </button>
           <div className="fo-alt rv" style={{ "--k": 3 } as React.CSSProperties}>
-            <Link to="/login?classic=1" className="fo-alt-link">Use email</Link>
+            <Link to={emailHref} className="fo-alt-link">Sign in with email</Link>
           </div>
           <p className="fo-legal rv" style={{ "--k": 4 } as React.CSSProperties}>
             New or returning, it is the same step. By continuing you agree to our <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy Policy</Link>.
@@ -375,7 +383,7 @@ export default function StageLogin() {
           <button className={`btn btn--block rv${sending ? " is-busy" : ""}`} style={{ "--k": 4 } as React.CSSProperties} type="button" disabled={digits.length !== 10 || sending} onClick={() => void sendCode()}>
             {sending ? (<><LevelUpLoader size={28} label="Sending" />Sending</>) : "Send code"}
           </button>
-          <Link className="fo-swap rv" style={{ "--k": 5 } as React.CSSProperties} to="/login?classic=1">Not in India? Use email</Link>
+          <Link className="btn btn--block fo-line rv" style={{ "--k": 5 } as React.CSSProperties} to={emailHref}>Sign in with email</Link>
         </div>
 
         {/* 3. The code */}

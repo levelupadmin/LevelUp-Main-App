@@ -174,11 +174,19 @@ const Login = () => {
     return () => mql.removeEventListener?.("change", sync);
   }, []);
 
-  const [step, setStep] = useState<Step>(EMAIL_ONLY_AUTH ? "email_input" : "phone");
+  // `?method=email` (the Stage sign-in's "Sign in with email" link) opens
+  // straight on email sign-in: the Email tab when that flag is on, otherwise
+  // the email-link step a non-+91 number reaches today. Without the param
+  // nothing below changes.
+  const startOnEmail = searchParams.get("method") === "email";
+  const [step, setStep] = useState<Step>(() =>
+    EMAIL_ONLY_AUTH || (startOnEmail && !flag(EMAIL_OTP_TAB)) ? "email_input" : "phone",
+  );
   // Which sign-in channel the (additive, dark-shippable) tab bar is showing.
-  // Always starts on "phone": the MSG91 flow is the proven path and stays the
-  // default first paint whether or not the email tab is switched on.
-  const [authTab, setAuthTab] = useState<OtpTab>("phone");
+  // Starts on "phone" (the MSG91 flow is the proven path and stays the default
+  // first paint whether or not the email tab is switched on), unless the link
+  // asked for email.
+  const [authTab, setAuthTab] = useState<OtpTab>(startOnEmail ? "email" : "phone");
   // Phone prefill (strict E.164) — handed over by checkout after a guest
   // payment via router state (kept out of the URL so analytics/Sentry never
   // see a phone number); ?phone= remains as a fallback.
@@ -196,8 +204,9 @@ const Login = () => {
   // email-only fallback we skip straight into the form so the welcome layer
   // never traps a non-Indian user. Once the user is past the phone step
   // (OTP / email), the form is always open.
-  // Open straight onto the form when checkout prefilled the phone.
-  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH || !!prefilledPhone);
+  // Open straight onto the form when checkout prefilled the phone, or when the
+  // link asked for email sign-in.
+  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH || !!prefilledPhone || startOnEmail);
 
   // Animation key so the form column re-mounts the slide-in animation
   // on every step transition.
