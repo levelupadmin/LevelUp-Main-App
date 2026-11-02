@@ -6,7 +6,7 @@ import { supabase, supabaseUrl, supabasePublishableKey } from "@/integrations/su
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
-import { resolveLoginRedirect, prefillPhoneParam } from "@/lib/loginParams";
+import { resolveLoginRedirect, prefillPhoneParam, nationalMobileDigits } from "@/lib/loginParams";
 import { isStagingTestLogin } from "@/lib/stagingLogin";
 import { confirm, hapticImpact } from "@/lib/haptics";
 import { playSound } from "@/lib/sound";
@@ -363,10 +363,10 @@ export default function StageLogin() {
                 inputMode="numeric"
                 autoComplete="tel-national"
                 placeholder="98765 43210"
-                maxLength={11}
+                maxLength={20}
                 aria-label="Mobile number"
                 value={formatNational(digits)}
-                onChange={(e) => { setDigits(e.target.value.replace(/\D/g, "").slice(0, 10)); setPhoneError(false); }}
+                onChange={(e) => { setDigits(nationalMobileDigits(e.target.value)); setPhoneError(false); }}
                 onKeyDown={(e) => { if (e.key === "Enter") void sendCode(); }}
               />
             </span>
