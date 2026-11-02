@@ -1,7 +1,7 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowUpRight, Check } from "lucide-react";
 import { Cta, Faqs, Loop, Player, Section, StickyBar } from "./parts";
-import { media, priceFree, type CohortLanding as Data, type LandingAction } from "./landing";
+import { media, priceFree, type CohortLanding as Data, type LandingAction, type Story } from "./landing";
 
 /**
  * A live cohort's sales page (/p/:slug under Stage), v2. Every cohort has the
@@ -12,6 +12,8 @@ import { media, priceFree, type CohortLanding as Data, type LandingAction } from
  *   the closing call
  * The one action is "Request invite" (the cohort's Tally form); "See the full
  * program" opens its page on leveluplearning.live for everything else.
+ * Logos are never a box each (founder, second review): brands are one line
+ * that sums them up and one strip that flows; tools are their app icons.
  */
 export default function CohortLanding({ d, action, after }: { d: Data; action: LandingAction; after?: ReactNode }) {
   const native = action.kind === "native";
@@ -30,7 +32,7 @@ export default function CohortLanding({ d, action, after }: { d: Data; action: L
             {d.hero.mosaic.slice(0, 6).map((m) => <img key={m} src={media(m)} alt="" fetchPriority="high" />)}
           </div>
         ) : (
-          <div className="ld-hero-media">
+          <div className={`ld-hero-media${d.hero.wide ? " ld-hero-media--wide" : ""}`}>
             {d.hero.image && <img src={media(d.hero.image)} alt="" fetchPriority="high" style={d.hero.position ? { objectPosition: d.hero.position } : undefined} />}
             {(d.hero.video || d.hero.video_m) && <CohortLoop d={d} />}
           </div>
@@ -102,6 +104,17 @@ export default function CohortLanding({ d, action, after }: { d: Data; action: L
             </div>
           ))}
         </div>
+        {d.learn.tools && d.learn.tools.items.length > 0 && (
+          <div className="ld-flow">
+            <h3 className="ld-sub-h">{d.learn.tools.title}</h3>
+            {d.learn.tools.body && <p className="ld-flow-sum">{d.learn.tools.body}</p>}
+            <ul className="ld-tools">
+              {d.learn.tools.items.map((t) => (
+                <li key={t.name}><img src={media(t.icon)} alt="" loading="lazy" decoding="async" /><span>{t.name}</span></li>
+              ))}
+            </ul>
+          </div>
+        )}
       </Section>
 
       {/* 7 · mentors */}
@@ -135,6 +148,13 @@ export default function CohortLanding({ d, action, after }: { d: Data; action: L
             {d.proof.photos.map((m) => <img key={m} className="ld-gallery-m ld-photo" src={media(m)} alt="" loading="lazy" decoding="async" />)}
           </div>
         )}
+        {d.proof.stories && d.proof.stories.items.length > 0 && (
+          <div className="ld-flow">
+            <h3 className="ld-sub-h">{d.proof.stories.title}</h3>
+            {d.proof.stories.body && <p className="ld-flow-sum">{d.proof.stories.body}</p>}
+            <div className="ld-wins">{d.proof.stories.items.map((st) => <Win key={st.name} s={st} />)}</div>
+          </div>
+        )}
         {d.proof.creators && d.proof.creators.length > 0 && (
           <div className="ld-creators">
             {d.proof.creators.map((c) => (
@@ -157,12 +177,11 @@ export default function CohortLanding({ d, action, after }: { d: Data; action: L
           </div>
         )}
         {d.proof.logos && d.proof.logos.items.length > 0 && (
-          <>
+          <div className="ld-flow">
             <h3 className="ld-sub-h">{d.proof.logos.title}</h3>
-            <div className="ld-gallery is-many ld-logos">
-              {d.proof.logos.items.map((m) => <img key={m} className="ld-gallery-m" src={media(m)} alt="" loading="lazy" decoding="async" />)}
-            </div>
-          </>
+            {d.proof.logos.summary && <p className="ld-flow-sum">{d.proof.logos.summary}</p>}
+            <LogoStrip items={d.proof.logos.items} />
+          </div>
         )}
       </Section>
 
@@ -241,5 +260,39 @@ export default function CohortLanding({ d, action, after }: { d: Data; action: L
 function CohortLoop({ d }: { d: Data }) {
   const [wide] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 900px)").matches);
   const src = wide ? d.hero.video ?? d.hero.video_m ?? null : d.hero.video_m ?? d.hero.video ?? null;
-  return <Loop className="ld-hero-video" src={src} poster={d.hero.image} />;
+  return <Loop className="ld-hero-video" src={src} poster={d.hero.image} once={d.hero.once} />;
+}
+
+/** Brand logos as one strip that drifts sideways (transform only); still, and scrollable, for reduced motion. */
+function LogoStrip({ items }: { items: string[] }) {
+  return (
+    <div className="ld-marquee">
+      <div className="ld-marquee-track" style={{ "--n": items.length } as CSSProperties}>
+        {items.map((m) => <img key={m} src={media(m)} alt="" loading="lazy" decoding="async" />)}
+        {items.map((m) => <img key={`${m}-2`} className="ld-marquee-dup" src={media(m)} alt="" aria-hidden loading="lazy" decoding="async" />)}
+      </div>
+    </div>
+  );
+}
+
+/** One person's before and after, the structure creators.forgebylevelup.com uses. */
+function Win({ s }: { s: Story }) {
+  const initials = s.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("");
+  return (
+    <article className="ld-win">
+      <header className="ld-win-top">
+        {s.photo ? <img src={media(s.photo)} alt="" loading="lazy" decoding="async" /> : <span className="ld-win-av" aria-hidden>{initials}</span>}
+        <span className="ld-win-who"><b>{s.name}</b><span>{[s.handle, s.role].filter(Boolean).join(" · ")}</span></span>
+      </header>
+      <dl className="ld-win-stats">
+        {s.stats.slice(0, 2).map((x) => <div key={x.label}><dd>{x.value}</dd><dt>{x.label}</dt></div>)}
+      </dl>
+      <div className="ld-win-ba">
+        <p><b>Before</b>{s.before}</p>
+        <p><b>After</b>{s.after}</p>
+      </div>
+      {s.how && <p className="ld-win-how"><b>How the Forge helped</b>{s.how}</p>}
+      {s.quote && <blockquote className="ld-win-q">{s.quote}</blockquote>}
+    </article>
+  );
 }

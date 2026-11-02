@@ -55,18 +55,19 @@ export function Cta({ action, label, surface, block, withPrice = true }: {
 }
 
 /** A short silent loop, playing only while on screen (and never under reduced motion). */
-export function Loop({ src, poster, alt, className }: { src: string | null; poster?: string | null; alt?: string | null; className?: string }) {
+export function Loop({ src, poster, alt, className, once }: { src: string | null; poster?: string | null; alt?: string | null; className?: string; once?: boolean }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     const v = ref.current;
     if (!v || !src || reduced()) return;
     const io = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) void v.play().catch(() => {});
+      // once: after the last frame it stays there, scrolling back doesn't replay it
+      if (e.isIntersecting) { if (!(once && v.ended)) void v.play().catch(() => {}); }
       else v.pause();
     }, { threshold: 0.35 });
     io.observe(v);
     return () => io.disconnect();
-  }, [src]);
+  }, [src, once]);
   if (!src) return poster ? <img className={className} src={media(poster)} alt={alt ?? ""} loading="lazy" decoding="async" /> : null;
   return (
     <video
@@ -75,7 +76,7 @@ export function Loop({ src, poster, alt, className }: { src: string | null; post
       src={media(src)}
       poster={media(poster)}
       muted
-      loop
+      loop={!once}
       playsInline
       preload="none"
       aria-label={alt ?? undefined}

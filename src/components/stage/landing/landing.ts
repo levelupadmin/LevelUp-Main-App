@@ -88,22 +88,33 @@ export interface CohortLanding {
   full_page_url: string;
   hero: {
     eyebrow: string; headline: string; sub: string; image: string | null; video?: string | null; video_m?: string | null; position?: string | null;
-    /** real people instead of one picture: a grid of portraits (Creator Academy's own creators) */
+    /** real people instead of one picture: a grid of portraits */
     mosaic?: string[];
+    /** a 16:9 frame that shows all of the picture (a logo animation, a wide loop) instead of a tall crop */
+    wide?: boolean;
+    /** play the video once and hold its last frame (Creator Academy's logo animation) */
+    once?: boolean;
   };
   /** 4 or 5: duration, format, time each week, next cohort, fee */
   facts: { label: string; value: string }[];
   trailer: Video | null;
   make: { title: string; body?: string | null; items: { title: string; body: string; image?: string | null }[] };
   how: { title: string; items: { title: string; body: string }[] };
-  learn: { title: string; body?: string | null; modules: { label?: string | null; title: string; line: string }[] };
+  learn: {
+    title: string; body?: string | null; modules: { label?: string | null; title: string; line: string }[];
+    /** the software taught, as app icons (VE) */
+    tools?: { title: string; body?: string | null; items: { name: string; icon: string }[] } | null;
+  };
   mentors: { title: string; body?: string | null; items: { name: string; role?: string | null; line?: string | null; photo?: string | null }[]; work?: string[] };
   proof: {
     title: string;
     stats: { value: string; label: string }[];
     quotes?: { text: string; name: string; role?: string | null }[];
     creators?: { name: string; handle?: string | null; followers?: string | null; photo?: string | null }[];
-    logos?: { title: string; items: string[] } | null;
+    /** before-and-after stories of people who learned with LevelUp (creators.forgebylevelup.com's structure) */
+    stories?: { title: string; body?: string | null; items: Story[] } | null;
+    /** one line that sums the brands up, then the logos as a single flowing strip */
+    logos?: { title: string; summary?: string | null; items: string[] } | null;
     photos?: string[];
   };
   fit: { yes: { title: string; body: string }[]; no?: string | null } | null;
@@ -113,6 +124,12 @@ export interface CohortLanding {
   closing: { title: string; body?: string | null };
   /** false while the program's Vimeo videos only embed on its own website */
   vimeo_embeds?: boolean;
+}
+
+export interface Story {
+  name: string; handle?: string | null; role?: string | null; photo?: string | null;
+  stats: { value: string; label: string }[];
+  before: string; after: string; how?: string | null; quote?: string | null;
 }
 
 export type Landing = MasterclassLanding | CohortLanding;
