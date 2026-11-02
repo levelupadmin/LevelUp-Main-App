@@ -113,9 +113,18 @@ export const BRAND_STAGE = "VITE_BRAND_STAGE";
 /** Stage light mode (spec S4). Default off; Stage is dark-only until then. */
 export const BRAND_LIGHT = "VITE_BRAND_LIGHT";
 
+/**
+ * Checkout, not signed in: verify the buyer with one code, then pay
+ * (CheckoutVerify). Default off, so live keeps today's guest form (name, email,
+ * phone, pay, then one code on /login) until a real purchase has been tried
+ * with it on. Surface only: the server rules are the same either way.
+ */
+export const CHECKOUT_VERIFY = "VITE_CHECKOUT_VERIFY";
+
 const REGISTRY: Record<string, boolean> = {
   [BRAND_STAGE]: false,
   [BRAND_LIGHT]: false,
+  [CHECKOUT_VERIFY]: false,
   [FUNNEL_RECON]: false,
   [EMAIL_OTP_TAB]: false,
   [COHORT_INTERVIEW]: false,

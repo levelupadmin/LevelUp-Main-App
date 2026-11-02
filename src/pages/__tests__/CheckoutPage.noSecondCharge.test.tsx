@@ -72,6 +72,9 @@ vi.mock("@/integrations/supabase/client", () => {
       ),
       functions: { invoke: invokeSpy },
     },
+    // CheckoutVerify (imported by the page) builds its function URLs from these.
+    supabaseUrl: "https://test.supabase.co",
+    supabasePublishableKey: "test-key",
   };
 });
 
@@ -343,5 +346,15 @@ describe("CheckoutPage: no second charge", () => {
     renderCheckout();
     expect(await screen.findByText("Payment received. Confirming it now")).toBeInTheDocument();
     for (const b of payButtons()) expect(b).toBeDisabled();
+  });
+
+  it("with verify-first on, a signed-out buyer verifies before Pay works, and no guest order is made", async () => {
+    window.localStorage.setItem("VITE_CHECKOUT_VERIFY", "on");
+    invokeImpl.fn = async () => ({ data: { available: false }, error: null });
+    renderCheckout();
+    const pay = await screen.findAllByRole("button", { name: "Verify your details to pay" });
+    for (const b of pay) expect(b).toBeDisabled();
+    expect(screen.queryByLabelText("Email address")).toBeNull();
+    expect(calls("guest-create-order")).toHaveLength(0);
   });
 });
