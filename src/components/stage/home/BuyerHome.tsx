@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Lock, PlayCircle, Smartphone, Video } from "lucide-react";
+import { CalendarDays, Check, ChevronRight, Clock, Lock, PlayCircle, Smartphone, Video } from "lucide-react";
 import { toast } from "sonner";
 import { tapTick } from "@/lib/haptics";
 import { sessionTimeState } from "@/lib/room";
@@ -9,8 +9,8 @@ import {
   buildAgenda, downloadIcs, endOf, isLiveCohort, joinWindow, pickLoud, recordingHref, sessionPath, sessionWho, zoomLinkFor,
   type AgendaRow, type BuyerHome as BuyerData, type CohortItem, type CourseItem, type LiveWorkshopItem, type Loud, type OwnedThing, type Session,
 } from "./buyer";
-import { FORMAT_COPY, TIERS, formatFacts, type StageCatalog, type Tier } from "./catalog";
-import { ProductCard } from "./sections";
+import type { StageCatalog } from "./catalog";
+import { HomeRows, type Head } from "./discover";
 import StageApplicantCard from "./ApplicantCard";
 
 /*
@@ -244,48 +244,7 @@ function Week({ agenda, now, sfx, onOpen }: { agenda: AgendaRow[]; now: number; 
   );
 }
 
-function ExploreMore({ catalog, data, onOpen }: { catalog: StageCatalog; data: BuyerData; onOpen: (path: string) => void }) {
-  const fs = TIERS.map((t) => {
-    const f = catalog.formats.find((x) => x.tier === t)!;
-    return { ...f, avail: f.list.filter((x) => !x.owned && !(data.inCohort && t === "live_cohort")) };
-  }).filter((f) => f.avail.length);
-  const ownsAny = (t: Tier) => data.items.some((i) => (t === "live_cohort" && isLiveCohort(i)) || (t === "masterclass" && i.kind === "masterclass") || (t === "workshop" && (i.kind === "workshop" || i.kind === "liveworkshop")));
-  const [tier, setTier] = useState<Tier | null>(null);
-  const cur = fs.find((f) => f.tier === tier) ?? fs.find((f) => !ownsAny(f.tier)) ?? fs[0];
-  const [railRef, setRailRef] = useState<HTMLDivElement | null>(null);
-  if (!cur) return null;
-  const C = FORMAT_COPY[cur.tier];
-  const body = cur.tier === "live_cohort" && data.items.some((i) => i.kind === "masterclass") ? "The step after a masterclass: make your own work, with mentors reviewing it." : C.body;
-  const scroll = (dir: number) => railRef?.scrollBy({ left: dir * railRef.clientWidth * 0.9, behavior: "smooth" });
-  return (
-    <section className="sec" aria-labelledby="exH">
-      <div className="sec-head">
-        <h2 className="sec-h" id="exH">Explore more</h2>
-        <span className="sec-tools">
-          {cur.avail.length > 3 && <span className="rail-nav"><button type="button" onClick={() => scroll(-1)} aria-label="Scroll left"><ChevronLeft className="ic" /></button><button type="button" onClick={() => scroll(1)} aria-label="Scroll right"><ChevronRight className="ic" /></button></span>}
-          <button className="sec-link" type="button" onClick={() => onOpen("/explore")}>See the full catalogue</button>
-        </span>
-      </div>
-      {fs.length > 1 && (
-        <div className="ex-tabs" role="tablist">
-          {fs.map((f) => (
-            <button key={f.tier} type="button" role="tab" aria-selected={f.tier === cur.tier} className={f.tier === cur.tier ? "is-on" : undefined} onClick={() => { void tapTick(); setTier(f.tier); }}>
-              {FORMAT_COPY[f.tier].plural}<span>{f.avail.length}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="ex-intro">
-        <div className="ex-copy"><h3 className="fm-line">{C.line}</h3><p className="fm-body">{body}</p></div>
-        <ul className="fm-facts">{formatFacts(cur).filter((t) => !/^\d+ (masterclasses|programs|workshops?)$/.test(t)).map((t) => <li key={t}>{t}</li>)}</ul>
-      </div>
-      <div ref={setRailRef} className={`pds pds--${cur.tier} pds--rail`}>{cur.avail.map((x) => <ProductCard key={x.offering.id} x={x} />)}</div>
-      <button className="ex-all" type="button" onClick={() => onOpen(`/explore?tier=${cur.tier}`)}>See all {C.plural.toLowerCase()}<ArrowRight className="ic" /></button>
-    </section>
-  );
-}
-
-export default function BuyerHome({ data, catalog, firstName, applicant }: { data: BuyerData; catalog: StageCatalog | null; firstName: string; applicant?: ApplicantStageView | null }) {
+export default function BuyerHome({ data, catalog, heads, firstName, applicant }: { data: BuyerData; catalog: StageCatalog | null; heads: Head[]; firstName: string; applicant?: ApplicantStageView | null }) {
   const navigate = useNavigate();
   const now = useNow(30_000);
   const loud = useMemo(() => pickLoud(data.items, now), [data.items, now]);
@@ -306,7 +265,8 @@ export default function BuyerHome({ data, catalog, firstName, applicant }: { dat
           {applicant && <StageApplicantCard view={applicant} />}
           <OwnCards items={data.items} now={now} onOpen={open} />
           {hasRail && <div className="only-narrow-week"><Week agenda={agenda} now={now} sfx="p" onOpen={open} /></div>}
-          {catalog && <ExploreMore catalog={catalog} data={data} onOpen={open} />}
+          {/* Then what a new person sees: the same rows, without what they own (founder, 2 Nov 2026). */}
+          {catalog && <HomeRows data={catalog} heads={heads} />}
         </div>
         {hasRail && <aside className="hm-rail"><Week agenda={agenda} now={now} sfx="d" onOpen={open} /></aside>}
       </div>

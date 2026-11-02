@@ -17,8 +17,9 @@ const longDateIST = (d: Date) =>
 /**
  * Home, round 4 (15_LMS_Experience_Lab/home.html). Built only from what the
  * database returns for the person signed in:
- * - owns something  -> BuyerHome: the next thing, My learning, the next 7 days,
- *                      Explore more;
+ * - owns something  -> BuyerHome: the next thing, My learning (three), the next
+ *                      7 days, then the same masterclass, live cohort and
+ *                      workshop rows as below, without what they own;
  * - owns nothing    -> the carousel of five programmes, then the masterclasses,
  *                      the live cohorts and the workshops as wide cards
  *                      (03_Specs/01_Home_New_Person_Plan.md, round 3).
@@ -38,7 +39,7 @@ export default function StageHome() {
   const first = full && full !== PLACEHOLDER_NAME ? full.split(/\s+/)[0] : "";
 
   if (buyer.isLoading) return <div className="hm-inner"><SectionsSkeleton /></div>;
-  if (buyer.data && buyer.data.items.length > 0) return <BuyerHome data={buyer.data} catalog={data} firstName={first} applicant={applicant} />;
+  if (buyer.data && buyer.data.items.length > 0) return <BuyerHome data={buyer.data} catalog={data} heads={heads.data ?? []} firstName={first} applicant={applicant} />;
   // No answer about what they own (data stays from the last good read, so this
   // is only a first read that failed): an error, not the new-person Home.
   const ownedFailed = buyer.isError && !buyer.data;

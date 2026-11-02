@@ -147,7 +147,10 @@ Deno.serve(async (req) => {
         const email = s.email?.trim().toLowerCase() || null;
         const authPhone = resolveImportPhone(s.phone, s.country_code);
         const profilePhone = authPhone ? `+${authPhone}` : null;
-        if (!email && !authPhone) {
+        // An account picked from search (or a decision) arrives as just its
+        // user_id: it needs no email or phone (founder, 2 Nov 2026: "Grant" on
+        // their own complete account said "Needs an email or a valid phone").
+        if (!s.user_id && !email && !authPhone) {
           return { input: s, status: "error", detail: "Needs an email or a valid phone" };
         }
 

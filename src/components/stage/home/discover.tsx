@@ -275,7 +275,8 @@ export function HomeRows({ data, heads }: { data: StageCatalog; heads: Head[] })
       const h = bySlug.get(x.offering.slug);
       return {
         id: x.offering.id, slug: x.offering.slug,
-        art: media(pick(h?.hero?.image, true)) ?? x.offering.thumbnail_url,
+        // The programme's own logo, as on its My learning card (founder, 2 Nov 2026); the page's hero only without one.
+        art: x.offering.thumbnail_url ?? media(pick(h?.hero?.image, true)) ?? null,
         kicker: fact(h, /next cohort/i),
         title: x.offering.title,
         meta: [fact(h, /duration/i), fact(h, /format/i)].filter(Boolean).join(" · "),
