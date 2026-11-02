@@ -35,6 +35,7 @@ import { formatRuntime } from "@/lib/thankYouCourse";
 import { track } from "@/lib/analytics";
 import { STAGE_ENABLED } from "@/lib/appearance";
 import StageAlsoFrom from "@/components/stage/offering/StageAlsoFrom";
+import { LevelUpMark } from "@/components/brand/LevelUpMark";
 // Stage look for this page: every rule is scoped to html[data-brand="stage"]
 // and keyed on the po-* hook classes below, so the flag-off page is unchanged.
 import "@/styles/stage-offering.css";
@@ -1489,7 +1490,11 @@ export default function PublicOffering() {
               <ArrowLeft className="h-5 w-5" />
             </button>
             <Link to="/" aria-label="LevelUp Learning home" className="flex shrink-0 items-center">
-              <LevelUpWordmark className="h-7 w-auto text-foreground" />
+              {STAGE_ENABLED ? (
+                <LevelUpMark showSub={false} lineClassName="text-brand-text" className="w-[84px] text-foreground" />
+              ) : (
+                <LevelUpWordmark className="h-7 w-auto text-foreground" />
+              )}
             </Link>
           </div>
           {!session && (
