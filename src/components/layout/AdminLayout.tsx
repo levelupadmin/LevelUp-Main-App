@@ -25,6 +25,7 @@ import {
   ClipboardList,
   Repeat,
   KeyRound,
+  Award,
   type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -62,6 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Users", icon: UserCog, path: "/admin/users" },
       { label: "Enrolments", icon: Users, path: "/admin/enrolments" },
+      { label: "Certificates", icon: Award, path: "/admin/certificates" },
       { label: "TagMango mappings", icon: Repeat, path: "/admin/legacy-mappings" },
     ],
   },

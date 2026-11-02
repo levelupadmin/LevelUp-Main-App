@@ -397,7 +397,7 @@ const RefundPolicy = () => {
               6. Things that aren't refundable
             </h2>
             <ul className="list-disc pl-6 space-y-2">
-              <li>Courses you've completed (100% watched and certificate issued)</li>
+              <li>Courses where your certificate has been issued (for masterclasses, that's once 85% of the lessons are done)</li>
               <li>
                 Programs bought with a{" "}
                 <strong className="text-foreground">

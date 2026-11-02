@@ -84,7 +84,7 @@ export default function EnrolmentTable({
                       className="h-7 px-2"
                       disabled={generatingCertFor === e.id}
                       onClick={() => onGenerateCertificate(e)}
-                      title="Generate Certificate"
+                      title="Certificates for this student"
                     >
                       <Award className="h-3.5 w-3.5" />
                     </Button>

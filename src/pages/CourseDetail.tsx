@@ -32,6 +32,7 @@ import type { StageLessonGroup } from "@/components/stage/course/StageCourse";
 // CSS; under Stage it starts loading with this page, before the data lands.
 const loadStageCourse = () => import("@/components/stage/course/StageCourse");
 const StageCourse = lazy(loadStageCourse);
+const CourseCertificate = lazy(() => import("@/components/certificates/CourseCertificate"));
 if (STAGE_ENABLED) void loadStageCourse();
 
 const CONTENT_WORD: Record<string, string> = {
@@ -596,6 +597,9 @@ const CourseDetail = () => {
                   : null
             }
             groups={groups}
+            certificate={hasAccess && courseId && user ? (
+              <Suspense fallback={null}><CourseCertificate courseId={courseId} /></Suspense>
+            ) : null}
           >
             {contentBlocks}
           </StageCourse>

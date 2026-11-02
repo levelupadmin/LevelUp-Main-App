@@ -7,6 +7,10 @@ import { Reveal } from "@/components/motion/Reveal";
 import { CountUp } from "@/components/motion/CountUp";
 import CertificateCard from "./CertificateCard";
 import CertificateShareMenu from "./CertificateShareMenu";
+import CertificatePreview from "./CertificatePreview";
+import "./certificate.css";
+import { downloadCertificate, type CertificateRender } from "@/lib/certificates";
+import { toast } from "@/lib/toast";
 
 interface CertificateRow {
   id: string;
@@ -14,6 +18,8 @@ interface CertificateRow {
   certificate_number: string;
   course_name: string;
   created_at: string;
+  /** Server-issued certificates carry what was printed; older ones don't. */
+  render: CertificateRender | null;
 }
 
 interface LockedSlot {
@@ -41,8 +47,9 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
       // 1) Earned certificates
       const { data: certData } = await (supabase as any)
         .from("certificates")
-        .select("id, image_url, certificate_number, created_at, course_id")
+        .select("id, image_url, certificate_number, created_at, course_id, metadata, status")
         .eq("user_id", userId)
+        .neq("status", "revoked")
         .order("created_at", { ascending: false });
 
       const certRows = (certData ?? []) as Array<{
@@ -51,6 +58,7 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
         certificate_number: string;
         created_at: string;
         course_id: string;
+        metadata: { render?: CertificateRender } | null;
       }>;
       const earnedCourseIds = new Set(certRows.map((r) => r.course_id));
 
@@ -94,6 +102,7 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
           certificate_number: row.certificate_number,
           course_name: courseMap[row.course_id]?.title ?? "Unknown Course",
           created_at: row.created_at,
+          render: row.metadata?.render ?? null,
         }))
       );
 
@@ -158,13 +167,24 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
             <div className="grid sm:grid-cols-[1.6fr_1fr] gap-5 items-center">
               <div
                 className="w-full rounded-xl border border-cream/15 overflow-hidden shadow-2xl shadow-black/40"
-                style={{ aspectRatio: ASPECT }}
+                style={{ aspectRatio: hero.render ? `${hero.render.width} / ${hero.render.height}` : ASPECT }}
               >
-                <img
-                  src={hero.image_url}
-                  alt={`Certificate for ${hero.course_name}`}
-                  className="w-full h-full object-cover"
-                />
+                {hero.render ? (
+                  <CertificatePreview
+                    imageUrl={hero.render.image_url}
+                    width={hero.render.width}
+                    height={hero.render.height}
+                    fields={hero.render.fields}
+                    values={hero.render.values}
+                    alt={`Certificate for ${hero.course_name}`}
+                  />
+                ) : (
+                  <img
+                    src={hero.image_url}
+                    alt={`Certificate for ${hero.course_name}`}
+                    className="w-full h-full object-cover"
+                  />
+                )}
               </div>
               <div className="flex flex-col gap-3">
                 <div>
@@ -182,13 +202,23 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <a
-                    href={hero.image_url}
-                    download={`certificate-${hero.certificate_number}.png`}
-                    className="btn-champagne pressable inline-flex min-h-[44px] items-center justify-center rounded-full px-4 text-sm font-medium"
-                  >
-                    Download
-                  </a>
+                  {hero.render ? (
+                    <button
+                      type="button"
+                      onClick={() => downloadCertificate(hero.id).catch((e: Error) => toast.error(e.message))}
+                      className="btn-champagne pressable inline-flex min-h-[44px] items-center justify-center rounded-full px-4 text-sm font-medium"
+                    >
+                      Download PDF
+                    </button>
+                  ) : (
+                    <a
+                      href={hero.image_url}
+                      download={`certificate-${hero.certificate_number}.png`}
+                      className="btn-champagne pressable inline-flex min-h-[44px] items-center justify-center rounded-full px-4 text-sm font-medium"
+                    >
+                      Download
+                    </a>
+                  )}
                   <CertificateShareMenu
                     imageUrl={hero.image_url}
                     courseName={hero.course_name}
@@ -211,7 +241,7 @@ const CertificateGallery = ({ userId }: CertificateGalleryProps) => {
             <span className="text-cream font-medium">
               <CountUp value={locked.length} /> {locked.length === 1 ? "course" : "courses"}
             </span>{" "}
-            in progress. Reach 100% to unlock your first.
+            in progress. Finish one to unlock your first.
           </p>
         </Reveal>
       )}

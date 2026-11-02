@@ -36,11 +36,13 @@ interface Props {
   primary: Action;
   secondary?: (Action & { icon: "play" | "recap" }) | null;
   groups: StageLessonGroup[];
+  /** the certificate card (CourseCertificate), shown under the header */
+  certificate?: ReactNode;
   /** the legacy content blocks (about, outcomes, instructor...) */
   children?: ReactNode;
 }
 
-export default function StageCourse({ art, kicker, title, subtitle, facts, progress, primary, secondary, groups, children }: Props) {
+export default function StageCourse({ art, kicker, title, subtitle, facts, progress, primary, secondary, groups, certificate, children }: Props) {
   const total = groups.reduce((n, g) => n + g.lessons.length, 0);
   return (
     <div className="stage-ui cd-page">
@@ -70,6 +72,8 @@ export default function StageCourse({ art, kicker, title, subtitle, facts, progr
           </div>
         </div>
       </header>
+
+      {certificate}
 
       {total > 0 && (
         <section className="sec cd-sec" aria-labelledby="cd-lessons-h">

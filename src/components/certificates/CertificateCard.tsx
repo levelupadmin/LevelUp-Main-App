@@ -6,6 +6,9 @@ import CertificateShareMenu from "./CertificateShareMenu";
 import { useAuth } from "@/contexts/AuthContext";
 import { hapticImpact } from "@/lib/haptics";
 import { useMotionSafe, durations, easings } from "@/lib/motion";
+import { downloadCertificate, type CertificateRender } from "@/lib/certificates";
+import { toast } from "@/lib/toast";
+import CertificatePreview from "./CertificatePreview";
 
 interface Certificate {
   id: string;
@@ -13,6 +16,7 @@ interface Certificate {
   certificate_number: string;
   course_name: string;
   created_at: string;
+  render?: CertificateRender | null;
 }
 
 interface CertificateCardProps {
@@ -87,18 +91,29 @@ const CertificateCard = ({ certificate }: CertificateCardProps) => {
     <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex flex-col gap-3">
       <div
         className="relative w-full rounded-lg border border-white/10 overflow-hidden select-none"
-        style={{ aspectRatio: "2480 / 1754" }}
+        style={{ aspectRatio: certificate.render ? `${certificate.render.width} / ${certificate.render.height}` : "2480 / 1754" }}
         onPointerDown={onPointerDown}
         onPointerUp={endHold}
         onPointerLeave={endHold}
         onPointerCancel={endHold}
       >
-        <img
-          src={certificate.image_url}
-          alt={`Certificate for ${certificate.course_name}`}
-          className="w-full h-full object-cover"
-          draggable={false}
-        />
+        {certificate.render ? (
+          <CertificatePreview
+            imageUrl={certificate.render.image_url}
+            width={certificate.render.width}
+            height={certificate.render.height}
+            fields={certificate.render.fields}
+            values={certificate.render.values}
+            alt={`Certificate for ${certificate.course_name}`}
+          />
+        ) : (
+          <img
+            src={certificate.image_url}
+            alt={`Certificate for ${certificate.course_name}`}
+            className="w-full h-full object-cover"
+            draggable={false}
+          />
+        )}
 
         {/* UV "blacklight" layer — deep black with champagne-glowing security
             print. Only opacity + a ±1.5° settle animate; the glow is baked. */}
@@ -183,12 +198,23 @@ const CertificateCard = ({ certificate }: CertificateCardProps) => {
             Share
           </Button>
         </CertificateShareMenu>
-        <Button variant="outline" asChild className="min-h-[44px] gap-2">
-          <a href={certificate.image_url} download={`certificate-${certificate.certificate_number}.png`}>
+        {certificate.render ? (
+          <Button
+            variant="outline"
+            className="min-h-[44px] gap-2"
+            onClick={() => downloadCertificate(certificate.id).catch((e: Error) => toast.error(e.message))}
+          >
             <Download className="h-4 w-4" />
-            Download
-          </a>
-        </Button>
+            PDF
+          </Button>
+        ) : (
+          <Button variant="outline" asChild className="min-h-[44px] gap-2">
+            <a href={certificate.image_url} download={`certificate-${certificate.certificate_number}.png`}>
+              <Download className="h-4 w-4" />
+              Download
+            </a>
+          </Button>
+        )}
       </div>
     </div>
   );
