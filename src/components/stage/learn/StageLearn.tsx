@@ -5,9 +5,8 @@ import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWishlist } from "@/hooks/useWishlist";
 import { tapTick } from "@/lib/haptics";
-import { sessionTimeState } from "@/lib/room";
 import { LevelUpMark } from "@/components/brand/LevelUpMark";
-import { buildAgenda, useBuyerHome, type CohortItem, type CourseItem, type OwnedThing } from "@/components/stage/home/buyer";
+import { buildAgenda, pastRecordings, sessionWho, useBuyerHome, type CourseItem, type OwnedThing } from "@/components/stage/home/buyer";
 import { AgendaList, OwnCard, cardView } from "@/components/stage/home/BuyerHome";
 import { useStageCatalog } from "@/components/stage/home/catalog";
 import { ProductCard, SectionsSkeleton } from "@/components/stage/home/sections";
@@ -26,6 +25,8 @@ const EventsPage = lazy(() => import("@/pages/EventsPage"));
  * round-4 cards Home uses, plus Schedule, which takes over the old "Live"
  * tab. The old ?seg= links keep working: courses -> In progress,
  * live -> Schedule, calendar -> Schedule (with Events one tap below).
+ * Schedule ends with every past class that has a recording, newest first;
+ * Watch opens the recording itself, as the old Live tab's Watch did.
  */
 
 type Seg = "progress" | "schedule" | "done" | "saved" | "events";
@@ -78,21 +79,11 @@ export default function StageLearn() {
   const open = (path: string) => { void tapTick(); navigate(path); };
   const pick = (k: Seg) => { void tapTick(); setParams({ seg: k }, { replace: true }); };
 
-  const items = buyer.data?.items ?? [];
+  const items = useMemo(() => buyer.data?.items ?? [], [buyer.data]);
   const inProgress = items.filter((i) => !isDone(i));
   const done = items.filter(isDone);
   const schedule = useMemo(() => buildAgenda(items, now, null, 30), [items, now]);
-  const recordings = useMemo(() => {
-    const out: { key: string; title: string; at: number; item: CohortItem }[] = [];
-    for (const i of items) {
-      if (i.kind !== "cohort") continue;
-      for (const s of i.sessions) {
-        const at = Date.parse(s.scheduled_at);
-        if (sessionTimeState(s, now) === "recorded" && now - at < 30 * 864e5) out.push({ key: s.id, title: s.title, at, item: i });
-      }
-    }
-    return out.sort((a, b) => b.at - a.at);
-  }, [items, now]);
+  const recordings = useMemo(() => pastRecordings(items, now), [items, now]);
   const saved = (catalog?.catalog ?? []).filter((x) => wishlistedIds.has(x.offering.id));
   const firstFree = catalog?.free[0];
 
@@ -126,18 +117,18 @@ export default function StageLearn() {
               <AgendaList rows={schedule} now={now} onOpen={open} />
             </section>
           ) : (
-            <Empty title="Nothing scheduled" body="Classes and deadlines from your live cohorts and workshops show up here." />
+            <Empty title="Nothing scheduled" body="Classes, live sessions and deadlines from what you own show up here." />
           )}
           {recordings.length > 0 && (
             <section className="sec" aria-label="Recordings">
               <div className="sec-head"><h2 className="sec-h">Recordings</h2></div>
               <div className="lrn-list">
                 {recordings.map((r) => (
-                  <button className="lrn-row" type="button" key={r.key} onClick={() => open(r.item.roomPath)}>
+                  <a className="lrn-row lrn-rec" key={r.key} href={r.href} target="_blank" rel="noopener noreferrer" onClick={() => { void tapTick(); }}>
                     <PlayCircle className="ic" />
-                    <span className="lrn-row-b"><b>{r.title}</b><span>{short(r.at)} · {r.item.batchName}</span></span>
-                    <ChevronRight className="ic lrn-go" />
-                  </button>
+                    <span className="lrn-row-b"><b>{r.title}</b><span>{short(r.at)} · {sessionWho(r.item)}</span></span>
+                    <span className="lrn-rec-go">Watch</span>
+                  </a>
                 ))}
               </div>
             </section>

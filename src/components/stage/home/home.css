@@ -91,6 +91,8 @@
 .oc-where span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .oc-go { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--s-brand-text); font: 620 14px/1 var(--font-body); }
 .oc-go .ic { width: 15px; height: 15px; }
+/* one course of a bundle: where it came from, cut short rather than pushing the card wide */
+.fmt .oc-from { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ==========================================================================
    Next 7 days (Stage 7.7): one timeline across all three things.
