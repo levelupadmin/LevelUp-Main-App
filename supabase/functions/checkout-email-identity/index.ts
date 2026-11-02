@@ -129,7 +129,13 @@ Deno.serve(async (req) => {
     if (allowed === null) return json({ error: "rate_limit_unavailable" }, 500);
     if (!allowed) return json({ error: "too_many_requests" }, 429);
 
-    const [emailAcct, phoneAcct] = await Promise.all([accountByEmail(admin, email), accountByPhone(admin, phone)]);
+    const [emailAcct, phoneAcct] = await Promise.all([accountByLoginEmail(admin, email), accountByPhone(admin, phone)]);
+    // An address typed on someone's profile, never confirmed, is not a way
+    // into that account: say whose number it sits with, offer no email code.
+    if (!emailAcct) {
+      const typedOn = await accountByProfileEmail(admin, email);
+      if (typedOn) return json({ status: "email_other_phone", hint: maskPhone(typedOn.phone), email_code: false });
+    }
     const status = classifyIdentity(phone, emailAcct, phoneAcct);
     return json({
       status,
@@ -170,7 +176,14 @@ Deno.serve(async (req) => {
       if (verdict !== "valid") return json({ error: verdict }, verdict === "rate_limit_unavailable" ? 500 : 401);
     }
 
-    const [emailAcct, phoneAcct] = await Promise.all([accountByEmail(admin, email), accountByPhone(admin, phone)]);
+    const [emailAcct, phoneAcct] = await Promise.all([accountByLoginEmail(admin, email), accountByPhone(admin, phone)]);
+
+    // The code proves this inbox, not an account that merely has the address
+    // typed on its profile: that account signs in its own way.
+    if (!emailAcct) {
+      const typedOn = await accountByProfileEmail(admin, email);
+      if (typedOn) return json({ error: "email_other_phone", hint: maskPhone(typedOn.phone) }, 409);
+    }
 
     if (emailAcct) {
       // The code proves the email, so its account is theirs. Fill a missing
@@ -210,17 +223,25 @@ Deno.serve(async (req) => {
   return json({ error: "invalid_action" }, 400);
 });
 
-/** The account an email belongs to: the login email first, else a profile email held by exactly one account. */
-async function accountByEmail(admin: Admin, email: string): Promise<AccountRef | null> {
+/**
+ * The account that signs in with this email (auth.users.email). Only this can
+ * be opened with an email code: a code proves the inbox, and only the sign-in
+ * email is known to belong to the account.
+ */
+async function accountByLoginEmail(admin: Admin, email: string): Promise<AccountRef | null> {
   const { data } = await admin.rpc("find_login_identity", { p_phone: null, p_email: email });
   const row = (Array.isArray(data) ? data[0] : data) as { id: string } | undefined;
-  let id = row?.id ?? null;
-  if (!id) {
-    const { data: profiles } = await admin.from("users").select("id").ilike("email", email).is("deleted_at", null).limit(2);
-    if (profiles && profiles.length === 1) id = profiles[0].id;
-  }
-  if (!id) return null;
-  return await accountRef(admin, id);
+  return row?.id ? await accountRef(admin, row.id) : null;
+}
+
+/**
+ * An account that only has this email typed on its profile (onboarding, a
+ * guest checkout, the thank-you prompt), never confirmed. Used to explain a
+ * conflict; never to sign anyone in.
+ */
+async function accountByProfileEmail(admin: Admin, email: string): Promise<AccountRef | null> {
+  const { data: profiles } = await admin.from("users").select("id").ilike("email", email).is("deleted_at", null).limit(1);
+  return profiles?.[0]?.id ? await accountRef(admin, profiles[0].id) : null;
 }
 
 /** The account holding this exact international number (login or profile phone; full digits, never last-10). */

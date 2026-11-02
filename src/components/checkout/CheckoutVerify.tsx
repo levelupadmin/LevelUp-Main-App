@@ -93,10 +93,15 @@ export default function CheckoutVerify() {
       const status = check.data.status as string;
       const hint = (check.data.hint as string) || "";
       if (status === "email_other_phone") {
+        // email_code false: the address is only typed on that account's
+        // profile, so a code to it can't open the account.
+        const canUseEmailCode = check.data.email_code !== false;
         setConflict({
           title: `This email is linked to ${hint}.`,
-          detail: "Use that number, or a different email. Forgot your number? Get a code on this email to open your account.",
-          canUseEmailCode: true,
+          detail: canUseEmailCode
+            ? "Use that number, or a different email. Forgot your number? Get a code on this email to open your account."
+            : "Use that number, or a different email.",
+          canUseEmailCode,
         });
         return;
       }
@@ -162,6 +167,9 @@ export default function CheckoutVerify() {
           setError(err === "code_expired" ? "That code has expired. Get a new one." : "That code didn't work. Check it and try again.");
         } else if (err === "too_many_attempts") {
           setError("Too many wrong codes. Wait an hour, or use a different email.");
+        } else if (err === "email_other_phone") {
+          resetToDetails();
+          setConflict({ title: `This email is linked to ${reply.data.hint || "another number"}.`, detail: "Use that number, or a different email.", canUseEmailCode: false });
         } else if (err === "phone_other_email") {
           resetToDetails();
           setConflict({ title: `This number is linked to ${reply.data.hint || "another email"}.`, detail: "Use that email, or a different number.", canUseEmailCode: false });
