@@ -1,9 +1,8 @@
 import { useEffect, useState, useRef } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Upload, Download, FileUp } from "lucide-react";
+import { Plus, Download, FileUp } from "lucide-react";
 import { generateAndSaveCertificate, VariablePosition } from "@/lib/certificate-generator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -40,6 +39,8 @@ const CSV_CHUNK_SIZE = 100;
 const GRANTED_STATUSES = ["enrolled", "created_and_enrolled", "repaired_and_enrolled", "reactivated", "phone_belongs_to_another_account"];
 
 const CSV_RESULT_LABEL: Record<string, string> = {
+  // Held: nothing granted. Decide on the product's Students tab.
+  needs_decision: "needs your decision (re-import this row from the product's Students tab)",
   enrolled: "granted",
   created_and_enrolled: "account created + granted",
   repaired_and_enrolled: "account repaired + granted",
@@ -57,19 +58,11 @@ const AdminEnrolments = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [courseFilter, setCourseFilter] = useState("all");
   const [offeringFilter, setOfferingFilter] = useState("all");
-  const [manualOpen, setManualOpen] = useState(false);
-  const [allUsers, setAllUsers] = useState<{ id: string; full_name: string; email: string }[]>([]);
   const [allOfferings, setAllOfferings] = useState<{ id: string; title: string }[]>([]);
   const [allCourses, setAllCourses] = useState<{ id: string; title: string }[]>([]);
   const [offeringCourseMap, setOfferingCourseMap] = useState<Record<string, string[]>>({});
-  const [manualUserId, setManualUserId] = useState("");
-  const [manualOfferingId, setManualOfferingId] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkOfferingId, setBulkOfferingId] = useState("");
-  const [bulkEmails, setBulkEmails] = useState("");
-  const [bulkResult, setBulkResult] = useState<{ success: number; failed: string[]; skipped: string[] } | null>(null);
   const [bulkStatusConfirm, setBulkStatusConfirm] = useState<string | null>(null);
   const { toast } = useToast();
   const { profile } = useAuth();
@@ -207,141 +200,6 @@ const AdminEnrolments = () => {
       toast({ title: "Status updated" });
       load();
     }
-  };
-
-  const openManualEnrol = async () => {
-    const [uRes, oRes] = await Promise.all([
-      supabase.from("users").select("id, full_name, email").order("full_name").limit(500),
-      supabase.from("offerings").select("id, title").order("title"),
-    ]);
-    setAllUsers((uRes.data || []).map((u) => ({ id: u.id, full_name: u.full_name ?? "", email: u.email ?? "" })));
-    setAllOfferings(oRes.data || []);
-    setManualUserId("");
-    setManualOfferingId("");
-    setManualOpen(true);
-  };
-
-  const handleManualEnrol = async () => {
-    if (!manualUserId || !manualOfferingId) {
-      toast({ title: "Select both user and offering", variant: "destructive" });
-      return;
-    }
-    setSaving(true);
-    const { error } = await supabase.from("enrolments").insert({
-      user_id: manualUserId,
-      offering_id: manualOfferingId,
-      source: "admin_manual",
-      status: "active",
-    });
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      if (profile?.id) {
-        await (supabase as any).from("admin_audit_logs").insert({
-          actor_user_id: profile.id,
-          action: "create",
-          target_table: "enrolments",
-          target_id: null,
-          metadata: { user_id: manualUserId, offering_id: manualOfferingId, source: "admin_manual" },
-        });
-      }
-      toast({ title: "User enrolled" });
-      setManualOpen(false);
-      load();
-    }
-    setSaving(false);
-  };
-
-  const openBulkEnrol = async () => {
-    const { data } = await supabase.from("offerings").select("id, title").order("title");
-    setAllOfferings(data || []);
-    setBulkEmails("");
-    setBulkOfferingId("");
-    setBulkResult(null);
-    setBulkOpen(true);
-  };
-
-  const handleBulkEnrol = async () => {
-    if (!bulkOfferingId || !bulkEmails.trim()) {
-      toast({ title: "Select an offering and enter emails", variant: "destructive" });
-      return;
-    }
-    setSaving(true);
-    setBulkResult(null);
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const rawEntries = bulkEmails
-      .split(/[\n,;]+/)
-      .map((e) => e.trim().toLowerCase())
-      .filter((e) => e.length > 0);
-
-    const emails: string[] = [];
-    let success = 0;
-    const failed: string[] = [];
-    const skipped: string[] = [];
-
-    for (const entry of rawEntries) {
-      if (!emailRegex.test(entry)) {
-        failed.push(`${entry}: invalid format`);
-      } else {
-        emails.push(entry);
-      }
-    }
-
-    for (const email of emails) {
-      const { data: user } = await supabase
-        .from("users")
-        .select("id")
-        .eq("email", email)
-        .maybeSingle();
-
-      if (!user) {
-        failed.push(`${email}: user not found`);
-        continue;
-      }
-
-      const { data: existing } = await supabase
-        .from("enrolments")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("offering_id", bulkOfferingId)
-        .eq("status", "active")
-        .maybeSingle();
-
-      if (existing) {
-        skipped.push(`${email}: already has active enrolment`);
-        continue;
-      }
-
-      const { error } = await supabase.from("enrolments").insert({
-        user_id: user.id,
-        offering_id: bulkOfferingId,
-        source: "admin_manual",
-        status: "active",
-      });
-
-      if (error) {
-        failed.push(`${email}: ${error.message}`);
-      } else {
-        success++;
-      }
-    }
-
-    setBulkResult({ success, failed, skipped });
-    if (success > 0) {
-      if (profile?.id) {
-        await (supabase as any).from("admin_audit_logs").insert({
-          actor_user_id: profile.id,
-          action: "bulk_create",
-          target_table: "enrolments",
-          target_id: bulkOfferingId,
-          metadata: { offering_id: bulkOfferingId, success, failed: failed.length, skipped: skipped.length },
-        });
-      }
-      toast({ title: `${success} users enrolled` });
-      load();
-    }
-    setSaving(false);
   };
 
   const toggleSelect = (id: string) => {
@@ -680,11 +538,10 @@ const AdminEnrolments = () => {
 
       {/* ── Actions Row ── */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <Button onClick={openManualEnrol} className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
-          <Plus className="h-4 w-4 mr-2" /> Manual Enrol
-        </Button>
-        <Button variant="outline" onClick={openBulkEnrol}>
-          <Upload className="h-4 w-4 mr-2" /> Bulk Enrol
+        {/* Giving access lives on each product (Offerings → a product → Students):
+            one place, phone-first, with "Needs your decision" for conflicts. */}
+        <Button asChild className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
+          <Link to="/admin/offerings"><Plus className="h-4 w-4 mr-2" /> Give access from a product</Link>
         </Button>
         <Button variant="outline" onClick={downloadCsvTemplate}>
           <Download className="h-4 w-4 mr-2" /> Download CSV Template
@@ -737,38 +594,6 @@ const AdminEnrolments = () => {
         </div>
       )}
 
-      {/* ── Manual Enrol Dialog ── */}
-      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Manual Enrolment</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">User</label>
-              <SearchableSelect
-                options={allUsers.map((u) => ({ value: u.id, label: u.full_name || u.email }))}
-                value={manualUserId}
-                onValueChange={setManualUserId}
-                placeholder="Select user"
-                searchPlaceholder="Search users..."
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Offering</label>
-              <SearchableSelect
-                options={allOfferings.map((o) => ({ value: o.id, label: o.title }))}
-                value={manualOfferingId}
-                onValueChange={setManualOfferingId}
-                placeholder="Select offering"
-                searchPlaceholder="Search offerings..."
-              />
-            </div>
-            <Button onClick={handleManualEnrol} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
-              {saving ? "Enrolling..." : "Enrol User"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* ── Bulk status change confirmation ── */}
       <AlertDialog open={!!bulkStatusConfirm} onOpenChange={() => setBulkStatusConfirm(null)}>
         <AlertDialogContent>
@@ -787,57 +612,6 @@ const AdminEnrolments = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Bulk Enrol by Email Dialog ── */}
-      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Bulk Enrol Users</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Offering</label>
-              <SearchableSelect
-                options={allOfferings.map((o) => ({ value: o.id, label: o.title }))}
-                value={bulkOfferingId}
-                onValueChange={setBulkOfferingId}
-                placeholder="Select offering"
-                searchPlaceholder="Search offerings..."
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Email addresses (one per line or comma-separated)</label>
-              <Textarea
-                value={bulkEmails}
-                onChange={(e) => setBulkEmails(e.target.value)}
-                rows={6}
-                placeholder={"student1@example.com\nstudent2@example.com"}
-              />
-            </div>
-            {bulkResult && (
-              <div className="text-sm space-y-1">
-                <p className="text-green-400">{bulkResult.success} enrolled successfully</p>
-                {bulkResult.skipped.length > 0 && (
-                  <div className="text-yellow-400">
-                    <p>{bulkResult.skipped.length} skipped (duplicates):</p>
-                    <ul className="list-disc list-inside text-xs mt-1 max-h-32 overflow-y-auto">
-                      {bulkResult.skipped.map((s, i) => <li key={i}>{s}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {bulkResult.failed.length > 0 && (
-                  <div className="text-red-400">
-                    <p>{bulkResult.failed.length} failed:</p>
-                    <ul className="list-disc list-inside text-xs mt-1 max-h-32 overflow-y-auto">
-                      {bulkResult.failed.map((f, i) => <li key={i}>{f}</li>)}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-            <Button onClick={handleBulkEnrol} disabled={saving} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
-              {saving ? "Enrolling..." : "Enrol All"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* ── CSV Import Preview Dialog ── */}
       <Dialog open={csvPreviewOpen} onOpenChange={(open) => { if (!csvImporting) setCsvPreviewOpen(open); }}>

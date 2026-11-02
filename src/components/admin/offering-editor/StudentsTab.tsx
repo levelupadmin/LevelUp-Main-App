@@ -49,6 +49,19 @@ interface Student {
   email?: string;
   phone?: string;
   country_code?: string;
+  /** The admin's pick: grant to exactly this account (search pick or a decision). */
+  user_id?: string;
+  /** Decision: a new account on this phone, leaving off an email someone else holds. */
+  create_new?: boolean;
+}
+
+interface Candidate {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  owns: string[];
+  last_sign_in_at: string | null;
 }
 
 interface GrantResult {
@@ -56,6 +69,8 @@ interface GrantResult {
   status: string;
   user_id?: string;
   detail?: string;
+  /** Only on needs_decision: who the phone and the email point at. */
+  decision?: { kind: "two_accounts" | "email_has_other_phone"; candidates: Candidate[] };
 }
 
 /** The E.164 number this row will actually create an account on — the same
@@ -108,6 +123,8 @@ const RESULT_LABEL: Record<string, string> = {
   reactivated: "Access re-activated",
   // Access WAS granted; the warning is that phone login still won't reach it.
   phone_belongs_to_another_account: "Granted — but phone is on another account",
+  // Held: nothing was granted; the phone and email point at different people.
+  needs_decision: "Needs your decision",
   error: "Failed",
 };
 
@@ -157,7 +174,11 @@ function csvToStudents(rows: string[][]): { students: Student[]; skipped: number
     phone: header.findIndex(
       (h) =>
         !isCountryCode(h) &&
-        (h.includes("phone") || h.includes("mobile") || h.includes("whatsapp") || h.includes("number")),
+        // "contact" is Razorpay's phone column. A bare "number" header still
+        // counts, but not "invoice number" / "card number" / "order number".
+        (h.includes("phone") || h.includes("mobile") || h.includes("whatsapp") ||
+          (h.includes("contact") && !h.includes("name") && !h.includes("mail")) ||
+          h === "number"),
     ),
     countryCode: header.findIndex(isCountryCode),
   };
@@ -226,6 +247,10 @@ export default function StudentsTab({ offeringId }: Props) {
   /** rows sent so far / total — drives the progress line on a chunked run. */
   const [csvProgress, setCsvProgress] = useState({ done: 0, total: 0 });
 
+  // Rows held for the admin's decision (phone and email point at different people).
+  const [pending, setPending] = useState<GrantResult[]>([]);
+  const [deciding, setDeciding] = useState<string | null>(null);
+
   // Revoke / restore one student's access to THIS offering.
   const { profile } = useAuth();
   const [revokeTarget, setRevokeTarget] = useState<Row | null>(null);
@@ -285,7 +310,8 @@ export default function StudentsTab({ offeringId }: Props) {
   const grantExisting = async (u: { id: string; full_name: string | null; email: string | null; phone: string | null }) => {
     setGranting(true);
     try {
-      const { results } = await callGrant([{ full_name: u.full_name || undefined, email: u.email || undefined, phone: u.phone || undefined }]);
+      // The admin picked this exact account: grant to it, no matching.
+      const { results } = await callGrant([{ user_id: u.id, full_name: u.full_name || undefined }]);
       const r = results[0];
       if (r.status === "error") throw new Error(r.detail);
       toast.success(`${u.full_name || u.email || u.phone}: ${RESULT_LABEL[r.status] || r.status}`);
@@ -299,8 +325,9 @@ export default function StudentsTab({ offeringId }: Props) {
   };
 
   const grantNew = async () => {
-    if (!newEmail.trim() && !newPhone.trim()) {
-      toast.error("Give at least an email or a phone number");
+    // A new student needs a mobile number: it is how they sign in.
+    if (!newPhone.trim()) {
+      toast.error("A mobile number is needed to add a new student.");
       return;
     }
     setGranting(true);
@@ -308,6 +335,12 @@ export default function StudentsTab({ offeringId }: Props) {
       const { results } = await callGrant([{ full_name: newName.trim() || undefined, email: newEmail.trim() || undefined, phone: newPhone.trim() || undefined }]);
       const r = results[0];
       if (r.status === "error") throw new Error(r.detail);
+      if (r.status === "needs_decision") {
+        setPending([r]);
+        setAddOpen(false);
+        setGranting(false);
+        return;
+      }
       toast.success(`${newName || newEmail || newPhone}: ${RESULT_LABEL[r.status] || r.status}`);
       setAddOpen(false);
       setNewName(""); setNewEmail(""); setNewPhone(""); setUserQ("");
@@ -351,9 +384,13 @@ export default function StudentsTab({ offeringId }: Props) {
     }
     const counts: Record<string, number> = {};
     for (const r of collected) counts[r.status] = (counts[r.status] || 0) + 1;
+    const held = collected.filter((r) => r.status === "needs_decision");
+    if (held.length) setPending(held);
     const dupes = counts.phone_belongs_to_another_account || 0;
     const ok = (counts.enrolled || 0) + (counts.created_and_enrolled || 0) + (counts.repaired_and_enrolled || 0) + (counts.reactivated || 0) + dupes;
-    if (counts.error) {
+    if (held.length) {
+      toast.warning(`${ok} granted, ${held.length} ${held.length === 1 ? "needs" : "need"} your decision${counts.error ? `, ${counts.error} failed` : ""}.`);
+    } else if (counts.error) {
       toast.error(`${ok} granted, ${counts.already_enrolled || 0} already had access, ${counts.error} failed — download the report`);
     } else if (dupes) {
       // Silence here is what hid the Cohort 03 breakage: every row "succeeded"
@@ -370,6 +407,23 @@ export default function StudentsTab({ offeringId }: Props) {
 
   /** Row-by-row outcome of the last import, so a failed row can be fixed and
    *  re-uploaded without re-deriving which ones they were. */
+  /** Resolve one held row with the admin's choice, then refresh. */
+  const decide = async (row: GrantResult, choice: { user_id?: string; create_new?: boolean }, key: string) => {
+    setDeciding(key);
+    try {
+      const { results } = await callGrant([{ ...row.input, ...choice }]);
+      const r = results[0];
+      if (r.status === "error" || r.status === "needs_decision") throw new Error(r.detail || "Still needs a decision");
+      toast.success(`${row.input.full_name || row.input.email || row.input.phone}: ${RESULT_LABEL[r.status] || r.status}`);
+      setPending((prev) => prev.filter((p) => p !== row));
+      setCsvResults((prev) => (prev ? prev.map((p) => (p === row ? { ...r, input: row.input } : p)) : prev));
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Grant failed");
+    }
+    setDeciding(null);
+  };
+
   const exportCsvResults = () => {
     if (!csvResults) return;
     const lines = [
@@ -643,9 +697,8 @@ export default function StudentsTab({ offeringId }: Props) {
           <DialogHeader>
             <DialogTitle>Add a student to this product</DialogTitle>
             <DialogDescription>
-              Search existing accounts first — or create a new one below. New accounts are
-              pre-verified: the student just logs in with their phone OTP (or email) and
-              everything is already there.
+              Search existing accounts first, or create a new one below with a mobile number.
+              The student signs in with that number and everything is already there.
             </DialogDescription>
           </DialogHeader>
 
@@ -683,10 +736,10 @@ export default function StudentsTab({ offeringId }: Props) {
           <div className="border-t border-border pt-4 space-y-2">
             <label className="text-xs font-medium">…or create a new student</label>
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Full name" />
-            <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Email (optional if phone given)" type="email" />
-            <Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Phone — 10 digits = India, else include country code" />
+            <Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Mobile number (required): 10 digits = India, else +country code" />
+            <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Email (optional)" type="email" />
             <p className="text-[11px] text-muted-foreground">
-              Phone is how students log in (OTP) — for non-Indian numbers include the country code, e.g. +447… Their access is linked the moment the account exists.
+              The mobile number decides the account. If it, or the email, already belongs to someone else, nothing is granted and you're asked to choose.
             </p>
             <Button onClick={grantNew} disabled={granting} className="w-full gap-2">
               {granting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
@@ -703,8 +756,9 @@ export default function StudentsTab({ offeringId }: Props) {
             <DialogTitle>Import students from CSV</DialogTitle>
             <DialogDescription>
               Columns: <code>name, email, phone, country_code</code> (a header row is detected
-              automatically; extra columns are ignored). Existing accounts are matched by phone,
-              then email; everyone else gets a pre-verified account created automatically.
+              automatically; Razorpay's <code>contact</code> column counts as the phone). The phone
+              decides the account. A new student needs a phone; rows where the phone and the email
+              point at different people wait for your decision.
             </DialogDescription>
           </DialogHeader>
 
@@ -746,7 +800,7 @@ export default function StudentsTab({ offeringId }: Props) {
                   {unusablePhones > 0 && (
                     <p className="text-xs text-amber-500">
                       {unusablePhones === 1 ? "1 row has" : `${unusablePhones} rows have`} a phone we can’t read
-                      {emailOnlyRows > 0 ? " — those with an email still import, by email." : "."}{" "}
+                      {emailOnlyRows > 0 ? ". Those import only if the email already has an account; a new student needs a mobile number." : "."}{" "}
                       Check the <code>country_code</code> column.
                     </p>
                   )}
@@ -779,6 +833,8 @@ export default function StudentsTab({ offeringId }: Props) {
                   <div key={i} className="flex items-start gap-2 text-sm">
                     {r.status === "error" ? (
                       <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                    ) : r.status === "needs_decision" ? (
+                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                     ) : (
                       <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
                     )}
@@ -787,13 +843,64 @@ export default function StudentsTab({ offeringId }: Props) {
                         {[r.input.full_name, r.input.email, resolvedPhone(r.input) ?? r.input.phone].filter(Boolean).join(" · ") || "(row)"}
                       </span>
                       <span className="text-muted-foreground"> — {RESULT_LABEL[r.status] || r.status}</span>
-                      {r.detail && <div className="text-xs text-red-500">{r.detail}</div>}
+                      {r.detail && <div className={`text-xs ${r.status === "needs_decision" ? "text-amber-500" : "text-red-500"}`}>{r.detail}</div>}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Needs your decision ──────────────────────────────────────────
+          A row whose phone and email point at different people is held,
+          never guessed. Each choice re-sends the row with the account picked. */}
+      <Dialog open={pending.length > 0} onOpenChange={(o) => { if (!o) setPending([]); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Needs your decision ({pending.length})</DialogTitle>
+            <DialogDescription>
+              Nothing has been granted for these yet. Pick who should get access, or skip.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+            {pending.map((row, i) => (
+              <div key={i} className="rounded-xl bg-secondary/30 p-3 space-y-2">
+                <div className="text-sm">
+                  <span className="font-medium">You entered:</span>{" "}
+                  {[row.input.full_name, row.input.email, resolvedPhone(row.input) ?? row.input.phone].filter(Boolean).join(" · ")}
+                </div>
+                <p className="text-xs text-amber-500">{row.detail}</p>
+                {(row.decision?.candidates ?? []).map((c) => (
+                  <div key={c.user_id} className="flex items-start justify-between gap-3 rounded-lg bg-background/60 p-2">
+                    <div className="min-w-0 text-xs space-y-0.5">
+                      <div className="text-sm">{c.full_name || "(no name)"}</div>
+                      <div className="text-muted-foreground">{[c.phone, c.email].filter(Boolean).join(" · ") || "no phone or email"}</div>
+                      <div className="text-muted-foreground">
+                        {c.owns.length ? `Owns: ${c.owns.join(", ")}` : "Owns nothing yet"}
+                        {" · "}
+                        {c.last_sign_in_at ? `last signed in ${new Date(c.last_sign_in_at).toLocaleDateString("en-IN")}` : "never signed in"}
+                      </div>
+                    </div>
+                    <Button size="sm" disabled={deciding !== null} onClick={() => decide(row, { user_id: c.user_id }, `${i}:${c.user_id}`)}>
+                      {deciding === `${i}:${c.user_id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : "Give access here"}
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap gap-2">
+                  {row.decision?.kind === "email_has_other_phone" && (
+                    <Button size="sm" variant="outline" disabled={deciding !== null} onClick={() => decide(row, { create_new: true }, `${i}:new`)}>
+                      {deciding === `${i}:new` ? <Loader2 className="h-4 w-4 animate-spin" /> : `New account on ${resolvedPhone(row.input) ?? row.input.phone} (without the email)`}
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" disabled={deciding !== null} onClick={() => setPending((prev) => prev.filter((p) => p !== row))}>
+                    Skip
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
