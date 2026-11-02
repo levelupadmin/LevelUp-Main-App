@@ -13,6 +13,8 @@ import {
 import { toast } from "@/lib/toast";
 import { Loader2, Download, Users, UserPlus, FileSpreadsheet, CheckCircle2, AlertCircle, FileDown, Ban, RotateCcw } from "lucide-react";
 import { resolveImportPhone } from "@shared/phone";
+import AdminPhoneInput, { phoneProblem, typedNumber } from "@/components/admin/AdminPhoneInput";
+import type { Country } from "react-phone-number-input";
 import { useAuth } from "@/contexts/AuthContext";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -234,7 +236,11 @@ export default function StudentsTab({ offeringId }: Props) {
   const [searching, setSearching] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  /** The full number with its "+", from the country dropdown and the number box. */
   const [newPhone, setNewPhone] = useState("");
+  const [newCountry, setNewCountry] = useState<Country | undefined>("IN");
+  const newNumber = typedNumber(newPhone, newCountry);
+  const newPhoneProblem = phoneProblem(newPhone, newCountry);
   const [granting, setGranting] = useState(false);
 
   // CSV dialog
@@ -326,13 +332,17 @@ export default function StudentsTab({ offeringId }: Props) {
 
   const grantNew = async () => {
     // A new student needs a mobile number: it is how they sign in.
-    if (!newPhone.trim()) {
+    if (!newNumber) {
       toast.error("A mobile number is needed to add a new student.");
+      return;
+    }
+    if (newPhoneProblem) {
+      toast.error(newPhoneProblem);
       return;
     }
     setGranting(true);
     try {
-      const { results } = await callGrant([{ full_name: newName.trim() || undefined, email: newEmail.trim() || undefined, phone: newPhone.trim() || undefined }]);
+      const { results } = await callGrant([{ full_name: newName.trim() || undefined, email: newEmail.trim() || undefined, phone: newNumber }]);
       const r = results[0];
       if (r.status === "error") throw new Error(r.detail);
       if (r.status === "needs_decision") {
@@ -341,7 +351,7 @@ export default function StudentsTab({ offeringId }: Props) {
         setGranting(false);
         return;
       }
-      toast.success(`${newName || newEmail || newPhone}: ${RESULT_LABEL[r.status] || r.status}`);
+      toast.success(`${newName || newEmail || newNumber}: ${RESULT_LABEL[r.status] || r.status}`);
       setAddOpen(false);
       setNewName(""); setNewEmail(""); setNewPhone(""); setUserQ("");
       load();
@@ -519,6 +529,12 @@ export default function StudentsTab({ offeringId }: Props) {
    *  student simply never gets a working phone login. */
   const unusablePhones = useMemo(
     () => csvStudents.filter((s) => s.phone && !resolvedPhone(s)).length,
+    [csvStudents],
+  );
+  /** Rows with no country code and no "+" that we read as Indian: said out loud
+   *  so a sheet of overseas numbers can't import as +91 unnoticed (founder). */
+  const readAsIndia = useMemo(
+    () => csvStudents.filter((s) => s.phone && !s.phone.trim().startsWith("+") && !s.country_code?.trim() && resolvedPhone(s)?.startsWith("+91")).length,
     [csvStudents],
   );
   const emailOnlyRows = useMemo(
@@ -736,12 +752,15 @@ export default function StudentsTab({ offeringId }: Props) {
           <div className="border-t border-border pt-4 space-y-2">
             <label className="text-xs font-medium">…or create a new student</label>
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Full name" />
-            <Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Mobile number (required): 10 digits = India, else +country code" />
+            <AdminPhoneInput value={newPhone} onChange={setNewPhone} onCountryChange={setNewCountry} />
+            <p className={`text-[11px] ${newPhoneProblem ? "text-red-500" : "text-muted-foreground"}`} aria-live="polite">
+              {newPhoneProblem ?? "Required. India is set; for a student abroad, pick their country first."}
+            </p>
             <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Email (optional)" type="email" />
             <p className="text-[11px] text-muted-foreground">
               The mobile number decides the account. If it, or the email, already belongs to someone else, nothing is granted and you're asked to choose.
             </p>
-            <Button onClick={grantNew} disabled={granting} className="w-full gap-2">
+            <Button onClick={grantNew} disabled={granting || !newNumber || !!newPhoneProblem} className="w-full gap-2">
               {granting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
               Create account &amp; grant access
             </Button>
@@ -802,6 +821,12 @@ export default function StudentsTab({ offeringId }: Props) {
                       {unusablePhones === 1 ? "1 row has" : `${unusablePhones} rows have`} a phone we can’t read
                       {emailOnlyRows > 0 ? ". Those import only if the email already has an account; a new student needs a mobile number." : "."}{" "}
                       Check the <code>country_code</code> column.
+                    </p>
+                  )}
+                  {readAsIndia > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {readAsIndia === 1 ? "1 row has" : `${readAsIndia} rows have`} no country code and will be read as India (+91).
+                      If any are abroad, add their code in the <code>country_code</code> column.
                     </p>
                   )}
                   {csvStudents.length > CHUNK_SIZE && (

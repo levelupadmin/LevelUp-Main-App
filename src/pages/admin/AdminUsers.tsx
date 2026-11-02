@@ -13,6 +13,8 @@ import { MultiSelect, type OptionGroup } from "@/components/ui/multi-select";
 import { useToast } from "@/hooks/use-toast";
 import { Search, AlertTriangle, Download, Upload } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
+import AdminPhoneInput, { countryOf, phoneProblem, toE164, typedNumber } from "@/components/admin/AdminPhoneInput";
+import type { Country } from "react-phone-number-input";
 
 interface UserRow {
   id: string;
@@ -191,14 +193,25 @@ const AdminUsers = () => {
       bio: data?.bio || "",
       role: data?.role || "student",
       email: data?.email || "",
-      phone: data?.phone || "",
+      // As the phone box shows it ("+" and the code), on both sides of the
+      // "did it change" check, so opening and saving never re-sends the number.
+      phone: toE164(data?.phone),
     };
     setEditForm(loaded);
     setEditOrig(loaded);
+    setEditCountry(countryOf(loaded.phone));
     setLegacyPrompt(null);
     setEditUser(user);
   };
 
+  const [editCountry, setEditCountry] = useState<Country | undefined>("IN");
+  const editNumber = typedNumber(editForm.phone, editCountry);
+  // Only a number the admin changed is checked: an odd one already on file never
+  // blocks a name edit. A login number is never emptied by accident (picking a
+  // new country leaves only its code in the box).
+  const editPhoneProblem = editNumber === editOrig.phone ? null
+    : !editNumber && editOrig.phone ? "Type their full number. The login number can't be left empty."
+    : phoneProblem(editForm.phone, editCountry);
   const isSelf = editUser?.id === currentUser?.id;
   const roleChanged = editUser && editForm.role !== editUser.role;
   const actorIsOwner = currentUser?.role === "owner";
@@ -223,7 +236,7 @@ const AdminUsers = () => {
     if (editForm.full_name !== editOrig.full_name) body.full_name = editForm.full_name || null;
     if (editForm.bio !== editOrig.bio) body.bio = editForm.bio || null;
     if (editForm.email.trim() !== editOrig.email.trim()) body.email = editForm.email.trim() || null;
-    if (editForm.phone.trim() !== editOrig.phone.trim()) body.phone = editForm.phone.trim() || null;
+    if (editNumber !== editOrig.phone) body.phone = editNumber || null;
     if (confirmLegacy) body.confirm_legacy_claim = true;
 
     if (Object.keys(body).length > 1) {
@@ -619,12 +632,13 @@ const AdminUsers = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Phone</label>
-                <Input
+                <AdminPhoneInput
                   value={editForm.phone}
                   disabled={loginLocked}
-                  onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
-                  placeholder="+91 98765 43210"
+                  onChange={(v) => setEditForm((f) => ({ ...f, phone: v }))}
+                  onCountryChange={setEditCountry}
                 />
+                {editPhoneProblem && <p className="text-xs text-red-500 mt-1" aria-live="polite">{editPhoneProblem}</p>}
               </div>
             </div>
             <p className="text-xs text-muted-foreground -mt-2">
@@ -632,8 +646,8 @@ const AdminUsers = () => {
                 ? "Only an owner can edit an owner's account."
                 : loginLocked
                 ? "Only an owner can change another admin's login email or phone."
-                : <>Phone is how they log in (OTP). Changing it moves the login to the new number —
-                  write it with the country code (<code>+91…</code>); a bare 10-digit number is read as Indian.</>}
+                : <>Phone is how they log in (OTP). Changing it moves the login to the new number.
+                  India is set; for a student abroad, pick their country first.</>}
             </p>
             <div>
               <label className="block text-sm font-medium mb-1">Bio</label>
@@ -654,7 +668,7 @@ const AdminUsers = () => {
                 </Select>
               )}
             </div>
-            <Button onClick={handleSave} disabled={saving || targetLocked} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
+            <Button onClick={handleSave} disabled={saving || targetLocked || !!editPhoneProblem} className="w-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90">
               {saving ? "Saving…" : "Save Changes"}
             </Button>
           </div>
