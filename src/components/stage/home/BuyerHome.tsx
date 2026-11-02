@@ -6,7 +6,7 @@ import { tapTick } from "@/lib/haptics";
 import { sessionTimeState } from "@/lib/room";
 import type { ApplicantStageView } from "@/hooks/useApplicantStage";
 import {
-  buildAgenda, downloadIcs, endOf, joinWindow, pickLoud, recordingHref, sessionPath, sessionWho, zoomLinkFor,
+  buildAgenda, downloadIcs, endOf, isLiveCohort, joinWindow, pickLoud, recordingHref, sessionPath, sessionWho, zoomLinkFor,
   type AgendaRow, type BuyerHome as BuyerData, type CohortItem, type CourseItem, type LiveWorkshopItem, type Loud, type OwnedThing, type Session,
 } from "./buyer";
 import { FORMAT_COPY, TIERS, formatFacts, type StageCatalog, type Tier } from "./catalog";
@@ -72,7 +72,7 @@ function NextCard({ loud }: { loud: Loud }) {
   const pic = i.kind === "masterclass" || i.kind === "workshop" || i.kind === "course" ? i.art : i.offering.thumbnail_url;
   const art = <div className="next-art">{pic && <img src={pic} alt="" />}</div>;
   const title = <h2 className="next-t">{s.title}</h2>;
-  const joinLabel = i.kind === "cohort" ? "Join class" : i.kind === "liveworkshop" ? "Join workshop" : "Join session";
+  const joinLabel = isLiveCohort(i) ? "Join class" : i.kind === "liveworkshop" ? "Join workshop" : "Join session";
 
   if (state === "live") {
     return (
@@ -154,6 +154,7 @@ export function cardView(i: OwnedThing, now: number): CardView {
     };
   }
   const c = i as CourseItem;
+  const word = c.cohort ? "Live cohort" : TIER_WORD[c.kind];
   const unit = c.kind === "workshop" ? "video" : "lesson";
   const pct = Math.max(c.done ? 4 : 0, Math.round((c.done / Math.max(1, c.total)) * 100));
   return {
@@ -161,13 +162,13 @@ export function cardView(i: OwnedThing, now: number): CardView {
     key: `${c.offering.id}:${c.courseId ?? ""}`, img: c.art, title: c.courseTitle,
     path: c.next ? `/chapters/${c.next.id}` : c.courseId ? `/courses/${c.courseId}` : `/p/${c.offering.slug}`,
     go: c.next ? (c.started ? `Resume ${unit} ${c.nextIndex}` : `Start ${unit} 1`) : "Watch again",
-    fmt: c.partOf ? <><span>{TIER_WORD[c.kind]}</span><b className="oc-from">· {c.partOf}</b></> : <span>{TIER_WORD[c.kind]}</span>,
+    fmt: c.partOf ? <><span>{word}</span><b className="oc-from">· {c.partOf}</b></> : <span>{word}</span>,
     prog: <div className="prog"><div className="prog-bar"><i style={{ width: `${pct}%` }} /></div><span><b>{c.done}</b> of {c.total} {unit}s</span></div>,
     next: c.next
       ? <><PlayCircle className="ic" /><span>{unit === "lesson" ? "Lesson" : "Video"} {c.nextIndex}: {c.next.title}{c.position > 0 && <span className="dim"> · resume at {mmss(c.position)}</span>}</span></>
       : <><Check className="ic" /><span>All {c.total} {unit}s watched</span></>,
     where: <><Smartphone className="ic" /><span>{c.videos} video{c.videos === 1 ? "" : "s"}{c.others ? ` · ${c.others} file${c.others === 1 ? "" : "s"}` : ""}</span></>,
-    side: <>{TIER_WORD[c.kind]} · {c.done} of {c.total}</>,
+    side: <>{word} · {c.done} of {c.total}</>,
   };
 }
 
@@ -192,9 +193,10 @@ function OwnCards({ items, now, onOpen }: { items: OwnedThing[]; now: number; on
     <section className="sec" aria-labelledby="ownH">
       <div className="sec-head">
         <h2 className="sec-h" id="ownH">My learning</h2>
-        {cards.length > 4 && <button className="sec-link" type="button" onClick={() => onOpen("/learn")}>See all</button>}
+        {cards.length > 3 && <button className="sec-link" type="button" onClick={() => onOpen("/learn")}>See all</button>}
       </div>
-      <div className="own">{cards.slice(0, 4).map((o) => <OwnCard key={o.key} o={o} onOpen={onOpen} />)}</div>
+      {/* At most three, with room around them; the rest are one tap away in My learning (founder). */}
+      <div className="own">{cards.slice(0, 3).map((o) => <OwnCard key={o.key} o={o} onOpen={onOpen} />)}</div>
     </section>
   );
 }
@@ -247,7 +249,7 @@ function ExploreMore({ catalog, data, onOpen }: { catalog: StageCatalog; data: B
     const f = catalog.formats.find((x) => x.tier === t)!;
     return { ...f, avail: f.list.filter((x) => !x.owned && !(data.inCohort && t === "live_cohort")) };
   }).filter((f) => f.avail.length);
-  const ownsAny = (t: Tier) => data.items.some((i) => (t === "live_cohort" && i.kind === "cohort") || (t === "masterclass" && i.kind === "masterclass") || (t === "workshop" && (i.kind === "workshop" || i.kind === "liveworkshop")));
+  const ownsAny = (t: Tier) => data.items.some((i) => (t === "live_cohort" && isLiveCohort(i)) || (t === "masterclass" && i.kind === "masterclass") || (t === "workshop" && (i.kind === "workshop" || i.kind === "liveworkshop")));
   const [tier, setTier] = useState<Tier | null>(null);
   const cur = fs.find((f) => f.tier === tier) ?? fs.find((f) => !ownsAny(f.tier)) ?? fs[0];
   const [railRef, setRailRef] = useState<HTMLDivElement | null>(null);

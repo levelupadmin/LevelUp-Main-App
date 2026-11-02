@@ -71,6 +71,17 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
 
       {d.films && d.films.items.length > 0 && (
         <Section id="ld-films" eyebrow="The work" title={d.films.heading} body={d.films.body}>
+          {d.films.items.some((f) => !f.image) ? (
+            // No posters: the website's own layout, its reel beside the list (never empty boxes).
+            <div className="ld-reel">
+              {d.films.reel && <Loop className="ld-reel-v" src={d.films.reel.video} poster={d.films.reel.poster ?? null} />}
+              <ol className="ld-taught">
+                {d.films.items.map((f) => (
+                  <li key={f.title}><b>{f.title}</b>{f.note && <span>{f.note}</span>}</li>
+                ))}
+              </ol>
+            </div>
+          ) : (
           <div className="ld-rail ld-films">
             {d.films.items.map((f) => (
               <figure key={f.title} className={`ld-film${f.wide ? " is-wide" : ""}`}>
@@ -85,6 +96,7 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
               </figure>
             ))}
           </div>
+          )}
         </Section>
       )}
 

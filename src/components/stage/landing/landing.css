@@ -388,3 +388,14 @@ html[data-theme="light"] .ld-marquee img { filter: brightness(0); opacity: .72; 
   .ld-net--lead .ld-net-t.is-wide { grid-row: span 2; aspect-ratio: auto; }
   .ld-net--solo { grid-template-columns: minmax(0, 1fr); max-width: 760px; }
 }
+
+/* films with no posters (Karthik's page): the website's reel beside the list */
+.ld-reel { display: grid; gap: 16px; }
+.ld-reel-v { width: 100%; max-width: 420px; aspect-ratio: 420 / 540; object-fit: cover; border-radius: var(--s-r-card); background: #000; display: block; }
+.ld-taught { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ld-taught li { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: var(--s-r-card); background: var(--s-surface); }
+.ld-taught b { font: 680 18px/1.2 var(--font-display); letter-spacing: -0.01em; }
+.ld-taught span { color: var(--s-text-2); font-size: 14.5px; line-height: 1.45; }
+@media (min-width: 900px) {
+  .ld-reel { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: center; gap: 28px; }
+}

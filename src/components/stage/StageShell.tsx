@@ -92,12 +92,18 @@ export default function StageShell() {
         ))}
         {roomsEnabled && <RoomNavSlot variant="desktop" />}
         <div className="side-k">My learning</div>
-        {owned.length ? owned.map((o) => (
-          <Link key={o.key} to={o.path} className="yi">
-            <span className="yi-art">{o.img && <img src={o.img} alt="" />}</span>
-            <span><span className="yi-t">{o.title}</span><span className="yi-m">{o.side}</span></span>
-          </Link>
-        )) : ownedLoading ? (
+        {owned.length ? (
+          // Three at most, with room to breathe; the rest are one click away (founder, 2 Nov 2026).
+          <>
+            {owned.slice(0, 3).map((o) => (
+              <Link key={o.key} to={o.path} className="yi">
+                <span className="yi-art">{o.img && <img src={o.img} alt="" />}</span>
+                <span><span className="yi-t">{o.title}</span><span className="yi-m">{o.side}</span></span>
+              </Link>
+            ))}
+            {owned.length > 3 && <Link to="/learn" className="side-all">See all {owned.length}</Link>}
+          </>
+        ) : ownedLoading ? (
           // Still reading what they own: the shape of two rows, not "Nothing here yet".
           <div className="side-skel" role="status" aria-busy="true">
             <span className="sr">Loading</span>

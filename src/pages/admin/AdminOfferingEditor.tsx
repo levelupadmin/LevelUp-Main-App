@@ -519,7 +519,6 @@ const AdminOfferingEditor = () => {
               yet and therefore nothing to report on. */}
           {!isNew && <TabsTrigger value="students">Students</TabsTrigger>}
           {!isNew && <TabsTrigger value="curriculum">Curriculum</TabsTrigger>}
-          {!isNew && <TabsTrigger value="access">Access</TabsTrigger>}
         </TabsList>
 
         {/* ══════════════════════════════════════════ */}
@@ -927,18 +926,25 @@ const AdminOfferingEditor = () => {
         </TabsContent>
 
         {/* ══════════════════════════════════════════ */}
-        {/*  TAB 8-10: READ-ONLY VIEWS                 */}
+        {/*  TAB 8-9: STUDENTS AND CURRICULUM          */}
         {/* ══════════════════════════════════════════ */}
         {!isNew && offeringId && (
           <>
-            <TabsContent value="students">
+            {/* One place for people: who has it, add or import, and below it who
+                bought it but can't open it yet (founder, 2 Nov 2026: Students and
+                Access were two tabs about the same people). */}
+            <TabsContent value="students" className="space-y-6">
               <StudentsTab offeringId={offeringId} />
+              <section className="space-y-3" aria-labelledby="accessCheckH">
+                <div>
+                  <h3 id="accessCheckH" className="text-sm font-semibold">Access check</h3>
+                  <p className="text-xs text-muted-foreground">Everyone owed this product, including people who bought it and haven't signed in yet.</p>
+                </div>
+                <AccessTab offeringId={offeringId} />
+              </section>
             </TabsContent>
             <TabsContent value="curriculum">
               <CurriculumTab offeringId={offeringId} />
-            </TabsContent>
-            <TabsContent value="access">
-              <AccessTab offeringId={offeringId} />
             </TabsContent>
           </>
         )}

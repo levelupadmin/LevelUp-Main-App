@@ -269,8 +269,8 @@ export default function StudentsTab({ offeringId }: Props) {
       // enrolments_unified UNIONs real enrolments with legacy_enrolments.
       // Only 'live' rows are actual enrolments; without this filter an
       // offering with legacy history lists tens of thousands of people who
-      // have never signed in. Unclaimed legacy purchases belong on the
-      // Access tab, not here.
+      // have never signed in. Unclaimed legacy purchases belong in the
+      // Access check below this list, not here.
       .eq("enrolment_kind", "live")
       .order("created_at", { ascending: false });
     setRows(((data || []) as unknown) as Row[]);
