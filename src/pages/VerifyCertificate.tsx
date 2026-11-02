@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BadgeCheck, ShieldAlert } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDay } from "@/lib/certificates";
+import { useAuth } from "@/contexts/AuthContext";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import "@/components/certificates/certificate.css";
 
@@ -28,10 +29,14 @@ export default function VerifyCertificate() {
   const navigate = useNavigate();
   const [typed, setTyped] = useState("");
   const clean = code.trim().toUpperCase();
+  // Wait for the sign-in check: for a signed-out visitor AuthContext clears
+  // the whole query cache when it settles, which would cancel a lookup that
+  // started before it and leave this page on "Checking…".
+  const { loading: authLoading } = useAuth();
 
   const { data, isLoading } = useQuery({
     queryKey: ["verify-certificate", clean],
-    enabled: clean.length >= 6,
+    enabled: !authLoading && clean.length >= 6,
     queryFn: async () => {
       const { data: rows, error } = await (supabase as unknown as {
         rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: VerifyRow[] | null; error: unknown }>;
@@ -57,7 +62,7 @@ export default function VerifyCertificate() {
             <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="7KQ2M9XP" aria-label="Check code" maxLength={16} />
             <button type="submit">Check certificate</button>
           </form>
-        ) : isLoading ? (
+        ) : authLoading || isLoading ? (
           <p className="cert-verify-foot">Checking…</p>
         ) : !data ? (
           <>
