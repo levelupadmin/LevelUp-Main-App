@@ -9,7 +9,7 @@ import "@/components/stage/home/home.css";
  * minus this one and anything the person already owns. Nothing to show,
  * nothing rendered.
  */
-export default function StageAlsoFrom({ offeringId, tier }: { offeringId: string; tier: string | null }) {
+export default function StageAlsoFrom({ offeringId, tier }: { offeringId: string; tier?: string | null }) {
   const { data } = useStageCatalog();
   if (!data) return null;
   const t = TIERS.includes(tier as Tier) ? (tier as Tier) : null;

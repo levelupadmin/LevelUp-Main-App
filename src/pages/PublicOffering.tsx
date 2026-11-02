@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { AnimatePresence, motion, useMotionValue, useReducedMotion } from "framer-motion";
 import type { MotionValue } from "framer-motion";
@@ -34,7 +34,6 @@ import { resolveHandoff } from "./publicOfferingHandoff";
 import { formatRuntime } from "@/lib/thankYouCourse";
 import { track } from "@/lib/analytics";
 import { STAGE_ENABLED } from "@/lib/appearance";
-import StageAlsoFrom from "@/components/stage/offering/StageAlsoFrom";
 import { LevelUpMark } from "@/components/brand/LevelUpMark";
 // Stage look for this page: every rule is scoped to html[data-brand="stage"]
 // and keyed on the po-* hook classes below, so the flag-off page is unchanged.
@@ -49,6 +48,9 @@ import {
   Play,
   Archive,
 } from "lucide-react";
+
+// Its own chunk, so the flag-off build never loads the Stage catalogue CSS.
+const StageAlsoFrom = lazy(() => import("@/components/stage/offering/StageAlsoFrom"));
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -132,6 +134,8 @@ interface Offering {
   refund_policy_days: number | null;
   /** "masterclass" switches the refund line to the watch rule (GuaranteeBadge). */
   product_tier?: string | null;
+  /** null = no expiry ("Yours to keep" under Stage). */
+  validity_days?: number | null;
   offering_courses: OfferingCourse[];
 }
 
@@ -659,7 +663,7 @@ function HeroActions({
             )}
           </div>
           {/* Stage (round-3 mockup): a one-time masterclass price says what it buys. */}
-          {STAGE_ENABLED && price > 0 && offering.product_tier === "masterclass" && (offering as any).validity_days == null && (
+          {STAGE_ENABLED && price > 0 && offering.product_tier === "masterclass" && offering.validity_days == null && (
             <p className="po-keep">Yours to keep</p>
           )}
           {savings > 0 && (
@@ -1491,7 +1495,7 @@ export default function PublicOffering() {
             </button>
             <Link to="/" aria-label="LevelUp Learning home" className="flex shrink-0 items-center">
               {STAGE_ENABLED ? (
-                <LevelUpMark showSub={false} lineClassName="text-brand-text" className="w-[84px] text-foreground" />
+                <LevelUpMark showSub={false} lineClassName="text-brand-text" className="!h-[26px] w-auto text-foreground" />
               ) : (
                 <LevelUpWordmark className="h-7 w-auto text-foreground" />
               )}
@@ -1707,7 +1711,11 @@ export default function PublicOffering() {
 
             {/* Stage: the round-3 mockup's "Also from LevelUp" rail, after the
                 last buy button so it never competes with it. */}
-            {STAGE_ENABLED && <StageAlsoFrom offeringId={offering.id} tier={offering.product_tier} />}
+            {STAGE_ENABLED && (
+              <Suspense fallback={null}>
+                <StageAlsoFrom offeringId={offering.id} tier={offering.product_tier} />
+              </Suspense>
+            )}
         </div>
 
         {/* Desktop sticky purchase rail (lg+, web only, see railEligible). */}
