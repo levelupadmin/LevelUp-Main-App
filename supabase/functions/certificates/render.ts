@@ -12,7 +12,7 @@ import fontkit from "npm:@pdf-lib/fontkit@1.1.1";
 import qrcode from "npm:qrcode-generator@1.4.4";
 
 export type FieldKey = "name" | "date" | "number" | "line" | "verify" | "qr";
-export type FontKey = "sans" | "sans-regular" | "serif" | "script" | "inter" | "inter-bold";
+export type FontKey = "sans" | "sans-regular" | "serif" | "script" | "inter" | "inter-bold" | "garamond";
 
 export interface DesignField {
   key: FieldKey;
@@ -46,6 +46,7 @@ export const FONT_FILES: Record<FontKey, string> = {
   script: "fonts/script.ttf",
   inter: "fonts/inter.ttf",
   "inter-bold": "fonts/inter-bold.ttf",
+  garamond: "fonts/garamond.ttf",
 };
 
 export const FIELD_KEYS: FieldKey[] = ["name", "date", "number", "line", "verify", "qr"];

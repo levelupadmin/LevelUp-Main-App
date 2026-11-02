@@ -11,7 +11,7 @@ import { supabase, supabaseUrl } from "@/integrations/supabase/client";
  */
 
 export type FieldKey = "name" | "date" | "number" | "line" | "verify" | "qr";
-export type FontKey = "sans" | "sans-regular" | "serif" | "script" | "inter" | "inter-bold";
+export type FontKey = "sans" | "sans-regular" | "serif" | "script" | "inter" | "inter-bold" | "garamond";
 
 export interface DesignField {
   key: FieldKey;
@@ -80,6 +80,7 @@ export const FONT_LABELS: Record<FontKey, string> = {
   script: "Script",
   inter: "Inter",
   "inter-bold": "Inter bold",
+  garamond: "Garamond",
 };
 
 export const DESIGN_BUCKET = "certificate-designs";
@@ -94,6 +95,7 @@ const FONT_FAMILY: Record<FontKey, string> = {
   script: "LUCertScript",
   inter: "LUCertInter",
   "inter-bold": "LUCertInterBold",
+  garamond: "LUCertGaramond",
 };
 
 export const fontFamilyFor = (font: FontKey | undefined) => `'${FONT_FAMILY[font ?? "sans"]}', sans-serif`;
