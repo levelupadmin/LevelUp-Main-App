@@ -19,7 +19,7 @@
  *                 scope, copy a curl recipe.
  */
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, supabaseUrl } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,7 +105,7 @@ interface EventType {
   description: string;
 }
 
-const API_URL = "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/admin-api";
+const API_URL = `${supabaseUrl}/functions/v1/admin-api`;
 
 const SCOPE_COLORS: Record<string, string> = {
   read: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",

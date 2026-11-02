@@ -35,6 +35,9 @@ const h = vi.hoisted(() => ({
   // Captures the real `onVerify` wrapper Login hands to OtpEntryStep so the test
   // can drive a verify without reproducing the OTP input UI.
   onVerify: null as null | ((otp: string) => Promise<{ ok: boolean; error?: string }>),
+  // users.craft_interests for the signed-in account: picks, [] (asked and
+  // skipped) or null (never asked).
+  crafts: ["film"] as string[] | null,
 }));
 
 // react-router: spy navigate, no `from` state (redirectTarget resolves to /home),
@@ -53,13 +56,14 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 
 // Supabase: setSession mints a session (user id → resolvePostAuthDestination),
-// the users lookup returns a craft so the destination is the redirectTarget
-// (/home) rather than /onboarding.
+// the users lookup returns h.crafts. Any list (even empty) means the picker was
+// already asked, so the destination is the redirectTarget (/home); only null
+// sends them to /onboarding.
 vi.mock("@/integrations/supabase/client", () => {
   const usersBuilder: Record<string, unknown> = {};
   usersBuilder.select = vi.fn(() => usersBuilder);
   usersBuilder.eq = vi.fn(() => usersBuilder);
-  usersBuilder.single = vi.fn(async () => ({ data: { craft_interests: ["film"] }, error: null }));
+  usersBuilder.single = vi.fn(async () => ({ data: { craft_interests: h.crafts }, error: null }));
   return {
     supabaseUrl: "https://test-project.supabase.co",
     supabasePublishableKey: "sb_publishable_test_public_key_1234567890",
@@ -202,6 +206,7 @@ describe("Login post-verify navigation (P4 STEAL-8)", () => {
     h.auth = { user: null, loading: false };
     h.fetchOk = true;
     h.onVerify = null;
+    h.crafts = ["film"];
     installFetch();
     setMatchMedia({ reduced: false, desktop: true });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
@@ -311,5 +316,23 @@ describe("Login post-verify navigation (P4 STEAL-8)", () => {
       vi.advanceTimersByTime(otpSuccess.windowMs + 100);
     });
     expect(h.navigate).not.toHaveBeenCalled();
+  });
+
+  // The craft picker asks once: a skip saves [], which must not bring it back.
+  it.each([
+    { crafts: [] as string[] | null, dest: "/home", why: "asked and skipped" },
+    { crafts: null as string[] | null, dest: "/onboarding", why: "never asked" },
+  ])("routes $why ($crafts) to $dest", async ({ crafts, dest }) => {
+    h.crafts = crafts;
+    setMatchMedia({ reduced: true, desktop: true });
+    render(createElement(Login));
+    await reachOtpStep();
+    await act(async () => {
+      await h.onVerify!("1234");
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(h.navigate).toHaveBeenCalledWith(dest, { replace: true });
   });
 });

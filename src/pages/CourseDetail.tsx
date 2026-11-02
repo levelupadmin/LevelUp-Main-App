@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useParams, useNavigate, Link } from "react-router-dom";
@@ -25,6 +25,19 @@ import CohortSchedule from "@/components/course-detail/CohortSchedule";
 import TestimonialsCarousel from "@/components/course-detail/TestimonialsCarousel";
 import FAQ from "@/components/course-detail/FAQ";
 import UrgencyStrip from "@/components/course-detail/UrgencyStrip";
+import { STAGE_ENABLED } from "@/lib/appearance";
+import type { StageLessonGroup } from "@/components/stage/course/StageCourse";
+
+// Stage's course view is its own chunk so the flag-off build never loads its
+// CSS; under Stage it starts loading with this page, before the data lands.
+const loadStageCourse = () => import("@/components/stage/course/StageCourse");
+const StageCourse = lazy(loadStageCourse);
+if (STAGE_ENABLED) void loadStageCourse();
+
+const CONTENT_WORD: Record<string, string> = {
+  audio: "Audio", image: "Image", pdf: "PDF", assignment: "Assignment", embedded: "Embed", article: "Reading",
+};
+const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 
 interface Course {
   id: string;
@@ -475,6 +488,131 @@ const CourseDetail = () => {
     progress.reduce((sum, p) => sum + (p.last_position_seconds || 0), 0) / 60
   );
 
+  // About + the Phase 4 content blocks: the same on both looks.
+  const contentBlocks = (
+    <>
+      {/* Description */}
+      {course.description && (
+        <div className="bg-card border border-border rounded-[16px] p-6">
+          <h2 className="text-lg font-semibold mb-3">About this course</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-line">
+            {course.description}
+          </p>
+        </div>
+      )}
+
+      {/* Phase 4 content blocks: each renders-and-hides if the data isn't there yet */}
+      <UrgencyStrip
+        seatsLeft={offeringUrgency?.seats_left}
+        batchStartsAt={offeringUrgency?.batch_starts_at}
+      />
+      <Outcomes outcomes={course.outcomes} />
+      <PortfolioPieces pieces={course.portfolio_pieces} />
+      <InstructorCard
+        name={course.instructor_display_name}
+        bio={course.instructor_bio}
+        credentials={course.instructor_credentials}
+        avatarUrl={course.instructor_avatar_url}
+        links={course.instructor_links}
+      />
+      <CohortSchedule sessions={offeringUrgency?.cohort_sessions} />
+      <TestimonialsCarousel courseId={courseId!} />
+      <FAQ faqs={course.faqs} />
+    </>
+  );
+
+  if (STAGE_ENABLED) {
+    const next = hasAccess && !isComplete ? getNextIncompleteChapter() : null;
+    let n = 0;
+    let nextN = 1;
+    let firstFree: Chapter | null = null;
+    const groups: StageLessonGroup[] = sections.map((section) => {
+      const sectionChapters = chapters
+        .filter((c) => c.section_id === section.id)
+        .sort((a, b) => a.sort_order - b.sort_order);
+      return {
+        id: section.id,
+        title: section.title,
+        done: sectionChapters.filter((c) => isChapterCompleted(c.id)).length,
+        lessons: sectionChapters.map((ch) => {
+          n += 1;
+          const done = isChapterCompleted(ch.id);
+          const pos = getChapterProgress(ch.id)?.last_position_seconds || 0;
+          const meta: string[] = [];
+          if (CONTENT_WORD[ch.content_type]) meta.push(CONTENT_WORD[ch.content_type]);
+          if (ch.duration_seconds) meta.push(`${Math.max(1, Math.round(ch.duration_seconds / 60))} min`);
+          if (pos > 0 && !done && ch.duration_seconds) meta.push(`Paused at ${mmss(pos)}`);
+          const current = next?.id === ch.id;
+          if (current) nextN = n;
+          if (ch.make_free && !firstFree) firstFree = ch;
+          return {
+            id: ch.id,
+            n,
+            title: ch.title,
+            meta,
+            free: ch.make_free && !hasAccess,
+            locked: isChapterLocked(ch, sectionChapters),
+            done,
+            current,
+            open: () => handleChapterClick(ch, sectionChapters),
+          };
+        }),
+      };
+    });
+    const started = completedCount > 0 || progress.some((p) => p.last_position_seconds > 0);
+    const free = firstFree as Chapter | null;
+    const hours = course.duration_minutes ? Math.floor(course.duration_minutes / 60) : 0;
+    const mins = course.duration_minutes ? course.duration_minutes % 60 : 0;
+    const level = course.level ? course.level[0].toUpperCase() + course.level.slice(1) : null;
+
+    return (
+      <>
+        <Suspense fallback={null}>
+          <StageCourse
+            art={course.hero_image_url}
+            kicker={[categoryName, level].filter(Boolean).join(" · ")}
+            title={course.title}
+            subtitle={course.subtitle}
+            facts={[
+              course.instructor_display_name ? `By ${course.instructor_display_name}` : "",
+              totalChapters ? `${totalChapters} lessons` : "",
+              course.duration_minutes ? (hours ? `${hours}h${mins ? ` ${mins}m` : ""}` : `${mins}m`) : "",
+            ].filter(Boolean)}
+            progress={hasAccess && totalChapters > 0 ? { pct: progressPct, done: completedCount, total: totalChapters } : null}
+            primary={
+              hasAccess && totalChapters === 0
+                ? { label: "Content coming soon", disabled: true }
+                : hasAccess && isComplete
+                  ? { label: "Watch again from lesson 1", onClick: handleEnrollOrContinue }
+                  : hasAccess
+                    ? { label: `${started ? "Resume" : "Start"} lesson ${nextN}`, onClick: handleEnrollOrContinue }
+                    : { label: isNative() ? "See the program" : "Enrol now", onClick: handleEnrollOrContinue }
+            }
+            secondary={
+              hasAccess && isComplete
+                ? { label: "View recap", icon: "recap", onClick: () => setRecapOpen(true) }
+                : !hasAccess && free
+                  ? { label: "Watch a free lesson", icon: "play", onClick: () => navigate(`/chapters/${free.id}`) }
+                  : null
+            }
+            groups={groups}
+          >
+            {contentBlocks}
+          </StageCourse>
+        </Suspense>
+        <CompletionRecap
+          open={recapOpen}
+          onClose={() => setRecapOpen(false)}
+          courseTitle={course.title}
+          instructorName={course.instructor_display_name}
+          lessonsCompleted={completedCount}
+          minutesWatched={watchMinutes}
+          imageUrl={course.hero_image_url}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <div className="max-w-4xl mx-auto space-y-8">
@@ -586,33 +724,7 @@ const CourseDetail = () => {
           </div>
         </div>
 
-        {/* Description */}
-        {course.description && (
-          <div className="bg-card border border-border rounded-[16px] p-6">
-            <h2 className="text-lg font-semibold mb-3">About this course</h2>
-            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-line">
-              {course.description}
-            </p>
-          </div>
-        )}
-
-        {/* Phase 4 content blocks: each renders-and-hides if the data isn't there yet */}
-        <UrgencyStrip
-          seatsLeft={offeringUrgency?.seats_left}
-          batchStartsAt={offeringUrgency?.batch_starts_at}
-        />
-        <Outcomes outcomes={course.outcomes} />
-        <PortfolioPieces pieces={course.portfolio_pieces} />
-        <InstructorCard
-          name={course.instructor_display_name}
-          bio={course.instructor_bio}
-          credentials={course.instructor_credentials}
-          avatarUrl={course.instructor_avatar_url}
-          links={course.instructor_links}
-        />
-        <CohortSchedule sessions={offeringUrgency?.cohort_sessions} />
-        <TestimonialsCarousel courseId={courseId!} />
-        <FAQ faqs={course.faqs} />
+        {contentBlocks}
 
         {/* Ratings & Reviews removed for now (product decision). */}
 

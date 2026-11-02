@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, supabaseUrl } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { OtpEntryStep } from "@/components/auth/OtpEntryStep";
 import { InstructorProof } from "@/components/auth/InstructorProof";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import { hapticImpact } from "@/lib/haptics";
+import { isStagingTestLogin } from "@/lib/stagingLogin";
 import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 // 2026-06-10: Phone-first signup (item 11). The form now collects ONLY a phone
@@ -30,8 +31,9 @@ import signupHeroImage from "@/assets/carousel/slide-bfp.jpg";
 
 const EMAIL_ONLY_AUTH = false;
 
-const VERIFY_MSG91_OTP_URL =
-  "https://ivkvluezuiojovpotlyb.supabase.co/functions/v1/verify-msg91-otp";
+// Built from the client's resolved project URL (not hard-coded) so a staging
+// build verifies OTPs on staging instead of creating accounts on production.
+const VERIFY_MSG91_OTP_URL = `${supabaseUrl}/functions/v1/verify-msg91-otp`;
 
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
 
@@ -126,6 +128,12 @@ const Signup = () => {
       goToStep("email_form");
       return;
     }
+    if (isStagingTestLogin(phone)) {
+      // Staging test login: no SMS; the code boxes take the staging test code.
+      setChannel("sms");
+      goToStep("otp");
+      return;
+    }
     setLoading(true);
     const res = await sendSmsOtp(false);
     setLoading(false);
@@ -161,12 +169,15 @@ const Signup = () => {
 
   const handleVerify = async (otp: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      let token: string;
-      try {
-        const r = await widgetVerifyOtp(otp);
-        token = r.accessToken;
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : "Wrong code. Try again." };
+      const testLogin = isStagingTestLogin(phone);
+      let token: string | null = null;
+      if (!testLogin) {
+        try {
+          const r = await widgetVerifyOtp(otp);
+          token = r.accessToken;
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : "Wrong code. Try again." };
+        }
       }
 
       const resp = await fetch(VERIFY_MSG91_OTP_URL, {
@@ -177,7 +188,7 @@ const Signup = () => {
         },
         body: JSON.stringify({
           phone,
-          accessToken: token,
+          ...(testLogin ? { reviewCode: otp } : { accessToken: token }),
           // Phone-first: provision with placeholders so the new account can be
           // created. Onboarding immediately collects the real name + email.
           email: syntheticEmail(phone),

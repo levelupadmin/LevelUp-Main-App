@@ -477,39 +477,6 @@ const AdminOfferingEditor = () => {
     }
   };
 
-  /* ── Upsell helpers ── */
-  const addUpsell = (upsellOfferingId: string) => {
-    const off = allOfferingsForUpsell.find((o) => o.id === upsellOfferingId);
-    if (!off) return;
-    setUpsells((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        upsell_offering_id: upsellOfferingId,
-        headline: "Add this to your order",
-        sort_order: prev.length,
-        upsell_title: off.title,
-      },
-    ]);
-  };
-
-  const removeUpsell = (id: string) => {
-    setUpsells((prev) => prev.filter((u) => u.id !== id));
-  };
-
-  const updateUpsellHeadline = (index: number, headline: string) => {
-    setUpsells((prev) => prev.map((u, i) => (i === index ? { ...u, headline } : u)));
-  };
-
-  /* ── Bump helpers ── */
-  const addBump = (bumpOfferingId: string) => {
-    const off = allOfferingsForUpsell.find((o) => o.id === bumpOfferingId);
-    if (!off) return;
-    setBumps((prev) => [...prev, { id: crypto.randomUUID(), bump_offering_id: bumpOfferingId, headline: `Add ${off.title}`, bump_price_override_inr: "", bump_title: off.title }]);
-  };
-  const removeBump = (id: string) => setBumps((prev) => prev.filter((b) => b.id !== id));
-  const updateBump = (index: number, field: string, value: string) => setBumps((prev) => prev.map((b, i) => (i === index ? { ...b, [field]: value } : b)));
-
   /* ── Loading state ── */
   if (loading) {
     return (
@@ -548,7 +515,6 @@ const AdminOfferingEditor = () => {
           <TabsTrigger value="tracking">Tracking & Pixels</TabsTrigger>
           <TabsTrigger value="checkout">Checkout</TabsTrigger>
           <TabsTrigger value="cohort">Live Cohort</TabsTrigger>
-          <TabsTrigger value="upsells">Upsells</TabsTrigger>
           {/* Read-only views. Hidden on a brand-new offering, which has no id
               yet and therefore nothing to report on. */}
           {!isNew && <TabsTrigger value="students">Students</TabsTrigger>}
@@ -743,7 +709,7 @@ const AdminOfferingEditor = () => {
         <TabsContent value="checkout">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <p className="text-sm text-muted-foreground">
-              Customize the checkout experience: social proof, guarantees, coupons, and order bumps.
+              Customize the checkout experience: social proof, guarantees and the page coupon code.
             </p>
 
             {/* Checkout Testimonials */}
@@ -805,70 +771,6 @@ const AdminOfferingEditor = () => {
                     This coupon code will be displayed on the public offering page
                   </p>
                 </div>
-              )}
-            </div>
-
-            {/* Order Bumps */}
-            <div>
-              <Label className="mb-2 block">Order Bumps</Label>
-              <p className="text-xs text-muted-foreground mb-3">
-                Add-on offerings shown on the checkout page before payment. Different from upsells (which are post-purchase).
-              </p>
-              {isNew ? (
-                <p className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg">
-                  Save the offering first, then you can add order bumps.
-                </p>
-              ) : (
-                <>
-                  {bumps.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">
-                      No order bumps added yet
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {bumps.map((b, i) => (
-                        <div key={b.id} className="flex items-center gap-3 bg-secondary/30 rounded-lg p-3">
-                          <span className="text-sm font-medium flex-shrink-0 truncate max-w-[160px]">{b.bump_title}</span>
-                          <Input
-                            value={b.headline}
-                            onChange={(e) => updateBump(i, "headline", e.target.value)}
-                            placeholder="Headline"
-                            className="flex-1"
-                          />
-                          <Input
-                            type="number"
-                            value={b.bump_price_override_inr}
-                            onChange={(e) => updateBump(i, "bump_price_override_inr", e.target.value)}
-                            placeholder="Price override (INR)"
-                            className="w-36"
-                          />
-                          <button
-                            onClick={() => removeBump(b.id)}
-                            className="p-1.5 rounded hover:bg-destructive/10 text-destructive"
-                            title="Remove bump"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-3">
-                    <SearchableSelect
-                      options={allOfferingsForUpsell
-                        .filter(
-                          (o) =>
-                            o.id !== offeringId &&
-                            !bumps.find((b) => b.bump_offering_id === o.id)
-                        )
-                        .map((o) => ({ value: o.id, label: `${o.title} - ₹${o.price_inr}` }))}
-                      value=""
-                      onValueChange={addBump}
-                      placeholder="Add an order bump offering…"
-                      searchPlaceholder="Search offerings…"
-                    />
-                  </div>
-                </>
               )}
             </div>
           </div>
@@ -1021,66 +923,6 @@ const AdminOfferingEditor = () => {
                 </div>
               </div>
             </div>
-          </div>
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 7: UPSELLS                            */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="upsells">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-            {isNew ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
-                Save the offering first, then you can add post-purchase upsells.
-              </p>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  These offerings are shown on the Thank You page after someone purchases this offering.
-                </p>
-
-                {upsells.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6 border border-dashed border-border rounded-lg">
-                    No upsells added yet
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {upsells.map((u, i) => (
-                      <div key={u.id} className="flex items-center gap-3 bg-secondary/30 rounded-lg p-3">
-                        <span className="text-sm font-medium flex-1 truncate">{u.upsell_title}</span>
-                        <Input
-                          value={u.headline}
-                          onChange={(e) => updateUpsellHeadline(i, e.target.value)}
-                          placeholder="Headline"
-                          className="w-56"
-                        />
-                        <button
-                          onClick={() => removeUpsell(u.id)}
-                          className="p-1.5 rounded hover:bg-destructive/10 text-destructive"
-                          title="Remove upsell"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <SearchableSelect
-                  options={allOfferingsForUpsell
-                    .filter(
-                      (o) =>
-                        o.id !== offeringId &&
-                        !upsells.find((u) => u.upsell_offering_id === o.id)
-                    )
-                    .map((o) => ({ value: o.id, label: `${o.title} - ₹${o.price_inr}` }))}
-                  value=""
-                  onValueChange={addUpsell}
-                  placeholder="Add an upsell offering…"
-                  searchPlaceholder="Search offerings…"
-                />
-              </>
-            )}
           </div>
         </TabsContent>
 

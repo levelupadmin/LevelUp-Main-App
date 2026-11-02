@@ -250,6 +250,40 @@ npx -y supabase@latest functions deploy <name>                   # server-side b
   config.toml default; always `link --project-ref ivkvluezuiojovpotlyb` first.**
 - Secrets live in `~/Library/Mobile Documents/com~apple~CloudDocs/Claude Projects/LevelUp Core/.env.supabase`.
 
+### Staging (the `supercharged` redesign branch)
+
+- **STAGING project ref = `kjjkkfajnjmyictimmew`** ("LevelUp Main App STAGING", same
+  org, Micro, Tokyo). Built 2026-11-01 as an exact structural copy of prod (tables,
+  columns, RLS, functions, triggers, buckets, migration history all fingerprint-match)
+  with **fake data only, no cron jobs, and no live integrations** (no Razorpay live
+  keys, MSG91, Brevo, TeleCRM, Tally, Interakt, VdoCipher).
+- **The public staging site is https://levelup-staging.vercel.app**: the production
+  deployment of a SEPARATE Vercel project, `levelup-staging`
+  (`prj_lKgk3Kn1h7EyGcxPL0MOJPTm9lSI`, no Git link, env vars all point at staging).
+  Publish after every push: `vercel deploy --prod --yes --scope level-up4` from a
+  checkout of `supercharged` whose `.vercel/project.json` links to that project (remote
+  build). Production aliases are public under Standard Protection, which is why this
+  project exists: previews of `levelup-main-app` sit behind Vercel sign-in.
+- `levelup-main-app` previews of `supercharged` ALSO point at staging (branch-scoped
+  Preview env vars). Every other branch preview still hits PROD.
+  `StagingBadge` shows a corner tag whenever the build is not on the prod ref.
+- Database changes for the redesign are migration files in `supabase/migrations/`:
+  `db push` them to STAGING first (`link --project-ref kjjkkfajnjmyictimmew`), and to
+  prod only when that slice merges to `main`. Renames keep an old-name compatibility
+  view until the bundled Android/iOS apps, edge functions and n8n stop using the old
+  name.
+- **Dummy login (staging only):** any +91 number + the `STAGING_TEST_LOGIN_CODE`
+  secret signs in/up through `verify-msg91-otp`'s reviewCode path, no SMS. Three
+  locks keep it off in prod: the function ignores the secret on the prod ref, prod
+  has no such secret, and `isStagingTestLogin` needs `VITE_STAGING_TEST_LOGIN=true`
+  (supercharged previews only) plus a non-prod `supabaseUrl`, so it compiles to
+  `false` in a prod build. `EXTRA_ALLOWED_ORIGINS` (staging-only secret) adds the
+  staging web origins to `_shared/cors.ts` and the four inline-CORS functions.
+- Staging chapters point at staging-owned sample files (`staging-sample/…` in the
+  staging `workshop-archive` and `protected-video` buckets), never at prod storage.
+- Never hard-code a project URL in `src/`; build it from `supabaseUrl`
+  (`@/integrations/supabase/client`) so staging builds stay on staging.
+
 ### Chapter thumbnails
 
 Every chapter card / Up Next rail / offering tile renders

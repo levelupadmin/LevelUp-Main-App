@@ -31,7 +31,7 @@ export default function GuaranteeBadge({ days, productTier, className }: Guarant
     return (
       <p
         className={cn(
-          "flex items-start gap-2 rounded-xl border border-[hsl(var(--accent-emerald)/0.4)] bg-[hsl(var(--accent-emerald)/0.10)] px-3 py-2 text-left text-xs leading-relaxed text-foreground",
+          "guarantee flex items-start gap-2 rounded-xl border border-[hsl(var(--accent-emerald)/0.4)] bg-[hsl(var(--accent-emerald)/0.10)] px-3 py-2 text-left text-xs leading-relaxed text-foreground",
           className,
         )}
       >
@@ -52,7 +52,7 @@ export default function GuaranteeBadge({ days, productTier, className }: Guarant
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--accent-emerald)/0.4)] bg-[hsl(var(--accent-emerald)/0.10)] px-3 py-1 text-xs font-medium text-[hsl(var(--accent-emerald))]",
+        "guarantee inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--accent-emerald)/0.4)] bg-[hsl(var(--accent-emerald)/0.10)] px-3 py-1 text-xs font-medium text-[hsl(var(--accent-emerald))]",
         className,
       )}
     >

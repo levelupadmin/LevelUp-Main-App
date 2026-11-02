@@ -1,0 +1,31 @@
+/* My learning (Stage). The cards, agenda and tabs come from home.css (the
+   round-4 Home); these are the few pieces only this page has. */
+
+.lrn-tabs { align-self: stretch; }
+@media (min-width: 900px) { .lrn-tabs { align-self: flex-start; } }
+.lrn-note { font-size: 13px; color: var(--s-text-3); }
+
+/* empty states: the line draws itself, one sentence, one action (spec 7.13) */
+.lrn-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 36px 20px 40px; border-radius: var(--s-r-card); background: var(--s-surface); text-align: center; }
+.lrn-empty-mark { width: 84px; height: auto; color: var(--s-brand-text); margin-bottom: 6px; }
+.lrn-empty-t { margin: 0; font: 620 17px/1.25 var(--font-body); letter-spacing: -0.01em; }
+.lrn-empty-s { margin: 0 0 6px; max-width: 30em; color: var(--s-text-2); font-size: 14.5px; line-height: 1.5; }
+
+/* plain rows: recordings, the events link */
+.lrn-list { display: flex; flex-direction: column; border-radius: var(--s-r-card); background: var(--s-surface-2); padding: 4px 16px; }
+.lrn-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) 16px; gap: 12px; align-items: center; width: 100%; padding: 12px 0; border: 0; border-top: 1px solid var(--s-line); background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.lrn-list .lrn-row:first-child { border-top: 0; }
+.lrn-row > .ic { width: 20px; height: 20px; color: var(--s-text-2); }
+.lrn-row .lrn-go { width: 16px; height: 16px; color: var(--s-text-3); }
+.lrn-row-b { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.lrn-row-b b { font: 600 14.5px/1.3 var(--font-body); }
+.lrn-row-b span { font-size: 12.5px; color: var(--s-text-2); }
+.lrn-row--link { border-top: 0; padding: 14px 16px; border-radius: var(--s-r-card); background: var(--s-surface-2); }
+
+.lrn-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; border: 0; background: none; color: var(--s-text-2); font: 600 14px/1 var(--font-body); cursor: pointer; margin-bottom: 8px; }
+.lrn-back .ic { width: 16px; height: 16px; }
+.lrn-legacy { display: flex; flex-direction: column; }
+
+/* recordings: a link out to the recording itself, with the old Live tab's "Watch" */
+.lrn-rec { grid-template-columns: 22px minmax(0, 1fr) auto; text-decoration: none; }
+.lrn-rec-go { color: var(--s-brand-text); font: 620 14px/1 var(--font-body); }

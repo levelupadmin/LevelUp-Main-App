@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import AddEmailPrompt from "@/components/checkout/AddEmailPrompt";
 import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,13 @@ import { track } from "@/lib/analytics";
 import { claimPurchaseOnce } from "@/lib/purchaseOnce";
 import { contentCategoryForTier, purchaseEventId } from "@shared/metaEvents";
 import { isNative } from "@/lib/platform";
-import { hapticNotification } from "@/lib/haptics";
+import { celebrate, hapticNotification } from "@/lib/haptics";
+import { STAGE_ENABLED } from "@/lib/appearance";
+import { playSound } from "@/lib/sound";
+import { LevelUpMark } from "@/components/brand/LevelUpMark";
+import "@/styles/stage-thankyou.css";
 import { useMotionSafe, useFinePointer, durations } from "@/lib/motion";
-import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import { razorpayThemeColor } from "@/lib/brand";
 import { isCalendlyUrl } from "@/hooks/useInterviewSlots";
 import { InterviewSlots } from "@/components/interview/SlotButtons";
 import { COHORT_INTERVIEW, flag } from "@/lib/flags";
@@ -556,6 +561,11 @@ export default function ThankYou() {
     successHapticFired.current = true;
     // Native-only; hapticNotification no-ops on web (see lib/haptics).
     void hapticNotification("success");
+    // Stage (spec 8.5): the line draws with the success sound and celebrate().
+    if (STAGE_ENABLED) {
+      playSound("success");
+      void celebrate();
+    }
   }, [order, notFound]);
 
   /* ── Countdown: respects custom thank you page settings ──
@@ -734,7 +744,7 @@ export default function ThankYou() {
           email: session ? "" : order?.guest_email || "",
           contact: session ? "" : order?.guest_phone || "",
         },
-        theme: { color: RAZORPAY_THEME_COLOR },
+        theme: { color: razorpayThemeColor() },
       };
 
       const rzp = new (window as any).Razorpay(options);
@@ -823,16 +833,23 @@ export default function ThankYou() {
   const thankYouThumb = order.offerings?.thankyou_thumbnail_url?.trim() || null;
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Cream celebration glow - pure CSS, no JS, no layout shift */}
-      <div className="pointer-events-none absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full opacity-[0.18] blur-[120px]"
-           style={{ background: "radial-gradient(circle, hsl(var(--cream)) 0%, transparent 60%)" }} />
+    <div className="ty-page min-h-screen bg-background relative overflow-hidden">
+      {/* Cream celebration glow - pure CSS, no JS, no layout shift. Not under
+          Stage: no blur over 20px, and the drawn line is the moment (spec 8.5). */}
+      {!STAGE_ENABLED && (
+        <div className="pointer-events-none absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full opacity-[0.18] blur-[120px]"
+             style={{ background: "radial-gradient(circle, hsl(var(--cream)) 0%, transparent 60%)" }} />
+      )}
 
       {/* Header */}
-      <header className="relative border-b border-border bg-[hsl(var(--surface))]/60 backdrop-blur-md">
+      <header className="ty-top relative border-b border-border bg-[hsl(var(--surface))]/60 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <Link to="/" aria-label="LevelUp Learning home" className="inline-flex items-center">
-            <LevelUpWordmark className="h-7 w-auto text-foreground" />
+            {STAGE_ENABLED ? (
+              <LevelUpMark className="!h-[28px] w-auto text-foreground" />
+            ) : (
+              <LevelUpWordmark className="h-7 w-auto text-foreground" />
+            )}
           </Link>
         </div>
       </header>
@@ -848,7 +865,10 @@ export default function ThankYou() {
           animate="show"
         >
           <motion.div variants={arrivalItem}>
-            {thankYouThumb ? (
+            {STAGE_ENABLED ? (
+              // Stage: the line draws itself, large (spec 12.1, thank-you row).
+              <LevelUpMark play={reduced ? "none" : "draw"} showWord={false} className="ty-mark" title="" />
+            ) : thankYouThumb ? (
               <img
                 src={thankYouThumb}
                 alt=""
@@ -866,10 +886,10 @@ export default function ThankYou() {
           </motion.div>
 
           <motion.div variants={arrivalItem} className="space-y-3">
-            <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--accent-emerald))]">
+            <p className="ty-eyebrow text-[11px] font-mono uppercase tracking-[0.22em] text-[hsl(var(--accent-emerald))]">
               Payment confirmed
             </p>
-            <h1 className="text-4xl sm:text-5xl font-bold text-foreground tracking-[-0.02em] leading-[1.05]">
+            <h1 className="ty-h1 text-4xl sm:text-5xl font-bold text-foreground tracking-[-0.02em] leading-[1.05]">
               {order.offerings?.thankyou_headline || "You're in."}
             </h1>
             {order.offerings?.thankyou_body ? (
@@ -879,7 +899,7 @@ export default function ThankYou() {
             ) : (
               <p className="mt-3 text-base sm:text-lg text-muted-foreground max-w-[52ch] mx-auto leading-relaxed">
                 Welcome to{" "}
-                <span className="text-[hsl(var(--cream))] font-medium font-['Instrument_Serif'] italic">
+                <span className="ty-title text-[hsl(var(--cream))] font-medium font-['Instrument_Serif'] italic">
                   {order.offerings?.title || "your program"}
                 </span>
                 . Your access is unlocked - start whenever you're ready.
@@ -975,7 +995,7 @@ export default function ThankYou() {
           {/* Action card - primary CTA gets full visual weight */}
           <div className="max-w-md mx-auto space-y-3">
             {isGuest && (
-              <div className="rounded-xl border border-border bg-[hsl(var(--surface))]/60 backdrop-blur-sm p-4 text-left space-y-1">
+              <div className="ty-guest rounded-xl border border-border bg-[hsl(var(--surface))]/60 backdrop-blur-sm p-4 text-left space-y-1">
                 <div className="flex items-center gap-2.5">
                   <Mail className="h-4 w-4 text-[hsl(var(--cream))]" />
                   <p className="text-sm text-foreground">
@@ -992,7 +1012,7 @@ export default function ThankYou() {
               disabled={loggingIn}
               variant="champagne"
               size="lg"
-              className="w-full h-14 text-base font-semibold hover:-translate-y-0.5"
+              className="ty-cta w-full h-14 text-base font-semibold hover:-translate-y-0.5"
             >
               {loggingIn ? (
                 <><Loader2 className="h-5 w-5 animate-spin mr-2" /> Signing you in&hellip;</>
@@ -1153,6 +1173,10 @@ export default function ThankYou() {
             </div>
           </>
         )}
+        {/* Optional: a phone-made account adds its email (also a sign-in). */}
+        <div className="mt-10">
+          <AddEmailPrompt />
+        </div>
       </main>
     </div>
   );

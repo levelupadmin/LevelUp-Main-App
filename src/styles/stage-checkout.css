@@ -1,0 +1,54 @@
+/* Checkout (/checkout/:offeringId) under Stage (spec 12.1, checkout row).
+   CheckoutPage keeps its layout and every payment rule; these rules restyle
+   it through co-* hook classes, and only when html[data-brand="stage"], so
+   the flag-off page is untouched. One Ember "Pay ₹X", filled blocks instead
+   of outlined boxes (spec 7.1), filled 52px inputs (spec 7.10), the price in
+   the display face. No blur anywhere (perf budget). */
+
+/* phones: the form is the page, not a card floating on it */
+html[data-brand="stage"] .co-card { border-color: transparent; box-shadow: none; border-radius: 22px; }
+@media (max-width: 639px) {
+  html[data-brand="stage"] .co-card { background: transparent; }
+  html[data-brand="stage"] .co-card > div { padding-left: 4px; padding-right: 4px; }
+}
+
+html[data-brand="stage"] .co-back { font-weight: 600; }
+html[data-brand="stage"] .co-thumb { border-radius: 14px; }
+html[data-brand="stage"] .co-title { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.025em; font-size: 22px; line-height: 1.15; }
+@media (min-width: 640px) {
+  html[data-brand="stage"] .co-title { font-size: 26px; }
+}
+
+/* section labels: Stage eyebrows; the receipt heading drops the old serif */
+html[data-brand="stage"] .co-page p.uppercase.tracking-wider,
+html[data-brand="stage"] .co-page h2.uppercase.tracking-wider {
+  font-family: var(--font-body); font-weight: 600; font-size: 11px; letter-spacing: .1em; color: hsl(var(--subtle-foreground));
+}
+html[data-brand="stage"] .co-page [class*="Instrument_Serif"] {
+  font-family: var(--font-display); font-style: normal; font-weight: 700; letter-spacing: -0.02em; font-size: 22px;
+}
+
+/* filled inputs, as on sign-in */
+html[data-brand="stage"] .co-page input:not([type="checkbox"]):not([type="radio"]) {
+  height: 52px; border-color: transparent; border-radius: 16px; background-color: hsl(var(--surface-2)); font-size: 16px;
+}
+html[data-brand="stage"] .co-page input:not([type="checkbox"]):not([type="radio"]):focus-visible {
+  outline: none; box-shadow: inset 0 0 0 2px hsl(var(--brand));
+}
+html[data-brand="stage"] .co-page button[role="combobox"] { height: 52px; border-color: transparent; border-radius: 16px; background-color: hsl(var(--surface-2)); }
+
+/* the total: the display face, figures that line up */
+html[data-brand="stage"] .co-total .tabular-nums { font-family: var(--font-display); font-weight: 700; font-size: 24px; letter-spacing: -0.03em; }
+html[data-brand="stage"] .co-total span:first-child { font-size: 16px; }
+
+/* the one Ember action */
+html[data-brand="stage"] .co-pay { height: 56px; border-radius: 16px; font: 640 17px/1 var(--font-body); letter-spacing: -0.005em; }
+
+/* blocks are filled, not outlined: the receipt rows, the desktop trust panel */
+html[data-brand="stage"] .co-page .border.border-border:not(input) { border-color: transparent; }
+html[data-brand="stage"] .co-page aside .bg-surface { border-radius: 22px; }
+
+/* the refund line: a quiet filled row, green only on the shield */
+html[data-brand="stage"] .co-page .guarantee { border-color: transparent; background-color: hsl(var(--surface-2)); color: hsl(var(--muted-foreground)); }
+html[data-brand="stage"] .co-page .guarantee svg { color: hsl(var(--success-text, var(--success))); }
+html[data-brand="stage"] .co-page .guarantee a { color: hsl(var(--foreground)); }

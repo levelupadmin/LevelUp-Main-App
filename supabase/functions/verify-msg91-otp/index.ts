@@ -69,6 +69,17 @@ interface Body {
 // entirely. Rotation = `supabase secrets set REVIEW_LOGIN_CODE=...`.
 const REVIEW_PHONE = "+918888777666";
 
+// Staging-only test login (the LevelUp LMS Supercharged redesign). When the
+// STAGING_TEST_LOGIN_CODE secret is set AND this function runs on a project
+// other than production, ANY +91 number can sign in (or sign up) with that
+// code instead of an MSG91 OTP, so the redesign can be tested with dummy
+// accounts and no SMS. Production never has the secret, and the ref check
+// keeps the path dead there even if it were set by mistake.
+const PRODUCTION_REF = "ivkvluezuiojovpotlyb";
+const STAGING_TEST_LOGIN_CODE = SUPABASE_URL.includes(PRODUCTION_REF)
+  ? undefined
+  : Deno.env.get("STAGING_TEST_LOGIN_CODE");
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -85,9 +96,13 @@ Deno.serve(async (req) => {
   const normPhone = e164(body.phone);
 
   // ─ 0. App Review demo login (reserved number + secret code) ─────────
-  const reviewMode = normPhone === REVIEW_PHONE && !!body.reviewCode;
+  const stagingTestMode =
+    !!STAGING_TEST_LOGIN_CODE && !!body.reviewCode && normPhone.startsWith("+91");
+  const reviewMode = (normPhone === REVIEW_PHONE && !!body.reviewCode) || stagingTestMode;
   if (reviewMode) {
-    const expected = Deno.env.get("REVIEW_LOGIN_CODE");
+    const expected = stagingTestMode
+      ? STAGING_TEST_LOGIN_CODE
+      : Deno.env.get("REVIEW_LOGIN_CODE");
     if (!expected || body.reviewCode !== expected) {
       return json({ error: "invalid_otp" }, 401);
     }

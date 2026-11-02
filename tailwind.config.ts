@@ -12,9 +12,12 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ['"Inter"', '-apple-system', 'system-ui', 'sans-serif'],
-        body: ['"Inter"', '-apple-system', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace'],
+        // Variables (design/stage/tokens/tailwind.stage.ts): src/styles/stage.css
+        // sets them to Inter / JetBrains Mono with the Stage flag off, so the old
+        // look holds, and to Bricolage Grotesque / Geist / Geist Mono with it on.
+        display: ["var(--font-display)"],
+        body: ["var(--font-body)"],
+        mono: ["var(--font-mono)"],
         serif: ['"Instrument Serif"', 'serif'],
       },
       fontSize: {
@@ -25,6 +28,15 @@ export default {
         'xl': ['24px', { lineHeight: '1.2' }],
         '2xl': ['32px', { lineHeight: '1.2' }],
         '3xl': ['48px', { lineHeight: '1.2' }],
+        // Stage type scale (spec section 5)
+        "stage-display": ["38px", { lineHeight: "1.02", letterSpacing: "-0.035em" }],
+        "stage-h1": ["30px", { lineHeight: "1.06", letterSpacing: "-0.035em" }],
+        "stage-h2": ["22px", { lineHeight: "1.15", letterSpacing: "-0.02em" }],
+        "stage-h3": ["17px", { lineHeight: "1.25", letterSpacing: "-0.01em" }],
+        "stage-body": ["15px", { lineHeight: "1.45" }],
+        "stage-small": ["13px", { lineHeight: "1.4" }],
+        "stage-micro": ["11px", { lineHeight: "1.3", letterSpacing: "0.1em" }],
+        "stage-count": ["56px", { lineHeight: "0.9", letterSpacing: "-0.03em" }],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -84,6 +96,31 @@ export default {
         // RoomThemeProvider, so these resolve outside a room too.
         "room-accent": "hsl(var(--room-accent))",
         "room-accent-text": "hsl(var(--room-accent-text))",
+        // Stage additions (design/stage/tokens/tailwind.stage.ts). `brand` is the
+        // one accent (Ember or Mono); never shadcn `accent`, which is the neutral
+        // hover fill here. Flag-off defaults live in src/styles/stage.css.
+        brand: {
+          DEFAULT: "hsl(var(--brand))",
+          foreground: "hsl(var(--brand-foreground))",
+          text: "hsl(var(--brand-text))",
+          line: "hsl(var(--brand-line))",
+        },
+        live: {
+          DEFAULT: "hsl(var(--live))",
+          foreground: "hsl(var(--live-foreground))",
+          text: "hsl(var(--live-text))",
+        },
+        "success-text": "hsl(var(--success-text))",
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          text: "hsl(var(--warning-text))",
+        },
+        line: {
+          DEFAULT: "hsl(var(--border))",
+          strong: "hsl(var(--border-hover))",
+        },
+        "surface-3": "hsl(var(--surface-3))",
+        subtle: "hsl(var(--subtle-foreground))",
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",
@@ -104,12 +141,16 @@ export default {
         },
       },
       borderRadius: {
-        sm: "6px",
-        md: "10px",
-        lg: "14px",
-        xl: "20px",
-        "2xl": "28px",
+        // Variables: the old 6/10/14/20/28 with the Stage flag off
+        // (src/styles/stage.css :root), Stage's 8/12/16/22/28 with it on.
+        sm: "var(--r-xs)",
+        md: "var(--r-sm)",
+        lg: "var(--r-md)",
+        xl: "var(--r-lg)",
+        "2xl": "var(--r-xl)",
         "3xl": "36px",
+        card: "var(--r-lg)",
+        button: "var(--r-md)",
       },
       spacing: {
         // Semantic spacing — use for page padding / section rhythm / tab-bar offset

@@ -1,0 +1,32 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-11-02T07:08:28.928Z",
+        "reason": "Stage brand pack choice: STAGE-BRAND-SPEC.md section 5 sets Geist for text (Bricolage Grotesque for headlines)"
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist mono",
+        "createdAt": "2026-11-02T07:08:28.943Z",
+        "reason": "Stage brand pack choice: STAGE-BRAND-SPEC.md section 5 sets Geist Mono for numbers and durations"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-11-02T07:08:28.957Z",
+        "reason": "Live app's pre-Stage type in src/index.css; predates the redesign, replaced under VITE_BRAND_STAGE and retired in spec stage S5"
+      },
+      {
+        "rule": "overused-font",
+        "value": "instrument serif",
+        "createdAt": "2026-11-02T07:08:28.971Z",
+        "reason": "Live app's pre-Stage display serif in src/index.css; predates the redesign, removed by Stage (spec 12.1: remove the serif greeting) and retired in S5"
+      }
+    ]
+  }
+}

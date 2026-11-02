@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { STAGE_ENABLED } from "@/lib/appearance";
 import { bootAnalytics } from "@/lib/analytics";
 import { DECISION_FLOW, flag } from "@/lib/flags";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
@@ -15,6 +16,7 @@ import RequireAuth from "@/components/guards/RequireAuth";
 import RequireRole from "@/components/guards/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
+import StagingBadge from "@/components/StagingBadge";
 import FloatingSupport from "@/components/FloatingSupport";
 import { UploadProvider } from "@/contexts/UploadContext";
 import UploadDock from "@/components/UploadDock";
@@ -38,6 +40,22 @@ import NotFoundPage from "@/pages/NotFoundPage";
 // course cards + hero carousel) doesn't ride along with the main bundle.
 const Home = lazy(() => import("@/pages/Home"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
+
+// Stage (VITE_BRAND_STAGE): the round-4 first open, frame, Home and Explore.
+// Lazy, so with the flag off none of it is ever fetched.
+const StageLogin = lazy(() => import("@/components/stage/firstopen/StageLogin"));
+const StageShell = lazy(() => import("@/components/stage/StageShell"));
+const StageHome = lazy(() => import("@/components/stage/home/StageHome"));
+const StageExplore = lazy(() => import("@/components/stage/home/StageExplore"));
+const StageLearn = lazy(() => import("@/components/stage/learn/StageLearn"));
+
+/** /login and /signup: the Stage first open, or the page as it was. `?classic=1`
+ *  keeps the old page under Stage (email sign-in, numbers outside India). */
+const LoginEntry = ({ legacy }: { legacy: ReactNode }) => {
+  const { search } = useLocation();
+  if (!STAGE_ENABLED || new URLSearchParams(search).has("classic")) return <>{legacy}</>;
+  return <StageLogin />;
+};
 
 // Lazy-loaded student pages
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
@@ -71,37 +89,24 @@ const AdminOfferings = lazy(() => import("@/pages/admin/AdminOfferings"));
 const AdminOfferingEditor = lazy(() => import("@/pages/admin/AdminOfferingEditor"));
 const AdminEnrolments = lazy(() => import("@/pages/admin/AdminEnrolments"));
 const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
-const AdminCoupons = lazy(() => import("@/pages/admin/AdminCoupons"));
-const AdminHeroSlides = lazy(() => import("@/pages/admin/AdminHeroSlides"));
 const AdminSchedule = lazy(() => import("@/pages/admin/AdminSchedule"));
-const AdminEvents = lazy(() => import("@/pages/admin/AdminEvents"));
 const AdminRevenue = lazy(() => import("@/pages/admin/AdminRevenue"));
 const AdminAuditLogs = lazy(() => import("@/pages/admin/AdminAuditLogs"));
 // Analytics merged into Dashboard
 // Cohorts removed per product decision
 const AdminCoursePreview = lazy(() => import("@/pages/admin/AdminCoursePreview"));
 const AdminChapterPreview = lazy(() => import("@/pages/admin/AdminChapterPreview"));
-const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
 // Refunds merged into Revenue page
-const AdminCertificateTemplateEditor = lazy(() => import("@/pages/admin/AdminCertificateTemplateEditor"));
-const AdminCourseReviews = lazy(() => import("@/pages/admin/AdminCourseReviews"));
-const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
 const AdminLegacyMappings = lazy(() => import("@/pages/admin/AdminLegacyMappings"));
 const AdminApi = lazy(() => import("@/pages/admin/AdminApi"));
-const AdminDocs = lazy(() => import("@/pages/admin/AdminDocs"));
 const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
-const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
 const AdminApplications = lazy(() => import("@/pages/admin/AdminApplications"));
 const ApplicationStatus = lazy(() => import("@/pages/ApplicationStatus"));
-const AdminQuizEditor = lazy(() => import("@/pages/admin/AdminQuizEditor"));
-const AdminRoles = lazy(() => import("@/pages/admin/AdminRoles"));
 const AdminAnalyticsSettings = lazy(() => import("@/pages/admin/AdminAnalyticsSettings"));
-const AdminCommunityAnalytics = lazy(() => import("@/pages/admin/AdminCommunityAnalytics"));
 const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
 const AdminCohortWeeks = lazy(() => import("@/pages/admin/AdminCohortWeeks"));
 const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmissions"));
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
-const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 // Interactive claim for an application provisioning parked (`pending_claim`).
 // Authenticated by definition: the claimant is holding a session when the row
@@ -273,8 +278,8 @@ const AppContent = () => {
             <Routes>
               {/* Public */}
               <Route path="/" element={<RootRedirect />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
+              <Route path="/login" element={<LoginEntry legacy={<Login />} />} />
+              <Route path="/signup" element={<LoginEntry legacy={<Signup />} />} />
               {/* Full-bleed post-OTP onboarding, self-guards, renders OUTSIDE
                   the StudentLayout shell (no bottom nav). */}
               <Route path="/onboarding" element={<Onboarding />} />
@@ -308,9 +313,10 @@ const AppContent = () => {
               <Route path="/sessions" element={<Navigate to="/learn?seg=live" replace />} />
 
               {/* ─── Student routes share a single persistent layout ─── */}
-              <Route element={<RequireAuth><StudentLayout /></RequireAuth>}>
-                <Route path="/home" element={<Home />} />
-                <Route path="/learn" element={<Learn />} />
+              <Route element={<RequireAuth>{STAGE_ENABLED ? <StageShell /> : <StudentLayout />}</RequireAuth>}>
+                <Route path="/home" element={STAGE_ENABLED ? <StageHome /> : <Home />} />
+                {STAGE_ENABLED && <Route path="/explore" element={<StageExplore />} />}
+                <Route path="/learn" element={STAGE_ENABLED ? <StageLearn /> : <Learn />} />
                 <Route path="/courses/:courseId" element={<CourseDetail />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/community" element={<CommunityComingSoon />} />
@@ -400,39 +406,26 @@ const AppContent = () => {
               {/* ─── Admin routes share a single persistent admin layout ─── */}
               <Route element={<RequireAuth><RequireRole role="admin"><AdminLayout /></RequireRole></RequireAuth>}>
                 <Route path="/admin" element={<AdminDashboard />} />
-                <Route path="/admin/hero-slides" element={<AdminHeroSlides />} />
                 <Route path="/admin/courses" element={<AdminCourses />} />
                 <Route path="/admin/courses/:courseId/edit" element={<AdminCourseEditor />} />
                 <Route path="/admin/courses/:courseId/curriculum" element={<AdminCourseCurriculum />} />
                 <Route path="/admin/courses/:courseId/preview" element={<AdminCoursePreview />} />
                 <Route path="/admin/courses/:courseId/preview/:chapterId" element={<AdminChapterPreview />} />
-                <Route path="/admin/courses/:courseId/reviews" element={<AdminCourseReviews />} />
                 <Route path="/admin/offerings" element={<AdminOfferings />} />
                 <Route path="/admin/offerings/:offeringId/edit" element={<AdminOfferingEditor />} />
                 <Route path="/admin/schedule" element={<AdminSchedule />} />
-                <Route path="/admin/events" element={<AdminEvents />} />
                 <Route path="/admin/enrolments" element={<AdminEnrolments />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
-                <Route path="/admin/coupons" element={<AdminCoupons />} />
                 <Route path="/admin/revenue" element={<AdminRevenue />} />
                 <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
-                <Route path="/admin/certificates" element={<AdminCertificates />} />
-                <Route path="/admin/courses/:courseId/certificate" element={<AdminCertificateTemplateEditor />} />
-                <Route path="/admin/announcements" element={<AdminAnnouncements />} />
                 <Route path="/admin/email-templates" element={<AdminEmailTemplates />} />
-                <Route path="/admin/email-campaigns" element={<AdminEmailCampaigns />} />
                 <Route path="/admin/applications" element={<AdminApplications />} />
-                <Route path="/admin/courses/:courseId/chapters/:chapterId/quiz" element={<AdminQuizEditor />} />
-                <Route path="/admin/roles" element={<AdminRoles />} />
                 <Route path="/admin/analytics-settings" element={<AdminAnalyticsSettings />} />
-                <Route path="/admin/community" element={<AdminCommunityAnalytics />} />
                 <Route path="/admin/legacy-mappings" element={<AdminLegacyMappings />} />
                 <Route path="/admin/api" element={<AdminApi />} />
-                <Route path="/admin/docs" element={<AdminDocs />} />
                 <Route path="/admin/cohorts" element={<AdminCohorts />} />
                 <Route path="/admin/offerings/:offeringId/cohort-weeks" element={<AdminCohortWeeks />} />
                 <Route path="/admin/cohort-submissions" element={<AdminCohortSubmissions />} />
-                <Route path="/admin/notify-requests" element={<AdminNotifyRequests />} />
                 <Route path="/admin/cohorts/:batchId/attendance" element={<AdminCohortAttendance />} />
               </Route>
 
@@ -457,6 +450,7 @@ const AppContent = () => {
           (this app has no next-themes provider). */}
       <SonnerToaster theme="dark" />
       <OfflineBanner />
+      <StagingBadge />
     </AuthProvider>
   );
 };

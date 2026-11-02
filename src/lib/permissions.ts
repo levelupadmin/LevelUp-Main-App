@@ -1,8 +1,8 @@
 export const ROLE_ROUTE_MAP: Record<string, string[]> = {
   owner: ["*"],
   admin: ["*"],
-  author: ["/admin", "/admin/courses", "/admin/offerings", "/admin/hero-slides"],
-  support: ["/admin", "/admin/users", "/admin/enrolments", "/admin/applications", "/admin/certificates"],
+  author: ["/admin", "/admin/courses", "/admin/offerings"],
+  support: ["/admin", "/admin/users", "/admin/enrolments", "/admin/applications"],
   instructor: ["/admin", "/admin/schedule", "/admin/cohorts"],
 };
 

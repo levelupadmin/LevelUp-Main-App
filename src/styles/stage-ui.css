@@ -1,0 +1,77 @@
+/* ==========================================================================
+   Stage UI: the shared layer under the rebuilt screens (first open, the
+   shell, Home, Explore). Their CSS is ported from the round-4 mockups in
+   15_LMS_Experience_Lab, which name colours --bg, --surface, --brand...
+   Several of those names are already HSL triplets in this app, so the ported
+   rules read --s-* aliases instead, defined here from the app's own tokens.
+   Ember and Mono therefore keep working through data-accent on <html>.
+   Only mounted under VITE_BRAND_STAGE (the components that use it are).
+   ========================================================================== */
+.stage-ui {
+  --s-bg: hsl(var(--background));
+  --s-surface: hsl(var(--surface));
+  --s-surface-2: hsl(var(--surface-2));
+  --s-surface-3: hsl(var(--surface-3));
+  --s-line: hsl(var(--border));
+  --s-line-strong: hsl(var(--border-hover));
+  --s-text: hsl(var(--foreground));
+  --s-text-2: hsl(var(--muted-foreground));
+  --s-text-3: hsl(var(--subtle-foreground));
+  --s-wall: #0b0c0e;
+  --s-live: hsl(var(--live));
+  --s-live-text: hsl(var(--live-text));
+  --s-success: hsl(var(--success));
+  --s-warning: hsl(var(--warning));
+  --s-brand: hsl(var(--brand));
+  --s-brand-ink: hsl(var(--brand-foreground));
+  --s-brand-text: hsl(var(--brand-text));
+  --s-brand-line: hsl(var(--brand-line));
+  --s-brand-soft: hsl(var(--brand) / 0.16);
+  --s-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --s-ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --s-sat: env(safe-area-inset-top, 0px);
+  --s-sab: env(safe-area-inset-bottom, 0px);
+  --s-r-chip: 12px;
+  --s-r-btn: 16px;
+  --s-r-card: 22px;
+  --s-r-next: 28px;
+  color: var(--s-text);
+  font: 400 15px/1.45 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.stage-ui button { font: inherit; color: inherit; }
+.stage-ui .ic { width: 20px; height: 20px; flex: none; }
+.stage-ui .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.stage-ui .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.stage-ui :focus-visible { outline: 2px solid var(--s-brand-text); outline-offset: 2px; }
+
+/* Buttons (spec 7.1), the mockup's .btn */
+.stage-ui .btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 52px; padding: 0 22px; border: 0; border-radius: var(--s-r-btn);
+  background: var(--s-brand); color: var(--s-brand-ink); font: 640 16px/1 var(--font-body); letter-spacing: -0.005em;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: transform .18s var(--s-ease-out), background-color .2s, opacity .2s;
+}
+.stage-ui .btn:active { transform: scale(.97); }
+.stage-ui .btn .ic { width: 18px; height: 18px; }
+.stage-ui .btn--block { width: 100%; }
+.stage-ui .btn--md { height: 44px; font-size: 15px; padding: 0 18px; }
+.stage-ui .btn--sm { height: 36px; font-size: 14px; padding: 0 14px; border-radius: 12px; font-weight: 620; }
+.stage-ui .btn--secondary { background: var(--s-surface-3); color: var(--s-text); }
+.stage-ui .btn[disabled] { background: var(--s-surface-3); color: var(--s-text-3); cursor: default; }
+.stage-ui .btn[disabled]:active { transform: none; }
+.stage-ui .btn.is-busy { pointer-events: none; }
+
+/* Small caps label */
+.stage-ui .eyebrow { font: 600 11px/1.3 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--s-text-3); }
+
+/* The live dot */
+.stage-ui .pulse { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.stage-ui .pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: currentColor; animation: stagePing 1.5s var(--s-ease-out) infinite; }
+@keyframes stagePing { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(2.4); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-ui *, .stage-ui *::before, .stage-ui *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

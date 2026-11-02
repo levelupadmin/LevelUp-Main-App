@@ -1,0 +1,29 @@
+/* The thank-you page (/thank-you/:paymentOrderId) under Stage (spec 12.1,
+   thank-you row; 8.5 the line drawing itself). ThankYou keeps its order,
+   polling, sign-in and interview logic; these rules restyle it through ty-*
+   hook classes, and only when html[data-brand="stage"]. Solid surfaces (no
+   blur), the display face, one Ember action. */
+
+html[data-brand="stage"] .ty-top { background-color: hsl(var(--background)); backdrop-filter: none; -webkit-backdrop-filter: none; border-color: transparent; }
+
+/* the line, drawn large: the moment itself */
+html[data-brand="stage"] .ty-mark { display: block; width: 132px; height: auto; margin: 8px auto 0; color: hsl(var(--foreground)); }
+@media (min-width: 640px) {
+  html[data-brand="stage"] .ty-mark { width: 168px; }
+}
+
+html[data-brand="stage"] .ty-eyebrow { font-family: var(--font-body); font-weight: 650; font-size: 12px; letter-spacing: .1em; color: hsl(var(--success-text, var(--success))); }
+html[data-brand="stage"] .ty-h1 { font-family: var(--font-display); font-weight: 720; letter-spacing: -0.035em; font-size: 44px; line-height: 1.02; }
+@media (min-width: 640px) {
+  html[data-brand="stage"] .ty-h1 { font-size: 60px; }
+}
+html[data-brand="stage"] .ty-title { font-family: var(--font-body); font-style: normal; font-weight: 600; color: hsl(var(--foreground)); }
+
+/* filled blocks, no blur, the one Ember action */
+html[data-brand="stage"] .ty-guest { border-color: transparent; background-color: hsl(var(--surface)); backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 18px; }
+html[data-brand="stage"] .ty-cta { height: 56px; border-radius: 16px; font: 640 17px/1 var(--font-body); }
+html[data-brand="stage"] .ty-cta:hover { transform: none; }
+
+/* the rest of the receipt: Stage eyebrows, filled rows */
+html[data-brand="stage"] .ty-page .font-mono.uppercase { font-family: var(--font-body); letter-spacing: .08em; }
+html[data-brand="stage"] .ty-page .rounded-xl.border.border-border { border-color: transparent; background-color: hsl(var(--surface)); }

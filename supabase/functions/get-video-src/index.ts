@@ -17,6 +17,8 @@ function corsFor(req: Request) {
   const allowed =
     !!origin &&
     (origin.endsWith("leveluplearning.in") ||
+      // Extra web origins: set only on the staging project, unset in production.
+      (Deno.env.get("EXTRA_ALLOWED_ORIGINS") ?? "").split(",").map((o) => o.trim()).includes(origin) ||
       origin.startsWith("capacitor://") ||
       origin.startsWith("http://localhost") ||
       origin.startsWith("https://localhost"));

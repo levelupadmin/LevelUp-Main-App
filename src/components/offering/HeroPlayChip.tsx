@@ -27,15 +27,15 @@ export default function HeroPlayChip({ onClick, label = "Watch lesson 1" }: Hero
         onClick();
       }}
       aria-label={label}
-      className="group pressable pointer-events-auto absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 outline-none"
+      className="hero-play group pressable pointer-events-auto absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 outline-none"
     >
-      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] shadow-[0_20px_45px_-12px_hsl(var(--cream)/0.65)] ring-1 ring-white/20 transition-transform duration-300 group-hover:scale-110 group-focus-visible:scale-110 sm:h-20 sm:w-20">
+      <span className="hero-play-disc flex h-16 w-16 items-center justify-center rounded-full bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] shadow-[0_20px_45px_-12px_hsl(var(--cream)/0.65)] ring-1 ring-white/20 transition-transform duration-300 group-hover:scale-110 group-focus-visible:scale-110 sm:h-20 sm:w-20">
         <Play className="ml-1 h-6 w-6 fill-current sm:h-8 sm:w-8" />
       </span>
       {/* Solid scrim instead of backdrop-blur (perf budget bans backdrop-filter
           — it's a compositing tax in the Android WebView). Bumped to /70 so the
           label stays legible on busy artwork without the blur. */}
-      <span className="rounded-full bg-black/70 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-[hsl(var(--cream))] sm:text-xs">
+      <span className="hero-play-label rounded-full bg-black/70 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-[hsl(var(--cream))] sm:text-xs">
         {label}
       </span>
     </button>

@@ -4816,6 +4816,7 @@ export type Database = {
           instructor_title: string | null
           intake_opens_at: string | null
           is_public: boolean | null
+          landing: Json | null
           meta_pixel_id: string | null
           mrp_inr: number | null
           page_coupon_code: string | null
@@ -4876,6 +4877,7 @@ export type Database = {
           instructor_title?: string | null
           intake_opens_at?: string | null
           is_public?: boolean | null
+          landing?: Json | null
           meta_pixel_id?: string | null
           mrp_inr?: number | null
           page_coupon_code?: string | null
@@ -4936,6 +4938,7 @@ export type Database = {
           instructor_title?: string | null
           intake_opens_at?: string | null
           is_public?: boolean | null
+          landing?: Json | null
           meta_pixel_id?: string | null
           mrp_inr?: number | null
           page_coupon_code?: string | null

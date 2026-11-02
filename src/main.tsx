@@ -2,6 +2,13 @@ import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
 import App from "./App.tsx";
 import "./index.css";
+// Stage brand (design/stage). Both files are inert unless initAppearance()
+// below puts data-brand="stage" on <html>: the tokens are scoped to that
+// attribute, and the font faces are only named by Stage's --font-* variables.
+import "./styles/stage-fonts.css";
+import "./styles/stage.css";
+import { initAppearance, STAGE_ENABLED } from "./lib/appearance";
+import { installAudioUnlock } from "./lib/sound";
 import { initSentry } from "./lib/sentry";
 import { durationsMs } from "./lib/motion";
 import {
@@ -32,6 +39,11 @@ if (isInstallNudgeEnabled()) registerInstallCapture();
 // off the critical paint path) and no-ops if VITE_SENTRY_DSN isn't set. Errors
 // thrown before the SDK finishes loading are queued and flushed on init.
 initSentry();
+
+// Before the first render, so the first painted frame is already on-brand.
+// Flag off: sets no attributes and installs nothing.
+initAppearance();
+if (STAGE_ENABLED) installAudioUnlock();
 
 const rootElement = document.getElementById("root")!;
 

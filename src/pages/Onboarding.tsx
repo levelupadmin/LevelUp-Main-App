@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,15 +11,24 @@ import { CraftPicker } from "@/components/auth/CraftPicker";
 import { Reveal } from "@/components/motion/Reveal";
 import { toast } from "@/lib/toast";
 import { hapticImpact } from "@/lib/haptics";
+import { STAGE_ENABLED } from "@/lib/appearance";
+
+// Its own chunk, so the flag-off build never loads the Stage view or its CSS.
+const loadStageOnboarding = () => import("@/components/stage/onboarding/StageOnboarding");
+const StageOnboarding = lazy(loadStageOnboarding);
+if (STAGE_ENABLED) void loadStageOnboarding();
 
 // Post-OTP onboarding. Phone-first auth means a brand-new account lands here
 // with only a phone number on file, so this page is where we collect the
 // name + email (step 1, only when missing) and the craft interests (step 2)
 // before dropping the student on /home.
 //
-// Routing contract (wired in Login.tsx / Signup.tsx):
-//   verify success → /onboarding   when users.craft_interests is empty
+// Routing contract (wired in Login.tsx / StageLogin.tsx / Signup.tsx):
+//   verify success → /onboarding   when users.craft_interests is NULL (never asked)
 //                  → /home         otherwise
+// The craft question is asked ONCE. The moment the crafts step shows, a NULL
+// craft_interests becomes an empty list, so skipping, closing the app or
+// picking nothing all count as asked, and no later sign-in shows it again.
 // This page itself is the safety net: if it's reached by an already-complete
 // account it bounces straight to /home, and it re-derives which steps are
 // actually needed from the live profile so a half-finished onboarding resumes
@@ -54,6 +63,9 @@ const Onboarding = () => {
   const [crafts, setCrafts] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [guardChecked, setGuardChecked] = useState(false);
+  // Already asked their crafts on an earlier visit (craft_interests not NULL):
+  // finishing the profile step then goes straight home.
+  const [askedBefore, setAskedBefore] = useState(false);
 
   // Seed the inputs from whatever the profile already has, but never with the
   // synthetic placeholders the signup path writes, or the user would have to
@@ -65,9 +77,9 @@ const Onboarding = () => {
     if (mail && !mail.endsWith("@phone.leveluplearning.in")) setEmail(mail);
   }, [profile, user]);
 
-  // Guard + step selection. If the account already has craft_interests AND a
-  // complete profile, there's nothing to do here → /home. Otherwise pick the
-  // first incomplete step.
+  // Guard + step selection. If the account has already been asked its crafts
+  // AND has a complete profile, there's nothing to do here → /home. Otherwise
+  // pick the first incomplete step.
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -82,13 +94,14 @@ const Onboarding = () => {
         .eq("id", user.id)
         .single();
       if (cancelled) return;
+      const asked = data?.craft_interests != null;
       const existing = (data?.craft_interests ?? []).filter(Boolean);
-      const alreadyHasCrafts = existing.length > 0;
-      if (alreadyHasCrafts && !needsProfile) {
+      if (asked && !needsProfile) {
         navigate("/home", { replace: true });
         return;
       }
-      if (alreadyHasCrafts) setCrafts(existing);
+      if (existing.length > 0) setCrafts(existing);
+      setAskedBefore(asked);
       setStep(needsProfile ? "profile" : "crafts");
       setGuardChecked(true);
     })();
@@ -97,6 +110,21 @@ const Onboarding = () => {
     };
     // hasCrafts intentionally omitted; derived inside the effect from a fresh fetch.
   }, [authLoading, user, needsProfile, navigate]);
+
+  // Mark the craft question as asked the moment it shows (NULL → empty list),
+  // so closing the app here doesn't bring it back on the next sign-in. The
+  // `is null` filter never overwrites picks saved on another device.
+  useEffect(() => {
+    if (step !== "crafts" || !guardChecked || askedBefore || !user) return;
+    void supabase
+      .from("users")
+      .update({ craft_interests: [] })
+      .eq("id", user.id)
+      .is("craft_interests", null)
+      .then(({ error }) => {
+        if (!error) setAskedBefore(true);
+      });
+  }, [step, guardChecked, askedBefore, user]);
 
   if (authLoading || !user || !guardChecked) {
     return (
@@ -108,15 +136,33 @@ const Onboarding = () => {
 
   const nameValid = fullName.trim().length >= 2;
   const emailValid = EMAIL_RE.test(email.trim());
-  const profileValid = nameValid && emailValid;
+  // Email is optional (founder, 2026-11-02): a phone account can add it later.
+  const emailBlank = email.trim() === "";
+  const profileValid = nameValid && (emailBlank || emailValid);
 
   const handleProfileNext = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profileValid) {
-      toast.error("Add your name and a valid email to continue.");
+      toast.error(nameValid ? "That email doesn't look right. Fix it, or leave it empty." : "Add your name to continue.");
       return;
     }
     setSaving(true);
+    if (emailBlank) {
+      // Name only. The users RLS lets a student change their own name.
+      const { error: nameErr } = await supabase.from("users").update({ full_name: fullName.trim() }).eq("id", user!.id);
+      setSaving(false);
+      if (nameErr) {
+        toast.error("Couldn't save your details. Please try again.");
+        return;
+      }
+      hapticImpact("light");
+      if (askedBefore) {
+        navigate("/home", { replace: true });
+        return;
+      }
+      setStep("crafts");
+      return;
+    }
     // Identity write goes through a SECURITY DEFINER RPC: the RLS freeze on
     // users.email (anti-entitlement-hijack) rejects a plain update() of the
     // phone-signup placeholder, which stranded every phone-first user here.
@@ -142,6 +188,10 @@ const Onboarding = () => {
       return;
     }
     hapticImpact("light");
+    if (askedBefore) {
+      navigate("/home", { replace: true });
+      return;
+    }
     setStep("crafts");
   };
 
@@ -170,14 +220,36 @@ const Onboarding = () => {
   const totalSteps = needsProfile ? 2 : 1;
   const displayStepNum = needsProfile ? stepNum : 1;
 
+  if (STAGE_ENABLED) {
+    return (
+      <Suspense fallback={<div className="min-h-[100dvh] bg-background" />}>
+        <StageOnboarding
+          step={step}
+          stepNum={displayStepNum}
+          totalSteps={totalSteps}
+          saving={saving}
+          fullName={fullName}
+          setFullName={setFullName}
+          email={email}
+          setEmail={setEmail}
+          profileValid={profileValid}
+          onProfileNext={handleProfileNext}
+          crafts={crafts}
+          toggleCraft={toggleCraft}
+          onFinish={finishOnboarding}
+        />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="min-h-[100dvh] bg-canvas flex flex-col safe-top safe-bottom">
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 pt-5 sm:px-8">
         <LevelUpWordmark className="h-7 w-auto text-foreground" />
         {step === "crafts" && (
-          // Let returning-ish users skip craft selection without blocking them
-          // on /home access. Their craft_interests just stay empty.
+          // Skip saves an empty list, which counts as asked: they go to /home
+          // and no later sign-in brings them back here.
           <button
             type="button"
             onClick={finishOnboarding}
@@ -231,7 +303,7 @@ const Onboarding = () => {
 
                   <div className="space-y-1.5">
                     <Label htmlFor="ob-email" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                      Email
+                      Email (optional)
                     </Label>
                     <div className="relative">
                       <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -242,7 +314,6 @@ const Onboarding = () => {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         autoComplete="email"
-                        required
                         className="h-12 pl-10 text-base bg-surface border-border focus:border-foreground rounded-xl"
                       />
                     </div>

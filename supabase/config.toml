@@ -54,6 +54,12 @@ project_id = "twqagwleffjggoemzfqs"
   # login is simply off. Phone login is unaffected either way.
   [functions.verify-email-otp]
     verify_jwt = false
+  # checkout-email-identity: checkout sign-in for buyers outside India (email
+  # code instead of SMS). Unauthenticated by definition, like the two above: the
+  # buyer has no session yet. Codes are hashed under a scoped key, guesses spend
+  # a per-address budget, and requests are capped per IP. See its index.ts.
+  [functions.checkout-email-identity]
+    verify_jwt = false
   [functions.register-for-event]
     verify_jwt = true
   # reconcile-funnel-stage: a normal client-authenticated invoke (reads the
@@ -240,3 +246,12 @@ project_id = "twqagwleffjggoemzfqs"
   # this public handler must own the reachability/rate-limit boundary.
   [functions.validate-coupon]
     verify_jwt = false
+
+  # luca-calendar is pinned to what production runs today (verify_jwt = true,
+  # checked 2026-10-30), not to what its header asks for. The header and the
+  # LUCA branch's config.toml want false, because calendar apps cannot send a
+  # JWT and the cal_token in the query string is the credential. With true,
+  # the gateway answers 401 to every calendar subscription. Flip this only as
+  # part of the LUCA decision, in its own change.
+  [functions.luca-calendar]
+    verify_jwt = true

@@ -9,7 +9,7 @@ import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import { useToast } from "@/hooks/use-toast";
 import { toast as appToast } from "@/lib/toast";
 import { isNative } from "@/lib/platform";
-import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import { razorpayThemeColor } from "@/lib/brand";
 
 interface EventsData {
   events: any[];
@@ -179,7 +179,7 @@ const UpcomingEvents = () => {
             email: profile?.email || "",
             name: profile?.full_name || "",
           },
-          theme: { color: RAZORPAY_THEME_COLOR },
+          theme: { color: razorpayThemeColor() },
         };
         if (!(window as any).Razorpay) {
           toast({ title: "Payment unavailable", description: "Payment system is loading. Please try again in a moment.", variant: "destructive" });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
@@ -33,6 +33,10 @@ import AccountHub from "@/components/profile/AccountHub";
 import InvoiceDetailSheet, { type InvoiceSheetData } from "@/components/profile/InvoiceDetailSheet";
 import { SurfaceCard } from "@/components/patterns/SurfaceCard";
 import { ArtworkImage } from "@/components/media/ArtworkImage";
+import { STAGE_ENABLED } from "@/lib/appearance";
+
+// Its own chunk (with the profile restyle CSS), so the flag-off build never loads it.
+const StageAppearance = lazy(() => import("@/components/stage/profile/StageAppearance"));
 
 /** Synthetic email domain minted for OTP-only (phone) accounts. */
 const SYNTHETIC_EMAIL_DOMAIN = "@phone.leveluplearning.in";
@@ -553,7 +557,7 @@ const ProfilePage = () => {
     // the pill's right edge at 360/375. Extra bottom padding pushes those rows
     // clear at scroll-end. Desktop is unaffected: the pill sits far right of the
     // narrow max-w-2xl column, so no clearance is needed (md:pb-0).
-    <div className="space-y-8 max-w-2xl pb-24 md:pb-0">
+    <div className="pf-page space-y-8 max-w-2xl pb-24 md:pb-0">
       {/* ── Revolut-style account hub: identity, quick tiles, grouped menu ── */}
       <AccountHub
         name={displayProfile?.full_name ?? ""}
@@ -572,6 +576,13 @@ const ProfilePage = () => {
         onNotifications={() => scrollTo(notificationsRef)}
         onDeleteAccount={() => setDeleteOpen(true)}
       />
+
+      {/* Stage: Profile > Appearance (accent, theme, sound). */}
+      {STAGE_ENABLED && (
+        <Suspense fallback={null}>
+          <StageAppearance />
+        </Suspense>
+      )}
 
       {/* Edit profile (opened from the hub) */}
       <div ref={editRef}>

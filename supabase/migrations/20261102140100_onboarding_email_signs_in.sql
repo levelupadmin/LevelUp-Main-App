@@ -1,0 +1,13 @@
+-- Intentionally a no-op on any database that hasn't run it yet.
+--
+-- The first version of this file (commit 2be2887) made set_onboarding_profile
+-- move the sign-in email (auth.users.email) to an address the student typed,
+-- with nothing confirming the address is theirs. 20261102150000 takes that
+-- back. Shipping both would leave a window between the two files (db push
+-- commits each file on its own) in which a typed address becomes a sign-in, so
+-- this file does nothing. Staging ran the first version; 20261102150000 put
+-- staging back the same way.
+--
+-- When the app can confirm a new address with a code, the sign-in move comes
+-- back in a new migration, not here.
+select 1;

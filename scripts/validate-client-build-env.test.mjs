@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   PRODUCTION_SUPABASE_REF,
   PRODUCTION_SUPABASE_URL,
+  STAGING_SUPABASE_REF,
+  STAGING_SUPABASE_URL,
+  STAGING_VERCEL_PROJECT_ID,
   validateClientBuildEnvironment,
 } from "./validate-client-build-env.mjs";
 
@@ -58,6 +61,47 @@ for (const [label, mutate] of [
     assert.throws(() => validateClientBuildEnvironment(environment));
   });
 }
+
+const stagingEnvironment = (vercelEnv) => ({
+  ...validEnvironment(),
+  VITE_SUPABASE_PROJECT_ID: STAGING_SUPABASE_REF,
+  VITE_SUPABASE_URL: STAGING_SUPABASE_URL,
+  ...(vercelEnv ? { VERCEL_ENV: vercelEnv } : {}),
+});
+
+test("accepts the staging endpoint on a Vercel preview build", () => {
+  assert.equal(
+    validateClientBuildEnvironment(stagingEnvironment("preview")).projectRef,
+    STAGING_SUPABASE_REF,
+  );
+});
+
+test("accepts the staging endpoint on a production build of the levelup-staging project", () => {
+  const environment = stagingEnvironment("production");
+  environment.VERCEL_PROJECT_ID = STAGING_VERCEL_PROJECT_ID;
+  assert.equal(validateClientBuildEnvironment(environment).projectRef, STAGING_SUPABASE_REF);
+});
+
+test("rejects the staging endpoint on a production build of any other project", () => {
+  const environment = stagingEnvironment("production");
+  environment.VERCEL_PROJECT_ID = "prj_live_app_project";
+  assert.throws(() => validateClientBuildEnvironment(environment));
+});
+
+for (const [label, vercelEnv] of [
+  ["a production deploy", "production"],
+  ["a local or native build", undefined],
+]) {
+  test(`rejects the staging endpoint on ${label}`, () => {
+    assert.throws(() => validateClientBuildEnvironment(stagingEnvironment(vercelEnv)));
+  });
+}
+
+test("rejects a staging URL paired with the production project id", () => {
+  const environment = stagingEnvironment("preview");
+  environment.VITE_SUPABASE_PROJECT_ID = PRODUCTION_SUPABASE_REF;
+  assert.throws(() => validateClientBuildEnvironment(environment));
+});
 
 test("a rejection never echoes credential material", () => {
   const environment = validEnvironment();

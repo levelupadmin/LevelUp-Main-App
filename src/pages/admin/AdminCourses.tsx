@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe, Star, Copy, Loader2 } from "lucide-react";
+import { Plus, Search, Eye, Pencil, Trash2, MoreVertical, Globe, Copy, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -45,8 +45,6 @@ interface CourseCard {
   status: string;
   show_on_browse: boolean;
   chapter_count: number;
-  avg_rating: number | null;
-  total_reviews: number;
 }
 
 /* ────────────────────────────────────────────────── */
@@ -112,23 +110,11 @@ const AdminCourses = () => {
       });
     }
 
-    // Fetch course rating stats
-    const { data: ratingStats } = await (supabase as any)
-      .from("course_rating_stats")
-      .select("course_id, avg_rating, total_reviews")
-      .in("course_id", courseIds);
-    const ratingMap: Record<string, { avg_rating: number; total_reviews: number }> = {};
-    (ratingStats || []).forEach((r: any) => {
-      ratingMap[r.course_id] = { avg_rating: r.avg_rating, total_reviews: r.total_reviews };
-    });
-
     setCourses(
       data.map((c: any) => ({
         ...c,
         show_on_browse: c.show_on_browse ?? true,
         chapter_count: chapterCounts[c.id] || 0,
-        avg_rating: ratingMap[c.id]?.avg_rating ?? null,
-        total_reviews: ratingMap[c.id]?.total_reviews ?? 0,
       }))
     );
     setLoading(false);
@@ -356,7 +342,6 @@ const AdminCourses = () => {
                     onPreview={() => navigate(`/admin/courses/${c.id}/preview`)}
                     onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
-                    onReviews={() => navigate(`/admin/courses/${c.id}/reviews`)}
                     onDuplicate={() => openDuplicate(c)}
                   />
                 ))}
@@ -382,7 +367,6 @@ const AdminCourses = () => {
                     onPreview={() => navigate(`/admin/courses/${c.id}/preview`)}
                     onDelete={() => openDeleteDialog(c.id)}
                     onToggleBrowse={() => toggleBrowse(c.id, c.show_on_browse)}
-                    onReviews={() => navigate(`/admin/courses/${c.id}/reviews`)}
                     onDuplicate={() => openDuplicate(c)}
                   />
                 ))}
@@ -425,8 +409,9 @@ const AdminCourses = () => {
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>
-                  This will permanently delete all sections, chapters, resources,
-                  and revoke access for enrolled students. This action cannot be undone.
+                  This permanently deletes the course with its sections, lessons and
+                  resources. A course students have used (access, progress, certificates
+                  or reviews) can't be deleted: archive it instead.
                 </p>
                 {loadingCascade ? (
                   <p className="text-xs text-muted-foreground">Loading impact details...</p>
@@ -469,7 +454,6 @@ function CourseCardComponent({
   onPreview,
   onDelete,
   onToggleBrowse,
-  onReviews,
   onDuplicate,
 }: {
   course: CourseCard;
@@ -478,7 +462,6 @@ function CourseCardComponent({
   onPreview: () => void;
   onDelete: () => void;
   onToggleBrowse: () => void;
-  onReviews: () => void;
   onDuplicate: () => void;
 }) {
   return (
@@ -575,20 +558,9 @@ function CourseCardComponent({
           <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
         )}
 
-        {/* Footer: rating + chapter count + browse toggle */}
+        {/* Footer: chapter count + browse toggle */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
           <div className="flex items-center gap-3">
-            {c.avg_rating !== null && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onReviews(); }}
-                className="flex items-center gap-1 text-xs hover:opacity-70 transition-opacity"
-                title="View reviews"
-              >
-                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                <span className="font-semibold">{c.avg_rating.toFixed(1)}</span>
-                <span className="text-muted-foreground">({c.total_reviews})</span>
-              </button>
-            )}
             <span className="text-xs text-muted-foreground font-mono">
               {c.chapter_count} ch.
             </span>

@@ -25,13 +25,16 @@ import { isNative } from "@/lib/platform";
 import { hapticImpact } from "@/lib/haptics";
 import { MotionButton } from "@/components/motion/MotionButton";
 import { springs, instant, otpSuccess, useMotionSafe } from "@/lib/motion";
+import { isStagingTestLogin } from "@/lib/stagingLogin";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
 
-// After a session is minted, brand-new phone-first accounts haven't told us
+// After a session is minted, brand-new phone-first accounts haven't been asked
 // their crafts yet (and signups haven't given a name/email), so we route them
-// through /onboarding. Returning users with craft_interests already set go
-// straight to their intended destination. Defensive: any read failure falls
-// back to /onboarding so we never strand a user who lacks crafts.
+// through /onboarding. The picker asks ONCE: craft_interests is NULL until
+// Onboarding first shows it, then a list (empty if they skipped), so anyone
+// already asked goes straight to their intended destination, picks or not.
+// Defensive: any read failure falls back to /onboarding, which bounces an
+// already-asked account straight to /home.
 const resolvePostAuthDestination = async (
   userId: string,
   fallback: string
@@ -46,8 +49,7 @@ const resolvePostAuthDestination = async (
       .eq("id", userId)
       .single();
     if (error) return "/onboarding";
-    const crafts = (data?.craft_interests ?? []).filter(Boolean);
-    return crafts.length > 0 ? fallback : "/onboarding";
+    return data?.craft_interests != null ? fallback : "/onboarding";
   } catch {
     return "/onboarding";
   }
@@ -172,11 +174,19 @@ const Login = () => {
     return () => mql.removeEventListener?.("change", sync);
   }, []);
 
-  const [step, setStep] = useState<Step>(EMAIL_ONLY_AUTH ? "email_input" : "phone");
+  // `?method=email` (the Stage sign-in's "Sign in with email" link) opens
+  // straight on email sign-in: the Email tab when that flag is on, otherwise
+  // the email-link step a non-+91 number reaches today. Without the param
+  // nothing below changes.
+  const startOnEmail = searchParams.get("method") === "email";
+  const [step, setStep] = useState<Step>(() =>
+    EMAIL_ONLY_AUTH || (startOnEmail && !flag(EMAIL_OTP_TAB)) ? "email_input" : "phone",
+  );
   // Which sign-in channel the (additive, dark-shippable) tab bar is showing.
-  // Always starts on "phone": the MSG91 flow is the proven path and stays the
-  // default first paint whether or not the email tab is switched on.
-  const [authTab, setAuthTab] = useState<OtpTab>("phone");
+  // Starts on "phone" (the MSG91 flow is the proven path and stays the default
+  // first paint whether or not the email tab is switched on), unless the link
+  // asked for email.
+  const [authTab, setAuthTab] = useState<OtpTab>(startOnEmail ? "email" : "phone");
   // Phone prefill (strict E.164) — handed over by checkout after a guest
   // payment via router state (kept out of the URL so analytics/Sentry never
   // see a phone number); ?phone= remains as a fallback.
@@ -194,8 +204,9 @@ const Login = () => {
   // email-only fallback we skip straight into the form so the welcome layer
   // never traps a non-Indian user. Once the user is past the phone step
   // (OTP / email), the form is always open.
-  // Open straight onto the form when checkout prefilled the phone.
-  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH || !!prefilledPhone);
+  // Open straight onto the form when checkout prefilled the phone, or when the
+  // link asked for email sign-in.
+  const [formOpen, setFormOpen] = useState(EMAIL_ONLY_AUTH || !!prefilledPhone || startOnEmail);
 
   // Animation key so the form column re-mounts the slide-in animation
   // on every step transition.
@@ -255,7 +266,9 @@ const Login = () => {
   // exactly this reserved number we skip the MSG91 widget and let
   // verify-msg91-otp validate the typed 4-digit code against its
   // REVIEW_LOGIN_CODE secret (server-side kill switch). See the edge fn.
-  const isReviewLogin = phone === "+918888777666";
+  // Staging builds extend the same path to every +91 number (dummy accounts,
+  // no SMS); see isStagingTestLogin.
+  const isReviewLogin = phone === "+918888777666" || isStagingTestLogin(phone);
 
   const sendSmsOtp = async (waMode = false): Promise<{ ok: boolean; error?: string }> => {
     try {

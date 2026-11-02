@@ -11,6 +11,7 @@ import { normalizePhone } from "../_shared/phone.ts";
 import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
+import { freeEnrolmentRefusal } from "../_shared/freeEnrolment.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -100,7 +101,7 @@ Deno.serve(async (req) => {
     /* ── Offering ── */
     const { data: offering, error: offErr } = await admin
       .from("offerings")
-      .select("id, title, price_inr, gst_mode, gst_rate, status, is_public")
+      .select("id, title, price_inr, gst_mode, gst_rate, status, is_public, payment_mode, product_tier, tally_form_url")
       .eq("id", offering_id)
       .single();
 
@@ -168,6 +169,13 @@ Deno.serve(async (req) => {
     const afterDiscount = Math.max(subtotalInr - discountInr, 0);
     const gstInr = computeGstInr(afterDiscount, offering.gst_mode, Number(offering.gst_rate || 18));
     const totalInr = computeTotalInr(afterDiscount, offering.gst_mode, gstInr);
+
+    // A ₹0 total on a live-cohort / application / staged offering is not a
+    // free claim: refuse before any order row is written.
+    if (totalInr <= 0) {
+      const refusal = freeEnrolmentRefusal(offering);
+      if (refusal) return jsonRes({ error: refusal }, 400);
+    }
 
     /* ── Reuse a pending order from the last 10 minutes ──
        Only an order this browser made (the same reuse token), with the same
