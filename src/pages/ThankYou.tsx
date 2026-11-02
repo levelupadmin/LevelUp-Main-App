@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import AddEmailPrompt from "@/components/checkout/AddEmailPrompt";
 import usePageTitle from "@/hooks/usePageTitle";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -1172,6 +1173,10 @@ export default function ThankYou() {
             </div>
           </>
         )}
+        {/* Optional: a phone-made account adds its email (also a sign-in). */}
+        <div className="mt-10">
+          <AddEmailPrompt />
+        </div>
       </main>
     </div>
   );

@@ -79,7 +79,7 @@ export default function StageOnboarding(p: Props) {
               />
             </label>
             <label className="ob-field">
-              <span className="ob-label">Email</span>
+              <span className="ob-label">Email (optional)</span>
               <input
                 className="ob-input"
                 type="email"
@@ -88,7 +88,6 @@ export default function StageOnboarding(p: Props) {
                 value={p.email}
                 onChange={(e) => p.setEmail(e.target.value)}
                 autoComplete="email"
-                required
               />
             </label>
             <button type="submit" className={`btn btn--block ob-cta${p.saving ? " is-busy" : ""}`} disabled={p.saving || !p.profileValid}>

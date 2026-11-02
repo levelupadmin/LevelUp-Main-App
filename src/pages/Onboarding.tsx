@@ -136,15 +136,33 @@ const Onboarding = () => {
 
   const nameValid = fullName.trim().length >= 2;
   const emailValid = EMAIL_RE.test(email.trim());
-  const profileValid = nameValid && emailValid;
+  // Email is optional (founder, 2026-11-02): a phone account can add it later.
+  const emailBlank = email.trim() === "";
+  const profileValid = nameValid && (emailBlank || emailValid);
 
   const handleProfileNext = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profileValid) {
-      toast.error("Add your name and a valid email to continue.");
+      toast.error(nameValid ? "That email doesn't look right. Fix it, or leave it empty." : "Add your name to continue.");
       return;
     }
     setSaving(true);
+    if (emailBlank) {
+      // Name only. The users RLS lets a student change their own name.
+      const { error: nameErr } = await supabase.from("users").update({ full_name: fullName.trim() }).eq("id", user!.id);
+      setSaving(false);
+      if (nameErr) {
+        toast.error("Couldn't save your details. Please try again.");
+        return;
+      }
+      hapticImpact("light");
+      if (askedBefore) {
+        navigate("/home", { replace: true });
+        return;
+      }
+      setStep("crafts");
+      return;
+    }
     // Identity write goes through a SECURITY DEFINER RPC: the RLS freeze on
     // users.email (anti-entitlement-hijack) rejects a plain update() of the
     // phone-signup placeholder, which stranded every phone-first user here.
@@ -285,7 +303,7 @@ const Onboarding = () => {
 
                   <div className="space-y-1.5">
                     <Label htmlFor="ob-email" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                      Email
+                      Email (optional)
                     </Label>
                     <div className="relative">
                       <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -296,7 +314,6 @@ const Onboarding = () => {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         autoComplete="email"
-                        required
                         className="h-12 pl-10 text-base bg-surface border-border focus:border-foreground rounded-xl"
                       />
                     </div>
