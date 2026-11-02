@@ -13,7 +13,7 @@
 
 /* ---- the wall ---- */
 .fo-wall { position: absolute; z-index: 0; left: 0; right: 0; top: 0; height: 74%; overflow: hidden; background: var(--s-wall);
-  transition: height .62s var(--s-ease-out), border-radius .62s var(--s-ease-out), opacity .5s; }
+  transition: transform .62s var(--s-ease-out), border-radius .62s var(--s-ease-out), opacity .5s; }
 .fo-wall--desk { display: none; }
 .wl-cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 8px; }
 .wl-col { position: relative; overflow: visible; min-width: 0; }
@@ -124,8 +124,13 @@
 .fo-done-s { margin: 0 0 10px; color: var(--s-text-2); font-size: 15px; line-height: 1.5; }
 
 /* ---- step states, phone ---- */
-.fo[data-step="phone"] .fo-wall--phone { height: 300px; border-radius: 0 0 28px 28px; }
-.fo[data-step="code"] .fo-wall--phone { height: 240px; border-radius: 0 0 28px 28px; }
+/* The wall slides up to a 300px (then 240px) band instead of shrinking: a
+   transform, so no layout work per frame (spec 8.6). Its scrim is pinned to
+   that visible band so the gradients sit where they did. */
+.fo[data-step="phone"] .fo-wall--phone { transform: translateY(calc(300px - 100%)); border-radius: 0 0 28px 28px; }
+.fo[data-step="code"] .fo-wall--phone { transform: translateY(calc(240px - 100%)); border-radius: 0 0 28px 28px; }
+.fo[data-step="phone"] .fo-wall--phone::after { top: auto; height: 300px; }
+.fo[data-step="code"] .fo-wall--phone::after { top: auto; height: 240px; }
 .fo[data-step="phone"] .fo-wall--phone::after, .fo[data-step="code"] .fo-wall--phone::after { opacity: 1; }
 .fo[data-step="phone"] .fo-fade, .fo[data-step="code"] .fo-fade, .fo[data-step="done"] .fo-fade { opacity: 0; }
 .fo[data-step="phone"] .fo-logo, .fo[data-step="code"] .fo-logo { opacity: 0; }

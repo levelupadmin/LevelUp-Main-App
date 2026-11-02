@@ -29,7 +29,6 @@
   --s-brand-soft: hsl(var(--brand) / 0.16);
   --s-ease-out: cubic-bezier(.16, 1, .3, 1);
   --s-ease-in-out: cubic-bezier(.65, 0, .35, 1);
-  --s-ease-spring: cubic-bezier(.34, 1.4, .64, 1);
   --s-sat: env(safe-area-inset-top, 0px);
   --s-sab: env(safe-area-inset-bottom, 0px);
   --s-r-chip: 12px;
