@@ -425,8 +425,9 @@ const AdminCourses = () => {
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>
-                  This will permanently delete all sections, chapters, resources,
-                  and revoke access for enrolled students. This action cannot be undone.
+                  This permanently deletes the course with its sections, lessons and
+                  resources. A course students have used (access, progress, certificates
+                  or reviews) can't be deleted: archive it instead.
                 </p>
                 {loadingCascade ? (
                   <p className="text-xs text-muted-foreground">Loading impact details...</p>

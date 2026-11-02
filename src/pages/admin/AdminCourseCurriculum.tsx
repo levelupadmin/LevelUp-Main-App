@@ -362,6 +362,11 @@ const AdminCourseCurriculum = () => {
 
   const removeSection = (idx: number) => {
     const target = sectionsRef.current[idx];
+    const lessons = target?.chapters.length ?? 0;
+    if (
+      target && !target._isNew &&
+      !confirm(`Remove this section and its ${lessons} lesson${lessons === 1 ? "" : "s"}? When you save, students' progress on them is deleted for good. Lessons with student submissions, questions or notes can't be removed.`)
+    ) return;
     // `chapters.section_id` is ON DELETE CASCADE, so removing the section row
     // removes its chapters with it — no per-chapter bookkeeping needed here.
     if (target && !target._isNew && target.id) {
@@ -475,6 +480,10 @@ const AdminCourseCurriculum = () => {
 
   const removeChapter = (sIdx: number, cIdx: number) => {
     const target = sectionsRef.current[sIdx]?.chapters[cIdx];
+    if (
+      target && !target._isNew &&
+      !confirm("Remove this lesson? When you save, students' progress on it is deleted for good. A lesson with student submissions, questions or notes can't be removed.")
+    ) return;
     // Only a row that exists server-side needs a DELETE; a never-saved one
     // disappears with the state update alone.
     if (target && !target._isNew && target.id) {
