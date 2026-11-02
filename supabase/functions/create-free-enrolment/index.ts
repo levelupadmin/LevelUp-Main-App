@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeadersFor } from "../_shared/cors.ts";
+import { freeEnrolmentRefusal } from "../_shared/freeEnrolment.ts";
 
 /* ── create-free-enrolment ──
    Authenticated path for zero-rupee checkouts. Free offerings advertised
@@ -47,7 +48,7 @@ Deno.serve(async (req) => {
 
     const { data: offering, error: offErr } = await admin
       .from("offerings")
-      .select("id, title, price_inr, gst_mode, gst_rate, status, payment_mode")
+      .select("id, title, price_inr, gst_mode, gst_rate, status, payment_mode, product_tier, tally_form_url")
       .eq("id", offering_id)
       .single();
     if (offErr || !offering) return jsonRes({ error: "Offering not found" }, 404);
@@ -56,9 +57,10 @@ Deno.serve(async (req) => {
     if (offering.status !== "active") {
       return jsonRes({ error: "This offering is not available" }, 400);
     }
-    if (offering.payment_mode === "staged") {
-      return jsonRes({ error: "This offering uses applications, not direct enrolment" }, 400);
-    }
+    // Staged, live-cohort and application (Tally) offerings are never self-serve,
+    // whatever their price says. See _shared/freeEnrolment.ts.
+    const refusal = freeEnrolmentRefusal(offering);
+    if (refusal) return jsonRes({ error: refusal }, 400);
 
     /* Server-side total: price - coupon discount, then GST. Mirrors
        create-razorpay-order's loud-failure coupon validation. */
