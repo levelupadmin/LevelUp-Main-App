@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { LayoutGroup, motion, useMotionValue, useTransform, animate } from "framer-motion";
 import type { AnimationPlaybackControls } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,7 +28,7 @@ import {
 import Confetti from "@/components/Confetti";
 import { checkMilestone } from "@/hooks/useMilestone";
 import { useVideoProgress } from "@/hooks/useVideoProgress";
-import { checkAndGenerateCertificate } from "@/hooks/useCertificateAutoGenerate";
+import { callCertificates } from "@/lib/certificates";
 import { hapticImpact, hapticNotification, tapTick, celebrate } from "@/lib/haptics";
 import { useMotionSafe } from "@/lib/motion";
 import { STAGE_ENABLED } from "@/lib/appearance";
@@ -137,6 +138,7 @@ const sanitizeArticle = (html: string) =>
 const ChapterViewer = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user, profile } = useAuth();
 
   const motionSafe = useMotionSafe();
@@ -1015,25 +1017,29 @@ const ChapterViewer = () => {
       toast.success("Nice work! Chapter done.");
     }
 
-    // Auto-generate certificate if threshold reached. Only with a verified
-    // total: a bogus denominator here could issue certificates early (the
-    // issue_certificate RPC re-checks server-side, but don't even try).
-    if (totalCount !== null && totalCount > 0) {
-      checkAndGenerateCertificate(
-        user.id,
-        courseId,
-        completedCount,
-        totalCount,
-        profile?.full_name ?? "Student",
-        profile?.member_number != null ? String(profile.member_number) : null
-      ).then((cert) => {
-        if (cert) {
-          toast.success("Certificate earned!", {
-            description: `Certificate ${cert.certificateNumber} has been generated.`,
-            duration: 6000,
-          });
-        }
-      });
+    // Certificates are issued by the server (certificates edge function). Once
+    // a verified 85% of lessons is done, ask it to issue: it re-checks the
+    // course's own pass mark, never makes a second one, and emails the PDF.
+    // Live cohorts (issued by the team) and courses without a design answer
+    // with an error code, which is ignored here.
+    if (totalCount !== null && totalCount > 0 && completedCount >= Math.ceil(totalCount * 0.85)) {
+      callCertificates<{ result: string; email?: string }>({ action: "claim", course_id: courseId, auto: true })
+        .then((r) => {
+          void queryClient.invalidateQueries({ queryKey: ["certificate-status", courseId] });
+          const open = { label: "See it", onClick: () => navigate(`/courses/${courseId}`) };
+          if (r.result === "issued") {
+            toast.success("You've earned your certificate", {
+              description: r.email === "sent" ? "We've emailed you the PDF. It's on the course page too." : "Download it from the course page.",
+              duration: 8000,
+              action: open,
+            });
+          } else if (r.result === "need_name") {
+            toast.success("You've earned your certificate", { description: "Tell us the name to print on it.", duration: 8000, action: open });
+          }
+        })
+        .catch(() => {
+          /* not ready, manual, or below this course's pass mark: nothing to say */
+        });
     }
 
     // ── The completion arc, beat 1: the ring animates IN PLACE. Push the new

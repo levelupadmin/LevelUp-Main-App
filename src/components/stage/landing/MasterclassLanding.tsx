@@ -225,7 +225,7 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
       )}
 
       {d.certificate && (
-        <Section id="ld-cert" eyebrow="Certificate" title={`Signed by ${d.name}`} body="Finish the lessons and get a Certificate of Completion. Download it as a PDF, print it or share it.">
+        <Section id="ld-cert" eyebrow="Certificate" title={`Signed by ${d.name}`} body="Finish 85% of the lessons and your Certificate of Completion arrives by email as a PDF, with its own number and a check link anyone can open.">
           <img className="ld-cert" src={media(d.certificate.image)} alt={d.certificate.alt} loading="lazy" decoding="async" />
         </Section>
       )}

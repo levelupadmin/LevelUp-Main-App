@@ -26,6 +26,12 @@
         "value": "instrument serif",
         "createdAt": "2026-11-02T07:08:28.971Z",
         "reason": "Live app's pre-Stage display serif in src/index.css; predates the redesign, removed by Stage (spec 12.1: remove the serif greeting) and retired in S5"
+      },
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-11-02T17:58:40.040Z",
+        "reason": "Claude: certificate email HTML (supabase/functions/certificates/mail.ts) must use a web-safe font stack; email clients don't load web fonts reliably"
       }
     ]
   }

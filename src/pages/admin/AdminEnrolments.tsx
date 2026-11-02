@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,7 +17,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Download, FileUp } from "lucide-react";
-import { generateAndSaveCertificate, VariablePosition } from "@/lib/certificate-generator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePaginatedTable } from "@/hooks/usePaginatedTable";
@@ -247,76 +246,14 @@ const AdminEnrolments = () => {
     }
   };
 
-  const [generatingCertFor, setGeneratingCertFor] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [generatingCertFor] = useState<string | null>(null);
 
-  const handleGenerateCertificate = async (enrolment: EnrolmentRow) => {
-    setGeneratingCertFor(enrolment.id);
-    try {
-      const { data: ocs } = await supabase
-        .from("offering_courses")
-        .select("course_id")
-        .eq("offering_id", enrolment.offering_id);
-
-      if (!ocs || ocs.length === 0) {
-        toast({ title: "No courses linked to this offering", variant: "destructive" });
-        setGeneratingCertFor(null);
-        return;
-      }
-
-      let generated = 0;
-      for (const oc of ocs) {
-        const { data: template } = await (supabase as any)
-          .from("certificate_templates")
-          .select("id, background_image_url, variable_positions, completion_threshold, is_active")
-          .eq("course_id", oc.course_id)
-          .eq("is_active", true)
-          .maybeSingle();
-
-        if (!template) continue;
-
-        const { data: existing } = await (supabase as any)
-          .from("certificates")
-          .select("id")
-          .eq("user_id", enrolment.user_id)
-          .eq("course_id", oc.course_id)
-          .maybeSingle();
-
-        if (existing) continue;
-
-        const { data: course } = await supabase
-          .from("courses")
-          .select("title")
-          .eq("id", oc.course_id)
-          .maybeSingle();
-
-        await generateAndSaveCertificate({
-          templateId: template.id,
-          templateImageUrl: template.background_image_url,
-          variablePositions: (template.variable_positions || []) as VariablePosition[],
-          variableValues: {
-            student_name: enrolment.user_name,
-            member_id: "",
-            batch_number: enrolment.offering_title,
-            course_name: course?.title ?? "",
-            completion_date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
-            certificate_number: "",
-          },
-          userId: enrolment.user_id,
-          courseId: oc.course_id,
-          generatedBy: "admin_manual",
-        });
-        generated++;
-      }
-
-      if (generated === 0) {
-        toast({ title: "No certificate templates found", description: "Set up a certificate template for the course first.", variant: "destructive" });
-      } else {
-        toast({ title: `${generated} certificate(s) generated for ${enrolment.user_name}` });
-      }
-    } catch (err: any) {
-      toast({ title: "Certificate generation failed", description: err?.message || "Unknown error", variant: "destructive" });
-    }
-    setGeneratingCertFor(null);
+  // Certificates are issued by the server now (Admin → Certificates). This
+  // button opens that student there, where the team can issue, resend or fix
+  // the name with everything logged.
+  const handleGenerateCertificate = (enrolment: EnrolmentRow) => {
+    navigate(`/admin/certificates?tab=student&user=${enrolment.user_id}`);
   };
 
   /* ─────────────────────────────────────────────── */

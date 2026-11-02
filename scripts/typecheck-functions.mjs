@@ -30,6 +30,7 @@ const CONCURRENCY = 4;
 const KNOWN_FAILING = {
   "auth-email-hook": "npm: specifiers unresolved in this node_modules — environment, not code",
   "generate-invoice-pdf": "npm: specifiers unresolved in this node_modules — environment, not code",
+  certificates: "npm: specifiers (pdf-lib, fontkit, qrcode-generator) unresolved in this node_modules — environment, not code; `deno check --node-modules-dir=none supabase/functions/certificates/index.ts` passes",
   "verify-msg91-otp": "pre-existing TS2345 (argument type mismatch)",
 };
 

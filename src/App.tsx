@@ -74,6 +74,7 @@ const ThankYou = lazy(() => import("@/pages/ThankYou"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
 const RefundPolicy = lazy(() => import("@/pages/RefundPolicy"));
+const VerifyCertificate = lazy(() => import("@/pages/VerifyCertificate"));
 const DeleteAccount = lazy(() => import("@/pages/DeleteAccount"));
 // Community is locked behind a "coming soon" placeholder. The full feed
 // (CommunityPage) is retained for an easy revert — just swap the route element.
@@ -107,6 +108,7 @@ const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
 const AdminCohortWeeks = lazy(() => import("@/pages/admin/AdminCohortWeeks"));
 const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmissions"));
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
+const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 // Interactive claim for an application provisioning parked (`pending_claim`).
 // Authenticated by definition: the claimant is holding a session when the row
@@ -294,6 +296,10 @@ const AppContent = () => {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/refunds" element={<RefundPolicy />} />
+              {/* Public certificate check page: what the QR on every certificate opens. */}
+              <Route path="/v" element={<VerifyCertificate />} />
+              <Route path="/v/:code" element={<VerifyCertificate />} />
+              <Route path="/verify/:code" element={<VerifyCertificate />} />
               {/*
                 Public self-serve account deletion (Google Play requirement).
                 Unauthenticated, must be reachable without signing in.
@@ -427,6 +433,7 @@ const AppContent = () => {
                 <Route path="/admin/offerings/:offeringId/cohort-weeks" element={<AdminCohortWeeks />} />
                 <Route path="/admin/cohort-submissions" element={<AdminCohortSubmissions />} />
                 <Route path="/admin/cohorts/:batchId/attendance" element={<AdminCohortAttendance />} />
+                <Route path="/admin/certificates" element={<AdminCertificates />} />
               </Route>
 
               {/* Instructor dashboard also uses the student layout for consistency */}
