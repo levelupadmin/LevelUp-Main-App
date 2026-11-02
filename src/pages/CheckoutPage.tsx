@@ -33,6 +33,7 @@ import PayButtonContent from "@/components/checkout/PayButtonContent";
 import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { PhoneInput } from "@/components/auth/PhoneInput";
+import CheckoutVerify from "@/components/checkout/CheckoutVerify";
 import { SkeletonLine, SkeletonBlock, RevealOnMount } from "@/components/patterns/LoadingState";
 import CountUp from "@/components/motion/CountUp";
 import { useMotionSafe } from "@/lib/motion";
@@ -789,10 +790,14 @@ export default function CheckoutPage() {
     void hapticImpact("medium");
     setPayIssue(null);
 
-    // Validate guest fields when anon (marks fields touched + toasts on the
-    // first failure). The edge function does the canonical phone normalisation.
-    const isAnon = !user;
-    if (isAnon && !validateGuest()) return;
+    // Not signed in: the buyer verifies first (CheckoutVerify), then pays
+    // signed in. The guest path below stays only for older app builds.
+    if (!user) {
+      document.getElementById("checkout-verify")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      toast.error("Verify your number first. It takes one code.");
+      return;
+    }
+    const isAnon = false;
 
     paymentInFlightRef.current = true;
 
@@ -1224,100 +1229,11 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* -- Guest fields (anon checkout) --
-              Just name + email + phone, no OTP before paying. The order is
-              tied to the phone; after payment the buyer confirms it with one
-              code on /login (phone prefilled), which opens the course. The
-              helper line says exactly that, so the code is not a surprise. */}
-          {!user && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Your details
-                </p>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`)}
-                  className="inline-flex items-center min-h-[44px] -my-3 text-xs text-[hsl(var(--cream))] hover:underline"
-                >
-                  Already have an account? Sign in
-                </button>
-              </div>
-              <div>
-                <label htmlFor="guest-name" className="caption mb-1 block">
-                  Full name
-                </label>
-                <Input
-                  id="guest-name"
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  onBlur={() => setGuestTouched((s) => ({ ...s, name: true }))}
-                  placeholder="Full name"
-                  aria-invalid={guestNameError}
-                  aria-describedby={guestNameError ? "guest-name-error" : undefined}
-                  className={`h-11 ${guestNameError ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                  autoComplete="name"
-                />
-                {guestNameError && (
-                  <p id="guest-name-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
-                    Please enter your name
-                  </p>
-                )}
-              </div>
-              <div>
-                <label htmlFor="guest-email" className="caption mb-1 block">
-                  Email address
-                </label>
-                <Input
-                  id="guest-email"
-                  value={guestEmail}
-                  onChange={(e) => setGuestEmail(e.target.value)}
-                  onBlur={() => setGuestTouched((s) => ({ ...s, email: true }))}
-                  placeholder="Email address"
-                  type="email"
-                  inputMode="email"
-                  aria-invalid={guestEmailError}
-                  aria-describedby={guestEmailError ? "guest-email-error" : undefined}
-                  className={`h-11 ${guestEmailError ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                  autoComplete="email"
-                />
-                {guestEmailError && (
-                  <p id="guest-email-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
-                    Please enter a valid email
-                  </p>
-                )}
-              </div>
-              <div>
-                <label htmlFor="guest-phone" className="caption mb-1 block">
-                  Phone number
-                </label>
-                {/* countries locked to IN: the guest flow is +91-only at every
-                    validation layer (client, useGuestCheckout, server
-                    normalizePhone) — offering other flags here is a dead-end.
-                    onBlur rides the number input itself, NOT a wrapper div:
-                    focusout bubbles from the country select and marked the
-                    field touched mid-entry. */}
-                <PhoneInput
-                  id="guest-phone"
-                  value={guestPhone}
-                  onChange={setGuestPhone}
-                  placeholder="Phone number"
-                  aria-invalid={guestPhoneError}
-                  aria-describedby={guestPhoneError ? "guest-phone-error" : undefined}
-                  countries={["IN"]}
-                  onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}
-                />
-                {guestPhoneError && (
-                  <p id="guest-phone-error" role="alert" className="text-xs text-[hsl(var(--destructive-text))] mt-1">
-                    Please enter a valid phone number
-                  </p>
-                )}
-              </div>
-              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                Your course is tied to this phone number. After you pay, confirm it with a one-time code and you're in. No password.
-              </p>
-            </div>
-          )}
+          {/* -- Your details (not signed in): verify, then pay --
+              Indian numbers get an SMS code, other numbers an email code
+              (CheckoutVerify). Success signs the buyer in and the signed-in
+              Pay below takes over, so the course opens straight after paying. */}
+          {!user && <CheckoutVerify />}
 
           {/* -- Coupon --
               Only when a code can work: an active coupon applies to this
@@ -1536,7 +1452,7 @@ export default function CheckoutPage() {
             // money moment; suppress the Button's default tapTick so the pay tap
             // doesn't double-buzz.
             haptic={false}
-            disabled={paying || payLocked || (isStaged && total <= 0)}
+            disabled={paying || payLocked || !user || (isStaged && total <= 0)}
             // STEAL #2 processing arc: mirror `paying` to aria-busy so assistive
             // tech hears the in-flight state (the label crossfades to a quiet dot
             // visually). Purely additive to the existing disabled semantics.
@@ -1548,7 +1464,9 @@ export default function CheckoutPage() {
             <PayButtonContent
               status={paying ? "processing" : "idle"}
               label={
-                payLocked
+                !user
+                  ? "Verify your details to pay"
+                  : payLocked
                   ? payIssue?.kind === "check_needed"
                     ? "Waiting on your last payment"
                     : "Confirming your payment"
@@ -1697,7 +1615,7 @@ export default function CheckoutPage() {
             savings={totalSavings}
             stagedLabel={isStaged ? stagedLabel : undefined}
             paying={paying}
-            disabled={payLocked || (isStaged && total <= 0)}
+            disabled={payLocked || !user || (isStaged && total <= 0)}
             onPay={handlePay}
             onMeasure={setStickyBarHeight}
           />

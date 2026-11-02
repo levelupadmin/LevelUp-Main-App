@@ -54,6 +54,12 @@ project_id = "twqagwleffjggoemzfqs"
   # login is simply off. Phone login is unaffected either way.
   [functions.verify-email-otp]
     verify_jwt = false
+  # checkout-email-identity: checkout sign-in for buyers outside India (email
+  # code instead of SMS). Unauthenticated by definition, like the two above: the
+  # buyer has no session yet. Codes are hashed under a scoped key, guesses spend
+  # a per-address budget, and requests are capped per IP. See its index.ts.
+  [functions.checkout-email-identity]
+    verify_jwt = false
   [functions.register-for-event]
     verify_jwt = true
   # reconcile-funnel-stage: a normal client-authenticated invoke (reads the
