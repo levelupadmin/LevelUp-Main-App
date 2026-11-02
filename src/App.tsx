@@ -89,37 +89,24 @@ const AdminOfferings = lazy(() => import("@/pages/admin/AdminOfferings"));
 const AdminOfferingEditor = lazy(() => import("@/pages/admin/AdminOfferingEditor"));
 const AdminEnrolments = lazy(() => import("@/pages/admin/AdminEnrolments"));
 const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
-const AdminCoupons = lazy(() => import("@/pages/admin/AdminCoupons"));
-const AdminHeroSlides = lazy(() => import("@/pages/admin/AdminHeroSlides"));
 const AdminSchedule = lazy(() => import("@/pages/admin/AdminSchedule"));
-const AdminEvents = lazy(() => import("@/pages/admin/AdminEvents"));
 const AdminRevenue = lazy(() => import("@/pages/admin/AdminRevenue"));
 const AdminAuditLogs = lazy(() => import("@/pages/admin/AdminAuditLogs"));
 // Analytics merged into Dashboard
 // Cohorts removed per product decision
 const AdminCoursePreview = lazy(() => import("@/pages/admin/AdminCoursePreview"));
 const AdminChapterPreview = lazy(() => import("@/pages/admin/AdminChapterPreview"));
-const AdminCertificates = lazy(() => import("@/pages/admin/AdminCertificates"));
 // Refunds merged into Revenue page
-const AdminCertificateTemplateEditor = lazy(() => import("@/pages/admin/AdminCertificateTemplateEditor"));
-const AdminCourseReviews = lazy(() => import("@/pages/admin/AdminCourseReviews"));
-const AdminAnnouncements = lazy(() => import("@/pages/admin/AdminAnnouncements"));
 const AdminLegacyMappings = lazy(() => import("@/pages/admin/AdminLegacyMappings"));
 const AdminApi = lazy(() => import("@/pages/admin/AdminApi"));
-const AdminDocs = lazy(() => import("@/pages/admin/AdminDocs"));
 const AdminEmailTemplates = lazy(() => import("@/pages/admin/AdminEmailTemplates"));
-const AdminEmailCampaigns = lazy(() => import("@/pages/admin/AdminEmailCampaigns"));
 const AdminApplications = lazy(() => import("@/pages/admin/AdminApplications"));
 const ApplicationStatus = lazy(() => import("@/pages/ApplicationStatus"));
-const AdminQuizEditor = lazy(() => import("@/pages/admin/AdminQuizEditor"));
-const AdminRoles = lazy(() => import("@/pages/admin/AdminRoles"));
 const AdminAnalyticsSettings = lazy(() => import("@/pages/admin/AdminAnalyticsSettings"));
-const AdminCommunityAnalytics = lazy(() => import("@/pages/admin/AdminCommunityAnalytics"));
 const AdminCohorts = lazy(() => import("@/pages/admin/AdminCohorts"));
 const AdminCohortWeeks = lazy(() => import("@/pages/admin/AdminCohortWeeks"));
 const AdminCohortSubmissions = lazy(() => import("@/pages/admin/AdminCohortSubmissions"));
 const AdminCohortAttendance = lazy(() => import("@/pages/admin/AdminCohortAttendance"));
-const AdminNotifyRequests = lazy(() => import("@/pages/admin/AdminNotifyRequests"));
 const CohortDashboard = lazy(() => import("@/pages/CohortDashboard"));
 // Interactive claim for an application provisioning parked (`pending_claim`).
 // Authenticated by definition: the claimant is holding a session when the row
@@ -419,39 +406,26 @@ const AppContent = () => {
               {/* ─── Admin routes share a single persistent admin layout ─── */}
               <Route element={<RequireAuth><RequireRole role="admin"><AdminLayout /></RequireRole></RequireAuth>}>
                 <Route path="/admin" element={<AdminDashboard />} />
-                <Route path="/admin/hero-slides" element={<AdminHeroSlides />} />
                 <Route path="/admin/courses" element={<AdminCourses />} />
                 <Route path="/admin/courses/:courseId/edit" element={<AdminCourseEditor />} />
                 <Route path="/admin/courses/:courseId/curriculum" element={<AdminCourseCurriculum />} />
                 <Route path="/admin/courses/:courseId/preview" element={<AdminCoursePreview />} />
                 <Route path="/admin/courses/:courseId/preview/:chapterId" element={<AdminChapterPreview />} />
-                <Route path="/admin/courses/:courseId/reviews" element={<AdminCourseReviews />} />
                 <Route path="/admin/offerings" element={<AdminOfferings />} />
                 <Route path="/admin/offerings/:offeringId/edit" element={<AdminOfferingEditor />} />
                 <Route path="/admin/schedule" element={<AdminSchedule />} />
-                <Route path="/admin/events" element={<AdminEvents />} />
                 <Route path="/admin/enrolments" element={<AdminEnrolments />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
-                <Route path="/admin/coupons" element={<AdminCoupons />} />
                 <Route path="/admin/revenue" element={<AdminRevenue />} />
                 <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
-                <Route path="/admin/certificates" element={<AdminCertificates />} />
-                <Route path="/admin/courses/:courseId/certificate" element={<AdminCertificateTemplateEditor />} />
-                <Route path="/admin/announcements" element={<AdminAnnouncements />} />
                 <Route path="/admin/email-templates" element={<AdminEmailTemplates />} />
-                <Route path="/admin/email-campaigns" element={<AdminEmailCampaigns />} />
                 <Route path="/admin/applications" element={<AdminApplications />} />
-                <Route path="/admin/courses/:courseId/chapters/:chapterId/quiz" element={<AdminQuizEditor />} />
-                <Route path="/admin/roles" element={<AdminRoles />} />
                 <Route path="/admin/analytics-settings" element={<AdminAnalyticsSettings />} />
-                <Route path="/admin/community" element={<AdminCommunityAnalytics />} />
                 <Route path="/admin/legacy-mappings" element={<AdminLegacyMappings />} />
                 <Route path="/admin/api" element={<AdminApi />} />
-                <Route path="/admin/docs" element={<AdminDocs />} />
                 <Route path="/admin/cohorts" element={<AdminCohorts />} />
                 <Route path="/admin/offerings/:offeringId/cohort-weeks" element={<AdminCohortWeeks />} />
                 <Route path="/admin/cohort-submissions" element={<AdminCohortSubmissions />} />
-                <Route path="/admin/notify-requests" element={<AdminNotifyRequests />} />
                 <Route path="/admin/cohorts/:batchId/attendance" element={<AdminCohortAttendance />} />
               </Route>
 
