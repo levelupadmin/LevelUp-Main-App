@@ -1,10 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { BadgeCheck, ShieldAlert } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDay } from "@/lib/certificates";
-import { useAuth } from "@/contexts/AuthContext";
 import LevelUpWordmark from "@/components/LevelUpWordmark";
 import "@/components/certificates/certificate.css";
 
@@ -29,22 +27,33 @@ export default function VerifyCertificate() {
   const navigate = useNavigate();
   const [typed, setTyped] = useState("");
   const clean = code.trim().toUpperCase();
-  // Wait for the sign-in check: for a signed-out visitor AuthContext clears
-  // the whole query cache when it settles, which would cancel a lookup that
-  // started before it and leave this page on "Checking…".
-  const { loading: authLoading } = useAuth();
+  // Fetched directly, not through the shared query cache: for a signed-out
+  // visitor AuthContext clears that cache as it settles, which cancels any
+  // lookup in flight and would leave this page on "Checking…".
+  const [data, setData] = useState<VerifyRow | null>(null);
+  const [isLoading, setIsLoading] = useState(clean.length >= 6);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["verify-certificate", clean],
-    enabled: !authLoading && clean.length >= 6,
-    queryFn: async () => {
-      const { data: rows, error } = await (supabase as unknown as {
-        rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: VerifyRow[] | null; error: unknown }>;
-      }).rpc("verify_certificate", { p_code: clean });
-      if (error) throw error;
-      return rows?.[0] ?? null;
-    },
-  });
+  useEffect(() => {
+    if (clean.length < 6) {
+      setIsLoading(false);
+      return;
+    }
+    let live = true;
+    setIsLoading(true);
+    void (supabase as unknown as {
+      rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: VerifyRow[] | null; error: unknown }>;
+    })
+      .rpc("verify_certificate", { p_code: clean })
+      .then(({ data: rows }) => {
+        if (live) setData(rows?.[0] ?? null);
+      })
+      .finally(() => {
+        if (live) setIsLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [clean]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -62,7 +71,7 @@ export default function VerifyCertificate() {
             <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="7KQ2M9XP" aria-label="Check code" maxLength={16} />
             <button type="submit">Check certificate</button>
           </form>
-        ) : authLoading || isLoading ? (
+        ) : isLoading ? (
           <p className="cert-verify-foot">Checking…</p>
         ) : !data ? (
           <>
