@@ -222,3 +222,26 @@ a.fo-swap { display: inline-flex; align-items: center; text-decoration: none; }
   .fo-logo .lu-logo { height: 44px; }
   .fo--plain .fo-step[data-s="phone"], .fo--plain .fo-step[data-s="code"] { top: 50%; padding-top: 0; }
 }
+
+/* "Sign in with email" under Send code: outlined, so it reads as the other way
+   in and never as a second, greyed-out Send code. */
+.stage-ui .btn.fo-line { background: none; color: var(--s-text); box-shadow: inset 0 0 0 1px var(--s-line-strong); }
+
+/* No account with that number yet (the "join" step): laid out like the code
+   step, with a choice instead of boxes. The long label wraps on a narrow
+   phone rather than running off it. */
+.fo-step[data-s="join"] { top: 240px; bottom: 0; padding-top: 26px; padding-bottom: calc(var(--s-sab) + 16px); background: var(--s-bg); }
+.fo[data-step="join"] { background: var(--s-bg); }
+.fo[data-step="join"] .fo-wall--phone { transform: translateY(calc(240px - 100%)); border-radius: 0 0 28px 28px; }
+.fo[data-step="join"] .fo-wall--phone::after { top: auto; height: 240px; opacity: 1; }
+.fo[data-step="join"] .fo-fade, .fo[data-step="join"] .fo-logo { opacity: 0; }
+.fo[data-step="join"] .fo-back { opacity: 1; pointer-events: auto; }
+.fo--plain .fo-step[data-s="join"] { top: 0; padding-top: calc(var(--s-sat) + 72px); }
+.stage-ui .btn.fo-wrap { height: auto; min-height: 52px; padding-top: 12px; padding-bottom: 12px; white-space: normal; line-height: 1.25; text-align: center; }
+@media (min-width: 900px) {
+  .fo[data-step="join"] { background: var(--s-wall); }
+  .fo[data-step="join"] .fo-wall--desk { opacity: .5; }
+  .fo[data-step="join"] .fo-fade, .fo[data-step="join"] .fo-logo { opacity: 1; }
+  .fo-step[data-s="join"] { top: 50%; bottom: auto; padding: 0; transform: translateY(-46%); }
+  .fo--plain .fo-step[data-s="join"] { top: 50%; padding-top: 0; }
+}

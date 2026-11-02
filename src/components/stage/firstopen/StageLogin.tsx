@@ -6,7 +6,7 @@ import { supabase, supabaseUrl, supabasePublishableKey } from "@/integrations/su
 import { useAuth } from "@/contexts/AuthContext";
 import usePageTitle from "@/hooks/usePageTitle";
 import { initMsg91, sendOtp as widgetSendOtp, verifyOtp as widgetVerifyOtp, retryOtp as widgetRetryOtp } from "@/lib/msg91-widget";
-import { resolveLoginRedirect, prefillPhoneParam } from "@/lib/loginParams";
+import { resolveLoginRedirect, prefillPhoneParam, nationalMobileDigits } from "@/lib/loginParams";
 import { isStagingTestLogin } from "@/lib/stagingLogin";
 import { confirm, hapticImpact } from "@/lib/haptics";
 import { playSound } from "@/lib/sound";
@@ -24,16 +24,20 @@ import "./firstopen.css";
  * The first open, round 4 (design/stage/HANDOVER_first_open.md, mockup
  * 15_LMS_Experience_Lab/first-open.html). Rendered for /login and /signup
  * under VITE_BRAND_STAGE; `?classic=1` keeps the old page (email sign-in and
- * numbers outside India live there).
+ * numbers outside India live there; "Sign in with email" opens it straight on
+ * its email step with `method=email`, keeping `next`).
  *
  *   first visit on this device -> BrandIntro over 12 of LevelUp's photos
  *   -> the wall -> Continue -> your number -> the code -> SignInMoment
  *   -> /onboarding for new people, otherwise where they were going.
  *
  * New or returning is the same step. The code is checked by the same
- * verify-msg91-otp call /login makes; only if the number has no account do we
- * ask it to create one, with the placeholders /signup sends. That order keeps
- * the old TagMango buyers' purchases claiming on their first sign-in.
+ * verify-msg91-otp call /login makes. That order keeps the old TagMango
+ * buyers' purchases claiming on their first sign-in. If the number has no
+ * account we never create one silently: someone who bought with their email
+ * (a Tally application, say) has an email-only account, and a quiet phone
+ * signup would hand them a second, empty one. They choose: sign in with email,
+ * or create an account with this number (with the placeholders /signup sends).
  */
 
 const VERIFY_URL = `${supabaseUrl}/functions/v1/verify-msg91-otp`;
@@ -45,7 +49,7 @@ const RESEND_SECONDS = 30;
 const syntheticEmail = (phone: string) => `${phone.replace(/\D/g, "")}@phone.leveluplearning.in`;
 const PLACEHOLDER_NAME = "LevelUp Student";
 
-type Step = "wall" | "phone" | "code";
+type Step = "wall" | "phone" | "code" | "join";
 type VerifyBody = Record<string, string>;
 type VerifyReply = { ok: boolean; data: { error?: string; detail?: string; access_token?: string; refresh_token?: string; is_new_user?: boolean } };
 
@@ -105,6 +109,9 @@ export default function StageLogin() {
   const [verified, setVerified] = useState(false);
   const [left, setLeft] = useState(RESEND_SECONDS);
   const [moment, setMoment] = useState<{ eyebrow: string; title: string; dest: string } | null>(null);
+  // The verified code's body, held while someone with no account chooses.
+  const [pendingJoin, setPendingJoin] = useState<VerifyBody | null>(null);
+  const [creating, setCreating] = useState(false);
   const [paused, setPaused] = useState(false);
 
   const celebratingRef = useRef(false);
@@ -116,6 +123,13 @@ export default function StageLogin() {
   const phone = `+91${digits}`;
   const reviewLike = phone === REVIEW_PHONE || isStagingTestLogin(phone);
   const testHint = isStagingTestLogin(phone);
+  // Email sign-in lives on the classic page; `method=email` opens it on that
+  // step, and `next` brings them back to what they tapped.
+  const emailHref = `/login?${new URLSearchParams({
+    classic: "1",
+    method: "email",
+    ...(redirectTarget !== "/home" ? { next: redirectTarget } : {}),
+  }).toString()}`;
 
   const go = useCallback((next: Step) => {
     setStep(next);
@@ -227,11 +241,14 @@ export default function StageLogin() {
         }
       }
       const base: VerifyBody = reviewLike ? { phone, reviewCode: value } : { phone, accessToken: token as string };
-      // Sign in first; only a number with no account (and no old purchase to
-      // claim) is asked to create one.
-      let reply = await postVerify(base);
+      // Sign in. A number with no account (and no old purchase to claim) gets
+      // nothing created here: the next step asks what they want.
+      const reply = await postVerify(base);
       if (!reply.ok && reply.data?.error === "signup_requires_email_and_name") {
-        reply = await postVerify({ ...base, email: syntheticEmail(phone), full_name: PLACEHOLDER_NAME });
+        setPendingJoin(base);
+        setChecking(false);
+        go("join");
+        return;
       }
       if (!reply.ok) {
         if (reply.data?.error === "invalid_otp") {
@@ -242,27 +259,66 @@ export default function StageLogin() {
         toast.error("We couldn't sign you in", { description: reply.data?.detail || reply.data?.error || "Try again in a moment." });
         return;
       }
-      celebratingRef.current = true;
-      const { data: sessionData, error: setErr } = await supabase.auth.setSession({
-        access_token: reply.data.access_token as string,
-        refresh_token: reply.data.refresh_token as string,
-      });
-      if (setErr) {
-        celebratingRef.current = false;
-        setChecking(false);
-        toast.error("We couldn't sign you in", { description: setErr.message });
-        return;
-      }
-      const isNew = !!reply.data.is_new_user;
-      const uid = sessionData.user?.id;
-      const dest = isNew ? "/onboarding" : uid ? await resolvePostAuthDestination(uid, redirectTarget) : redirectTarget;
-      setChecking(false);
-      setVerified(true);
-      setMoment({ eyebrow: isNew ? "Welcome to LevelUp" : "Welcome back", title: "You're in.", dest });
+      await startSession(reply);
     } catch (e) {
       celebratingRef.current = false;
       setChecking(false);
       toast.error("We couldn't sign you in", { description: e instanceof Error ? e.message : "Check your connection and try again." });
+    }
+  };
+
+  // A session came back (sign-in, or the account they chose to create): set
+  // it, then the moment, then where they were going.
+  const startSession = async (reply: VerifyReply) => {
+    celebratingRef.current = true;
+    const { data: sessionData, error: setErr } = await supabase.auth.setSession({
+      access_token: reply.data.access_token as string,
+      refresh_token: reply.data.refresh_token as string,
+    });
+    if (setErr) {
+      celebratingRef.current = false;
+      setChecking(false);
+      setCreating(false);
+      toast.error("We couldn't sign you in", { description: setErr.message });
+      return;
+    }
+    const isNew = !!reply.data.is_new_user;
+    const uid = sessionData.user?.id;
+    const dest = isNew ? "/onboarding" : uid ? await resolvePostAuthDestination(uid, redirectTarget) : redirectTarget;
+    setChecking(false);
+    setCreating(false);
+    setVerified(true);
+    setMoment({ eyebrow: isNew ? "Welcome to LevelUp" : "Welcome back", title: "You're in.", dest });
+  };
+
+  // Only on the explicit "Create an account with this number": the same
+  // second call the old flow made on its own, with the same placeholders.
+  const createAccount = async () => {
+    if (!pendingJoin || creating || verified) return;
+    setCreating(true);
+    try {
+      const reply = await postVerify({
+        ...pendingJoin,
+        email: syntheticEmail(pendingJoin.phone),
+        full_name: PLACEHOLDER_NAME,
+      });
+      if (!reply.ok) {
+        setCreating(false);
+        if (reply.data?.error === "invalid_otp") {
+          // The code went stale while they chose. A new one fixes it.
+          setPendingJoin(null);
+          toast.error("That code has expired", { description: "Send a new code to create your account." });
+          go("phone");
+          return;
+        }
+        toast.error("We couldn't create your account", { description: reply.data?.detail || reply.data?.error || "Try again in a moment." });
+        return;
+      }
+      await startSession(reply);
+    } catch (e) {
+      celebratingRef.current = false;
+      setCreating(false);
+      toast.error("We couldn't create your account", { description: e instanceof Error ? e.message : "Check your connection and try again." });
     }
   };
 
@@ -294,8 +350,10 @@ export default function StageLogin() {
 
   const back = () => {
     playSound("close");
-    if (step === "code") go("phone");
-    else if (deepLinked) navigate(-1);
+    if (step === "code" || step === "join") {
+      setPendingJoin(null);
+      go("phone");
+    } else if (deepLinked) navigate(-1);
     else go("wall");
   };
 
@@ -340,7 +398,7 @@ export default function StageLogin() {
             Continue
           </button>
           <div className="fo-alt rv" style={{ "--k": 3 } as React.CSSProperties}>
-            <Link to="/login?classic=1" className="fo-alt-link">Use email</Link>
+            <Link to={emailHref} className="fo-alt-link">Sign in with email</Link>
           </div>
           <p className="fo-legal rv" style={{ "--k": 4 } as React.CSSProperties}>
             New or returning, it is the same step. By continuing you agree to our <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy Policy</Link>.
@@ -363,10 +421,10 @@ export default function StageLogin() {
                 inputMode="numeric"
                 autoComplete="tel-national"
                 placeholder="98765 43210"
-                maxLength={11}
+                maxLength={20}
                 aria-label="Mobile number"
                 value={formatNational(digits)}
-                onChange={(e) => { setDigits(e.target.value.replace(/\D/g, "").slice(0, 10)); setPhoneError(false); }}
+                onChange={(e) => { setDigits(nationalMobileDigits(e.target.value)); setPhoneError(false); }}
                 onKeyDown={(e) => { if (e.key === "Enter") void sendCode(); }}
               />
             </span>
@@ -375,7 +433,7 @@ export default function StageLogin() {
           <button className={`btn btn--block rv${sending ? " is-busy" : ""}`} style={{ "--k": 4 } as React.CSSProperties} type="button" disabled={digits.length !== 10 || sending} onClick={() => void sendCode()}>
             {sending ? (<><LevelUpLoader size={28} label="Sending" />Sending</>) : "Send code"}
           </button>
-          <Link className="fo-swap rv" style={{ "--k": 5 } as React.CSSProperties} to="/login?classic=1">Not in India? Use email</Link>
+          <Link className="btn btn--block fo-line rv" style={{ "--k": 5 } as React.CSSProperties} to={emailHref}>Sign in with email</Link>
         </div>
 
         {/* 3. The code */}
@@ -426,6 +484,25 @@ export default function StageLogin() {
             onClick={() => void verify(codeValue)}
           >
             {verified ? (<><Check className="ic" />Verified</>) : checking ? (<><LevelUpLoader size={28} label="Checking" />Checking</>) : "Verify"}
+          </button>
+        </div>
+
+        {/* 4. No account with this number: they choose. Nothing is created
+            until they tap "Create an account with this number". */}
+        <div className={`fo-step${step === "join" ? " is-on is-arrive" : ""}`} data-s="join" key={`join-${step === "join" ? nonce : "off"}`}>
+          <button className="fo-dback rv" style={{ "--k": 0 } as React.CSSProperties} type="button" onClick={back}><ChevronLeft className="ic" />Back</button>
+          <div className="fo-k rv" style={{ "--k": 0 } as React.CSSProperties}>+91 {formatNational(digits)}</div>
+          <h1 className="fo-t rv" style={{ "--k": 1 } as React.CSSProperties}>No account with this number yet</h1>
+          <p className="fo-s rv" style={{ "--k": 2 } as React.CSSProperties}>If you bought with your email, sign in with email.</p>
+          <Link className="btn btn--block rv" style={{ "--k": 3 } as React.CSSProperties} to={emailHref}>Sign in with email</Link>
+          <button
+            className={`btn btn--block btn--secondary fo-wrap rv${creating ? " is-busy" : ""}`}
+            style={{ "--k": 4 } as React.CSSProperties}
+            type="button"
+            disabled={creating || verified}
+            onClick={() => void createAccount()}
+          >
+            {verified ? (<><Check className="ic" />Done</>) : creating ? (<><LevelUpLoader size={28} label="Creating" />Creating your account</>) : "Create an account with this number"}
           </button>
         </div>
       </section>
