@@ -1,7 +1,6 @@
 // QA HARNESS — NOT shipped. Mounts the REAL Stage Home (StageHome.tsx) for
 // someone signed out of this tab, so the new-person Home (no purchases) can be
 // checked against staging data without signing in.
-//   ?craft=editing   the craft picked in onboarding (filmmaking by default)
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -14,8 +13,6 @@ import "@/styles/stage-ui.css";
 import "@/components/stage/shell.css";
 
 const qc = new QueryClient();
-const craft = new URLSearchParams(location.search).get("craft");
-if (craft) qc.setQueryData(["stage-my-crafts", "anon"], [craft]);
 
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={qc}>
