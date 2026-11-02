@@ -48,8 +48,10 @@ export interface CourseItem {
   /** The card's picture: the course's own for one course of several, else the offering's. */
   art: string | null;
   total: number; done: number; videos: number; others: number; next: ChapterLite | null; nextIndex: number; position: number; started: boolean; lastTouched: number;
-  /** Live sessions on this course (a masterclass Q&A, say). A cohort's classes stay on its cohort card. */
+  /** Live sessions on this course: a masterclass Q&A, or a live cohort's classes. */
   sessions: Session[];
+  /** The course a live cohort's recordings and resources are in: its one card, labelled Live cohort. */
+  cohort: boolean;
 }
 export type OwnedThing = CohortItem | LiveWorkshopItem | CourseItem;
 export interface Loud { item: OwnedThing; s: Session; state: SessionTimeState }
@@ -219,6 +221,7 @@ export function buildBuyerHome(rows: BuyerRows, nowMs: number): BuyerHome {
       started: prog.length > 0,
       lastTouched: prog.reduce((mx, p) => Math.max(mx, p.updated_at ? Date.parse(p.updated_at) : 0), 0),
       sessions: [],
+      cohort: false,
     };
   };
 
@@ -230,8 +233,12 @@ export function buildBuyerHome(rows: BuyerRows, nowMs: number): BuyerHome {
   const all = Array.from(byOffering.values());
   const cohorts = all.filter(isCohort);
 
-  // 1. Cohorts, first, so a class on a course a cohort shares with another
-  //    offering stays on the cohort card.
+  // 1. Live cohorts, first, so a class on a course a cohort shares with another
+  //    offering stays with the cohort. A cohort's recordings and resources are
+  //    in its course, so a cohort whose course has lessons is that course's one
+  //    card, labelled Live cohort and carrying its live classes (founder, 2 Nov
+  //    2026: a separate cohort card opened an empty "No week scheduled yet").
+  //    Only a cohort with classes or weeks and no lessons keeps a cohort card.
   for (const offering of cohorts) {
     const cIds = linksOf(offering.id);
     const batch = batchOf(offering.id);
@@ -239,6 +246,21 @@ export function buildBuyerHome(rows: BuyerRows, nowMs: number): BuyerHome {
     const weekIds = new Set(bw.map((w) => w.id));
     const ss = sessions.filter((s) => !claimed.has(s.id) && cIds.includes(s.course_id) && (!s.week_id || !bw.length || weekIds.has(s.week_id)));
     for (const s of ss) claimed.add(s.id);
+    const withLessons = cIds.filter((id) => hasLessons(id) && !carded.has(id));
+    if (withLessons.length || (!ss.length && !bw.length)) {
+      // Nothing scheduled and no lessons yet still shows what they own, opening its course.
+      const shown: (string | null)[] = withLessons.length ? withLessons : cIds.length ? [cIds[0]] : [null];
+      const partOf = shown.length > 1 && offering.title ? offering.title : null;
+      shown.forEach((id, n) => {
+        if (id && carded.has(id)) return;
+        const card = courseCard(offering, id, partOf);
+        card.cohort = true;
+        if (n === 0) card.sessions = ss;
+        if (id) carded.set(id, card);
+        items.push(card);
+      });
+      continue;
+    }
     items.push({
       kind: "cohort",
       offering,
@@ -292,21 +314,14 @@ export function buildBuyerHome(rows: BuyerRows, nowMs: number): BuyerHome {
     }
   }
 
-  // 3. The courses with lessons that come with a cohort, unless a card above
-  //    already holds them.
-  for (const offering of cohorts) {
-    for (const id of linksOf(offering.id).filter(hasLessons)) {
-      if (carded.has(id)) continue;
-      const card = courseCard(offering, id, offering.title || null);
-      carded.set(id, card);
-      items.push(card);
-    }
-  }
-
   const order: Record<ItemKind, number> = { cohort: 0, liveworkshop: 1, masterclass: 2, workshop: 2, course: 2 };
-  items.sort((a, b) => (order[a.kind] - order[b.kind]) || ((b as CourseItem).lastTouched ?? 0) - ((a as CourseItem).lastTouched ?? 0));
-  return { items, ownedIds: new Set(offeringIds), inCohort: items.some((i) => i.kind === "cohort") };
+  const rank = (i: OwnedThing) => (isLiveCohort(i) ? 0 : order[i.kind]);
+  items.sort((a, b) => (rank(a) - rank(b)) || ((b as CourseItem).lastTouched ?? 0) - ((a as CourseItem).lastTouched ?? 0));
+  return { items, ownedIds: new Set(offeringIds), inCohort: items.some(isLiveCohort) };
 }
+
+/** A live cohort: its own card, or the course card its recordings are on. */
+export const isLiveCohort = (i: OwnedThing): boolean => i.kind === "cohort" || (i.kind !== "liveworkshop" && i.cohort);
 
 export function useBuyerHome() {
   const { user } = useAuth();

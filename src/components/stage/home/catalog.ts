@@ -16,6 +16,8 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export type Tier = "masterclass" | "live_cohort" | "workshop";
 export const TIERS: Tier[] = ["masterclass", "live_cohort", "workshop"];
+/** A workshop with no picture of its own shows a real LevelUp live session (a key in the landing bucket). */
+export const WORKSHOP_ART = "cohort/l3c/a7bd60764e98.png";
 
 interface OfferingRow {
   id: string; slug: string; title: string; subtitle: string | null; highlights: unknown;

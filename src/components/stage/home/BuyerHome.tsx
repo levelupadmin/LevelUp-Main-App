@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Lock, PlayCircle, Smartphone, Video } from "lucide-react";
+import { CalendarDays, Check, ChevronRight, Clock, Lock, PlayCircle, Smartphone, Video } from "lucide-react";
 import { toast } from "sonner";
 import { tapTick } from "@/lib/haptics";
 import { sessionTimeState } from "@/lib/room";
 import type { ApplicantStageView } from "@/hooks/useApplicantStage";
 import {
-  buildAgenda, downloadIcs, endOf, joinWindow, pickLoud, recordingHref, sessionPath, sessionWho, zoomLinkFor,
+  buildAgenda, downloadIcs, endOf, isLiveCohort, joinWindow, pickLoud, recordingHref, sessionPath, sessionWho, zoomLinkFor,
   type AgendaRow, type BuyerHome as BuyerData, type CohortItem, type CourseItem, type LiveWorkshopItem, type Loud, type OwnedThing, type Session,
 } from "./buyer";
-import { FORMAT_COPY, TIERS, formatFacts, type StageCatalog, type Tier } from "./catalog";
-import { ProductCard } from "./sections";
+import type { StageCatalog } from "./catalog";
+import { HomeRows, type Head } from "./discover";
 import StageApplicantCard from "./ApplicantCard";
 
 /*
@@ -72,7 +72,7 @@ function NextCard({ loud }: { loud: Loud }) {
   const pic = i.kind === "masterclass" || i.kind === "workshop" || i.kind === "course" ? i.art : i.offering.thumbnail_url;
   const art = <div className="next-art">{pic && <img src={pic} alt="" />}</div>;
   const title = <h2 className="next-t">{s.title}</h2>;
-  const joinLabel = i.kind === "cohort" ? "Join class" : i.kind === "liveworkshop" ? "Join workshop" : "Join session";
+  const joinLabel = isLiveCohort(i) ? "Join class" : i.kind === "liveworkshop" ? "Join workshop" : "Join session";
 
   if (state === "live") {
     return (
@@ -154,6 +154,7 @@ export function cardView(i: OwnedThing, now: number): CardView {
     };
   }
   const c = i as CourseItem;
+  const word = c.cohort ? "Live cohort" : TIER_WORD[c.kind];
   const unit = c.kind === "workshop" ? "video" : "lesson";
   const pct = Math.max(c.done ? 4 : 0, Math.round((c.done / Math.max(1, c.total)) * 100));
   return {
@@ -161,13 +162,13 @@ export function cardView(i: OwnedThing, now: number): CardView {
     key: `${c.offering.id}:${c.courseId ?? ""}`, img: c.art, title: c.courseTitle,
     path: c.next ? `/chapters/${c.next.id}` : c.courseId ? `/courses/${c.courseId}` : `/p/${c.offering.slug}`,
     go: c.next ? (c.started ? `Resume ${unit} ${c.nextIndex}` : `Start ${unit} 1`) : "Watch again",
-    fmt: c.partOf ? <><span>{TIER_WORD[c.kind]}</span><b className="oc-from">· {c.partOf}</b></> : <span>{TIER_WORD[c.kind]}</span>,
+    fmt: c.partOf ? <><span>{word}</span><b className="oc-from">· {c.partOf}</b></> : <span>{word}</span>,
     prog: <div className="prog"><div className="prog-bar"><i style={{ width: `${pct}%` }} /></div><span><b>{c.done}</b> of {c.total} {unit}s</span></div>,
     next: c.next
       ? <><PlayCircle className="ic" /><span>{unit === "lesson" ? "Lesson" : "Video"} {c.nextIndex}: {c.next.title}{c.position > 0 && <span className="dim"> · resume at {mmss(c.position)}</span>}</span></>
       : <><Check className="ic" /><span>All {c.total} {unit}s watched</span></>,
     where: <><Smartphone className="ic" /><span>{c.videos} video{c.videos === 1 ? "" : "s"}{c.others ? ` · ${c.others} file${c.others === 1 ? "" : "s"}` : ""}</span></>,
-    side: <>{TIER_WORD[c.kind]} · {c.done} of {c.total}</>,
+    side: <>{word} · {c.done} of {c.total}</>,
   };
 }
 
@@ -192,9 +193,10 @@ function OwnCards({ items, now, onOpen }: { items: OwnedThing[]; now: number; on
     <section className="sec" aria-labelledby="ownH">
       <div className="sec-head">
         <h2 className="sec-h" id="ownH">My learning</h2>
-        {cards.length > 4 && <button className="sec-link" type="button" onClick={() => onOpen("/learn")}>See all</button>}
+        {cards.length > 3 && <button className="sec-link" type="button" onClick={() => onOpen("/learn")}>See all</button>}
       </div>
-      <div className="own">{cards.slice(0, 4).map((o) => <OwnCard key={o.key} o={o} onOpen={onOpen} />)}</div>
+      {/* At most three, with room around them; the rest are one tap away in My learning (founder). */}
+      <div className="own">{cards.slice(0, 3).map((o) => <OwnCard key={o.key} o={o} onOpen={onOpen} />)}</div>
     </section>
   );
 }
@@ -242,48 +244,7 @@ function Week({ agenda, now, sfx, onOpen }: { agenda: AgendaRow[]; now: number; 
   );
 }
 
-function ExploreMore({ catalog, data, onOpen }: { catalog: StageCatalog; data: BuyerData; onOpen: (path: string) => void }) {
-  const fs = TIERS.map((t) => {
-    const f = catalog.formats.find((x) => x.tier === t)!;
-    return { ...f, avail: f.list.filter((x) => !x.owned && !(data.inCohort && t === "live_cohort")) };
-  }).filter((f) => f.avail.length);
-  const ownsAny = (t: Tier) => data.items.some((i) => (t === "live_cohort" && i.kind === "cohort") || (t === "masterclass" && i.kind === "masterclass") || (t === "workshop" && (i.kind === "workshop" || i.kind === "liveworkshop")));
-  const [tier, setTier] = useState<Tier | null>(null);
-  const cur = fs.find((f) => f.tier === tier) ?? fs.find((f) => !ownsAny(f.tier)) ?? fs[0];
-  const [railRef, setRailRef] = useState<HTMLDivElement | null>(null);
-  if (!cur) return null;
-  const C = FORMAT_COPY[cur.tier];
-  const body = cur.tier === "live_cohort" && data.items.some((i) => i.kind === "masterclass") ? "The step after a masterclass: make your own work, with mentors reviewing it." : C.body;
-  const scroll = (dir: number) => railRef?.scrollBy({ left: dir * railRef.clientWidth * 0.9, behavior: "smooth" });
-  return (
-    <section className="sec" aria-labelledby="exH">
-      <div className="sec-head">
-        <h2 className="sec-h" id="exH">Explore more</h2>
-        <span className="sec-tools">
-          {cur.avail.length > 3 && <span className="rail-nav"><button type="button" onClick={() => scroll(-1)} aria-label="Scroll left"><ChevronLeft className="ic" /></button><button type="button" onClick={() => scroll(1)} aria-label="Scroll right"><ChevronRight className="ic" /></button></span>}
-          <button className="sec-link" type="button" onClick={() => onOpen("/explore")}>See the full catalogue</button>
-        </span>
-      </div>
-      {fs.length > 1 && (
-        <div className="ex-tabs" role="tablist">
-          {fs.map((f) => (
-            <button key={f.tier} type="button" role="tab" aria-selected={f.tier === cur.tier} className={f.tier === cur.tier ? "is-on" : undefined} onClick={() => { void tapTick(); setTier(f.tier); }}>
-              {FORMAT_COPY[f.tier].plural}<span>{f.avail.length}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="ex-intro">
-        <div className="ex-copy"><h3 className="fm-line">{C.line}</h3><p className="fm-body">{body}</p></div>
-        <ul className="fm-facts">{formatFacts(cur).filter((t) => !/^\d+ (masterclasses|programs|workshops?)$/.test(t)).map((t) => <li key={t}>{t}</li>)}</ul>
-      </div>
-      <div ref={setRailRef} className={`pds pds--${cur.tier} pds--rail`}>{cur.avail.map((x) => <ProductCard key={x.offering.id} x={x} />)}</div>
-      <button className="ex-all" type="button" onClick={() => onOpen(`/explore?tier=${cur.tier}`)}>See all {C.plural.toLowerCase()}<ArrowRight className="ic" /></button>
-    </section>
-  );
-}
-
-export default function BuyerHome({ data, catalog, firstName, applicant }: { data: BuyerData; catalog: StageCatalog | null; firstName: string; applicant?: ApplicantStageView | null }) {
+export default function BuyerHome({ data, catalog, heads, firstName, applicant }: { data: BuyerData; catalog: StageCatalog | null; heads: Head[]; firstName: string; applicant?: ApplicantStageView | null }) {
   const navigate = useNavigate();
   const now = useNow(30_000);
   const loud = useMemo(() => pickLoud(data.items, now), [data.items, now]);
@@ -304,7 +265,8 @@ export default function BuyerHome({ data, catalog, firstName, applicant }: { dat
           {applicant && <StageApplicantCard view={applicant} />}
           <OwnCards items={data.items} now={now} onOpen={open} />
           {hasRail && <div className="only-narrow-week"><Week agenda={agenda} now={now} sfx="p" onOpen={open} /></div>}
-          {catalog && <ExploreMore catalog={catalog} data={data} onOpen={open} />}
+          {/* Then what a new person sees: the same rows, without what they own (founder, 2 Nov 2026). */}
+          {catalog && <HomeRows data={catalog} heads={heads} />}
         </div>
         {hasRail && <aside className="hm-rail"><Week agenda={agenda} now={now} sfx="d" onOpen={open} /></aside>}
       </div>

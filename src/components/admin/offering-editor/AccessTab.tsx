@@ -71,7 +71,7 @@ const BUCKET_META: Record<
   },
 };
 
-/** "Access" tab for the offering editor. Reconciles entitlement against actual
+/** The "Access check" under the offering editor's Students tab. Reconciles entitlement against actual
  *  access, so a student who is owed this offering but cannot reach it shows up
  *  here instead of only surfacing when they complain. */
 export default function AccessTab({ offeringId }: Props) {
@@ -294,8 +294,8 @@ export default function AccessTab({ offeringId }: Props) {
               offering but will never receive it automatically — their phone
               number isn't Indian, so the OTP claim can't match them. They can
               still sign in by email magic link, but they'll see an empty
-              library. Grant each an enrolment directly from{" "}
-              <strong>Enrolments</strong>.
+              library. Give each one access with <strong>Add student</strong>{" "}
+              above.
             </p>
           </div>
         </div>

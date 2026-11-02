@@ -22,7 +22,7 @@ vi.mock("@/integrations/supabase/client", () => {
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ user: null }) }));
 
 import {
-  buildAgenda, buildBuyerHome, fetchBuyer, pastRecordings, pickLoud, recordingHref, sessionPath, sessionWho,
+  buildAgenda, buildBuyerHome, fetchBuyer, isLiveCohort, pastRecordings, pickLoud, recordingHref, sessionPath, sessionWho,
   type BuyerRows, type CohortItem, type CourseItem, type OwnedThing,
 } from "../buyer";
 
@@ -150,23 +150,47 @@ describe("buildBuyerHome: cohorts", () => {
     });
   };
 
-  it("links the cohort to /cohort/<offering id>, whatever room config exists", () => {
+  it("is the cards of its courses with lessons, labelled live cohort, the first holding its batch's classes", () => {
     const home = buildBuyerHome(cohortRows(), NOW);
-    const cohort = home.items.find((i): i is CohortItem => i.kind === "cohort")!;
-    expect(cohort.roomPath).toBe("/cohort/co");
-    expect(sessionPath(cohort)).toBe("/cohort/co");
-    expect(cohort.batchName).toBe("Batch 25");
-    expect(cohort.sessions.map((s) => s.id)).toEqual(["s-past", "s-next"]);
+    expect(home.items.some((i) => i.kind === "cohort")).toBe(false);
+    const cards = courseCards(home.items);
+    expect(cards.map((c) => [c.courseId, c.kind, c.partOf, c.cohort])).toEqual([["room", "course", "The Cohort", true], ["x", "course", "The Cohort", true]]);
+    expect(cards.map((c) => c.courseTitle)).toEqual(["Cohort Course", "Bonus Workshop"]);
+    expect(cards[0].sessions.map((s) => s.id)).toEqual(["s-past", "s-next"]);
+    expect(cards[1].sessions).toEqual([]);
+    expect(sessionPath(cards[0])).toBe("/courses/room");
+    expect(home.items.every(isLiveCohort)).toBe(true);
     expect(home.inCohort).toBe(true);
   });
 
-  it("adds a card for each course with lessons that comes with the cohort, holding none of its classes", () => {
-    const home = buildBuyerHome(cohortRows(), NOW);
-    expect(home.items[0].kind).toBe("cohort");
-    const cards = courseCards(home.items);
-    expect(cards.map((c) => [c.courseId, c.kind, c.partOf])).toEqual([["room", "course", "The Cohort"], ["x", "course", "The Cohort"]]);
-    expect(cards.map((c) => c.courseTitle)).toEqual(["Cohort Course", "Bonus Workshop"]);
-    expect(cards.every((c) => c.sessions.length === 0)).toBe(true);
+  it("comes before masterclasses", () => {
+    const mc = course("m", 3), room = course("room", 2);
+    const home = buildBuyerHome(withCourses([mc, room], {
+      enrolments: [
+        { id: "en1", offering_id: "mc", offerings: offering("mc", "masterclass") },
+        { id: "en2", offering_id: "co", offerings: offering("co", "live_cohort") },
+      ],
+      links: [{ offering_id: "mc", course_id: "m" }, { offering_id: "co", course_id: "room" }],
+      progress: [{ chapter_id: "m-ch1", course_id: "m", completed_at: iso(NOW - H), last_position_seconds: 0, updated_at: iso(NOW - H) }],
+    }), NOW);
+    expect(courseCards(home.items).map((c) => c.courseId)).toEqual(["room", "m"]);
+  });
+
+  it("keeps a cohort card, linked to /cohort/<offering id>, only while its course has no lessons", () => {
+    const room = course("room", 0);
+    const home = buildBuyerHome(withCourses([room], {
+      enrolments: [{ id: "en1", offering_id: "co", offerings: offering("co", "live_cohort", "The Cohort") }],
+      links: [{ offering_id: "co", course_id: "room" }],
+      batches: [{ id: "b1", name: "Batch 25", offering_id: "co" }],
+      sessions: [session("s-next", "room", NOW + D)],
+    }), NOW);
+    const cohort = home.items.find((i): i is CohortItem => i.kind === "cohort")!;
+    expect(home.items).toHaveLength(1);
+    expect(cohort.roomPath).toBe("/cohort/co");
+    expect(sessionPath(cohort)).toBe("/cohort/co");
+    expect(cohort.batchName).toBe("Batch 25");
+    expect(cohort.sessions.map((s) => s.id)).toEqual(["s-next"]);
+    expect(home.inCohort).toBe(true);
   });
 
   it("drops the 'from' label when the course has the offering's own name", () => {
@@ -210,7 +234,7 @@ describe("live sessions on courses that are not cohorts", () => {
     expect(buildAgenda(home.items, NOW, loud).map((r) => r.key)).toEqual(["qa-tomorrow"]);
   });
 
-  it("leaves a cohort's class on the cohort card when another offering holds the same course", () => {
+  it("leaves a cohort's class with the cohort when another offering holds the same course", () => {
     const shared = course("shared", 2);
     const home = buildBuyerHome(withCourses([shared], {
       enrolments: [
@@ -220,9 +244,10 @@ describe("live sessions on courses that are not cohorts", () => {
       links: [{ offering_id: "mc", course_id: "shared" }, { offering_id: "co", course_id: "shared" }],
       sessions: [session("c1", "shared", NOW + D)],
     }), NOW);
-    const cohort = home.items.find((i): i is CohortItem => i.kind === "cohort")!;
-    expect(cohort.sessions.map((s) => s.id)).toEqual(["c1"]);
-    expect(courseCards(home.items).flatMap((c) => c.sessions)).toEqual([]);
+    const [card] = courseCards(home.items);
+    expect(home.items).toHaveLength(1);
+    expect(card.cohort).toBe(true);
+    expect(card.sessions.map((s) => s.id)).toEqual(["c1"]);
     expect(buildAgenda(home.items, NOW, null).map((r) => r.key)).toEqual(["c1"]);
   });
 });

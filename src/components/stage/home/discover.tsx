@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { tapTick } from "@/lib/haptics";
 import { isNative } from "@/lib/platform";
 import { media } from "@/components/stage/landing/landing";
-import { inr, type CatalogItem, type StageCatalog, type Tier } from "./catalog";
+import { WORKSHOP_ART, inr, type CatalogItem, type StageCatalog, type Tier } from "./catalog";
 
 /*
  * Home for someone who hasn't bought yet, round 3 (founder, 2026-11-02; vault
@@ -34,8 +34,6 @@ const MASTERCLASSES = [
 const COHORTS = ["breakthrough-filmmakers-program", "video-editing-academy", "creator-academy"];
 const byOrder = (order: string[]) => (a: CatalogItem, b: CatalogItem) =>
   (order.indexOf(a.offering.slug) + 99) % 99 - (order.indexOf(b.offering.slug) + 99) % 99;
-/** A workshop without its own picture: a real LevelUp live session. */
-const WORKSHOP_ART = "cohort/l3c/a7bd60764e98.png";
 
 /* ---- what each product's page (offerings.landing) says about itself ---- */
 type Pair = string | { d?: string | null; m?: string | null } | null | undefined;
@@ -277,7 +275,8 @@ export function HomeRows({ data, heads }: { data: StageCatalog; heads: Head[] })
       const h = bySlug.get(x.offering.slug);
       return {
         id: x.offering.id, slug: x.offering.slug,
-        art: media(pick(h?.hero?.image, true)) ?? x.offering.thumbnail_url,
+        // The programme's own logo, as on its My learning card (founder, 2 Nov 2026); the page's hero only without one.
+        art: x.offering.thumbnail_url ?? media(pick(h?.hero?.image, true)) ?? null,
         kicker: fact(h, /next cohort/i),
         title: x.offering.title,
         meta: [fact(h, /duration/i), fact(h, /format/i)].filter(Boolean).join(" · "),

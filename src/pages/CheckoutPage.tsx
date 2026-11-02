@@ -4,7 +4,7 @@ import { useCheckoutPricing } from "@/hooks/useCheckoutPricing";
 import { useCheckoutCoupon } from "@/hooks/useCheckoutCoupon";
 import { useGuestCheckout } from "@/hooks/useGuestCheckout";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, supabaseUrl } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,7 @@ import GuaranteeBadge from "@/components/offering/GuaranteeBadge";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
 import { PhoneInput } from "@/components/auth/PhoneInput";
 import CheckoutVerify from "@/components/checkout/CheckoutVerify";
+import PaymentProgress, { type PayProgress } from "@/components/checkout/PaymentProgress";
 import { SkeletonLine, SkeletonBlock, RevealOnMount } from "@/components/patterns/LoadingState";
 import CountUp from "@/components/motion/CountUp";
 import { useMotionSafe } from "@/lib/motion";
@@ -262,6 +263,11 @@ export default function CheckoutPage() {
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [fieldTouched, setFieldTouched] = useState<Record<string, boolean>>({});
   const [paying, setPaying] = useState(false);
+  // What the buyer sees from tapping Pay to Razorpay's window, and while a
+  // payment is confirmed (PaymentProgress): never a blank page.
+  const [progress, setProgress] = useState<PayProgress>("idle");
+  // Razorpay's prefill for a signed-in buyer, fetched ahead of Pay.
+  const prefillRef = useRef<{ name: string; email: string; contact: string } | null>(null);
   const paymentInFlightRef = useRef(false);
   // The last Pay attempt's problem, shown inline under Pay until the next tap.
   const [payIssue, setPayIssue] = useState<PaymentIssue | null>(null);
@@ -520,6 +526,22 @@ export default function CheckoutPage() {
     totalPreviouslyPaid,
   });
 
+  /* -- Ahead of Pay: wake the order function, and fetch a signed-in buyer's
+        Razorpay prefill, so the tap has less to wait for. -- */
+  useEffect(() => {
+    if (!offering?.id) return;
+    const fn = user ? "create-razorpay-order" : "guest-create-order";
+    // A preflight boots the function's worker; nothing is created.
+    fetch(`${supabaseUrl}/functions/v1/${fn}`, { method: "OPTIONS" }).catch(() => {});
+    if (!user) { prefillRef.current = null; return; }
+    let live = true;
+    void supabase.from("users").select("full_name, email, phone").eq("id", user.id).maybeSingle()
+      .then(({ data }) => {
+        if (live && data) prefillRef.current = { name: data.full_name ?? "", email: data.email ?? user.email ?? "", contact: data.phone ?? "" };
+      });
+    return () => { live = false; };
+  }, [offering?.id, user]);
+
   /* -- Load Razorpay script -- */
   useEffect(() => {
     if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]'))
@@ -575,6 +597,7 @@ export default function CheckoutPage() {
 
   const releasePay = () => {
     setPaying(false);
+    setProgress("idle");
     paymentInFlightRef.current = false;
   };
 
@@ -666,7 +689,9 @@ export default function CheckoutPage() {
     let prefillName = guestName;
     let prefillEmail = guestEmail;
     let prefillContact = guestPhone;
-    if (user) {
+    if (user && prefillRef.current) {
+      ({ name: prefillName, email: prefillEmail, contact: prefillContact } = prefillRef.current);
+    } else if (user) {
       const { data: profile } = await supabase
         .from("users")
         .select("full_name, email, phone")
@@ -689,8 +714,11 @@ export default function CheckoutPage() {
         email: prefillEmail,
         contact: prefillContact,
       },
-      theme: { color: razorpayThemeColor(), backdrop_color: "rgba(0,0,0,0.8)" },
+      // PaymentProgress is the dim backdrop (and the spinner while Razorpay
+      // loads), so Razorpay's own backdrop stays clear.
+      theme: { color: razorpayThemeColor(), backdrop_color: "rgba(0,0,0,0)" },
       handler: async (response: RazorpaySuccess) => {
+        setProgress("confirming");
         // Razorpay has taken the money. Until verification confirms it, Pay
         // stays locked, here and after a reload.
         const paidOrder: OpenOrder = { ...order, paid: response, savedAt: Date.now() };
@@ -752,6 +780,19 @@ export default function CheckoutPage() {
       releasePay();
     });
     rzp.open();
+    // Keep "Opening secure payment" up until Razorpay's window is on screen
+    // (checkout.js builds its frame ahead of time, so its load event has
+    // already fired), then stay on only as its backdrop.
+    const shown = () => setProgress((p) => (p === "opening" ? "sheet" : p));
+    const started = Date.now();
+    const watch = window.setInterval(() => {
+      const box = document.querySelector<HTMLElement>(".razorpay-container");
+      const up = !!box && getComputedStyle(box).display !== "none" && box.getBoundingClientRect().height > 0;
+      if (up || Date.now() - started > 12000) {
+        window.clearInterval(watch);
+        window.setTimeout(shown, up ? 1200 : 0);
+      }
+    }, 200);
   };
 
   /* -- Check payment status --
@@ -825,6 +866,7 @@ export default function CheckoutPage() {
     }
 
     setPaying(true);
+    setProgress("opening");
 
     try {
       // A sheet opened before was closed without a result. A UPI payment can
@@ -1724,6 +1766,7 @@ export default function CheckoutPage() {
         )}
       </AnimatePresence>
     </div>
+      <PaymentProgress step={progress} />
     </RevealOnMount>
   );
 }

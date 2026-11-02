@@ -1,13 +1,12 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { Bell, Brain, Compass, Home, Library, Search, Shield, BarChart3, Users } from "lucide-react";
+import { Bell, Compass, Home, Library, Search, Shield, BarChart3, Users } from "lucide-react";
 import PageMotion from "@/components/motion/PageMotion";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import RoomNavSlot from "@/components/layout/RoomNavSlot";
 import { LevelUpMark } from "@/components/brand/LevelUpMark";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/hooks/useNotifications";
-import { useStudioEnabled } from "@/hooks/useStudio";
 import { useCohortRoomsSurfaceValue } from "@/contexts/CohortRoomsSurfaceContext";
 import { hapticSelection, tapTick } from "@/lib/haptics";
 import { useBuyerHome } from "@/components/stage/home/buyer";
@@ -21,8 +20,8 @@ import "./shell.css";
  * StudentLayout's chrome with the round-4 mockup's: on a phone a top bar
  * (logo, search, notifications, you) and four tabs (Home, My learning,
  * Explore, Community); from 900px a sidebar that always lists what you own,
- * with search in the top bar. Studio still appears for cohort members, the
- * cohort-room entry still comes from RoomNavSlot, and staff keep their
+ * with search in the top bar. No Studio (founder, 2 Nov 2026: never planned),
+ * the cohort-room entry still comes from RoomNavSlot, and staff keep their
  * dashboard link.
  */
 
@@ -32,7 +31,6 @@ const NAV = [
   { label: "Explore", icon: Compass, path: "/explore" },
   { label: "Community", icon: Users, path: "/community" },
 ];
-const STUDIO = { label: "Studio", icon: Brain, path: "/studio" };
 
 const initials = (name?: string | null) =>
   (name ?? "").trim().split(/\s+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 2).toUpperCase() || "?";
@@ -50,7 +48,6 @@ export default function StageShell() {
   const location = useLocation();
   const [notifOpen, setNotifOpen] = useState(false);
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
-  const { data: studioEnabled } = useStudioEnabled();
   const { enabled: roomsEnabled } = useCohortRoomsSurfaceValue();
   const { data: buyer, isLoading: ownedLoading, isError: ownedError, refetch: refetchOwned } = useBuyerHome();
   const owned = useMemo(() => (buyer?.items ?? []).map((i) => cardView(i, Date.now())), [buyer]);
@@ -61,13 +58,6 @@ export default function StageShell() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [notifOpen]);
-
-  const nav = useMemo(() => {
-    if (!studioEnabled) return NAV;
-    const arr = [...NAV];
-    arr.splice(2, 0, STUDIO);
-    return arr;
-  }, [studioEnabled]);
 
   const isOn = (path: string) => location.pathname === path || location.pathname.startsWith(`${path}/`);
   const first = (profile?.full_name ?? "").trim().split(/\s+/)[0] || "You";
@@ -85,19 +75,25 @@ export default function StageShell() {
       {/* Desktop sidebar */}
       <aside className="hm-side" aria-label="Main navigation">
         <Link to="/home" className="side-logo" aria-label="LevelUp home"><LevelUpMark /></Link>
-        {nav.map((item) => (
+        {NAV.map((item) => (
           <Link key={item.path} to={item.path} className={`nav${isOn(item.path) ? " is-on" : ""}`} aria-current={isOn(item.path) ? "page" : undefined}>
             <item.icon className="ic" />{item.label}
           </Link>
         ))}
         {roomsEnabled && <RoomNavSlot variant="desktop" />}
         <div className="side-k">My learning</div>
-        {owned.length ? owned.map((o) => (
-          <Link key={o.key} to={o.path} className="yi">
-            <span className="yi-art">{o.img && <img src={o.img} alt="" />}</span>
-            <span><span className="yi-t">{o.title}</span><span className="yi-m">{o.side}</span></span>
-          </Link>
-        )) : ownedLoading ? (
+        {owned.length ? (
+          // Three at most, with room to breathe; the rest are one click away (founder, 2 Nov 2026).
+          <>
+            {owned.slice(0, 3).map((o) => (
+              <Link key={o.key} to={o.path} className="yi">
+                <span className="yi-art">{o.img && <img src={o.img} alt="" />}</span>
+                <span><span className="yi-t">{o.title}</span><span className="yi-m">{o.side}</span></span>
+              </Link>
+            ))}
+            {owned.length > 3 && <Link to="/learn" className="side-all">See all {owned.length}</Link>}
+          </>
+        ) : ownedLoading ? (
           // Still reading what they own: the shape of two rows, not "Nothing here yet".
           <div className="side-skel" role="status" aria-busy="true">
             <span className="sr">Loading</span>
@@ -166,7 +162,7 @@ export default function StageShell() {
 
       {/* Phone tab bar */}
       <nav className="sh-tabbar" aria-label="Main navigation">
-        {nav.map((item) => (
+        {NAV.map((item) => (
           <Link
             key={item.path}
             to={item.path}

@@ -46,7 +46,9 @@ export interface MasterclassLanding {
   films: {
     heading: string;
     body: string | null;
-    items: { title: string; year: number | null; image: string; note: string | null; isNew?: boolean; wide?: boolean; alt?: string | null }[];
+    items: { title: string; year: number | null; image: string | null; note: string | null; isNew?: boolean; wide?: boolean; alt?: string | null }[];
+    /** films with no posters (Karthik's page): the website's reel plays beside the list instead */
+    reel?: { video: string; poster?: string | null } | null;
   } | null;
   ideas: {
     heading: string | null;
