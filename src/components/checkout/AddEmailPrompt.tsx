@@ -8,8 +8,9 @@ import { toast } from "@/lib/toast";
 /**
  * Optional "add your email" ask, for an account made by phone with no real
  * email yet (its email is the <digits>@phone.leveluplearning.in placeholder).
- * Saving goes through set_onboarding_profile, which also makes the address a
- * way to sign in. Skippable; a skip is remembered on this device.
+ * Saving goes through set_onboarding_profile, which keeps it on the profile
+ * only: it becomes a sign-in once the app can confirm it with a code.
+ * Skippable; a skip is remembered on this device.
  */
 const PLACEHOLDER_DOMAIN = "@phone.leveluplearning.in";
 const SKIP_KEY = "levelup:add-email-skipped";
@@ -74,7 +75,7 @@ export default function AddEmailPrompt() {
         : "Couldn't save your email. Try again from your profile.");
       return;
     }
-    toast.success("Email added. You can sign in with it too.");
+    toast.success("Email added.");
     setNeeded(false);
   };
 
@@ -82,7 +83,7 @@ export default function AddEmailPrompt() {
     <form onSubmit={save} className="mx-auto max-w-md rounded-2xl bg-surface-2 p-5 space-y-3 text-left">
       <div className="space-y-1">
         <p className="font-medium text-foreground">Add your email (optional)</p>
-        <p className="text-sm text-muted-foreground">For receipts and class links, and so you can also sign in with it.</p>
+        <p className="text-sm text-muted-foreground">For receipts and class links.</p>
       </div>
       <label htmlFor="add-email" className="sr-only">Email address</label>
       <Input
