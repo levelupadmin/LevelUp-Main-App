@@ -375,7 +375,7 @@ export type AnalyticsEvent =
   | { name: "sign_up"; method?: string }
   // ── Phase-3 conversion-funnel events (PostHog sink) ──────────────────
   | { name: "offering_viewed"; slug: string }
-  | { name: "pay_cta_tapped"; slug: string; surface: "hero" | "sticky" | "rail" }
+  | { name: "pay_cta_tapped"; slug: string; surface: "hero" | "sticky" | "rail" | "price_card" | "closing" }
   | { name: "checkout_loaded"; offeringId: string; guest: boolean }
   | { name: "payment_initiated"; orderId: string }
   | { name: "purchase_completed"; orderId: string; valueInr: number }

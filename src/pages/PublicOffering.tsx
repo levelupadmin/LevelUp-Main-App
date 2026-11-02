@@ -35,6 +35,7 @@ import { formatRuntime } from "@/lib/thankYouCourse";
 import { track } from "@/lib/analytics";
 import { STAGE_ENABLED } from "@/lib/appearance";
 import { LevelUpMark } from "@/components/brand/LevelUpMark";
+import { isLanding, type LandingAction } from "@/components/stage/landing/landing";
 // Stage look for this page: every rule is scoped to html[data-brand="stage"]
 // and keyed on the po-* hook classes below, so the flag-off page is unchanged.
 import "@/styles/stage-offering.css";
@@ -51,6 +52,8 @@ import {
 
 // Its own chunk, so the flag-off build never loads the Stage catalogue CSS.
 const StageAlsoFrom = lazy(() => import("@/components/stage/offering/StageAlsoFrom"));
+// The landing template and its CSS load only for a product that has landing content.
+const StageLanding = lazy(() => import("@/components/stage/landing/StageLanding"));
 
 /* ────────────────────────────────────────────────── */
 /*  Types                                             */
@@ -134,6 +137,8 @@ interface Offering {
   refund_policy_days: number | null;
   /** "masterclass" switches the refund line to the watch rule (GuaranteeBadge). */
   product_tier?: string | null;
+  /** Landing-page content copied from the product's marketing page (Stage only). */
+  landing?: unknown;
   /** null = no expiry ("Yours to keep" under Stage). */
   validity_days?: number | null;
   offering_courses: OfferingCourse[];
@@ -1465,9 +1470,8 @@ export default function PublicOffering() {
   // surface) and never for archived offerings (nothing left to sell).
   const railEligible = !isNative() && offering.status !== "archived";
 
-  return (
-    <div className="po-page min-h-screen bg-background">
-
+  const topBar = (
+    <>
       {/* Top bar. This is a PUBLIC route that renders OUTSIDE StudentLayout,
           so it must own its own notch handling: `safe-top` pushes the bar
           below the iOS Dynamic Island / status bar instead of letting the
@@ -1511,6 +1515,53 @@ export default function PublicOffering() {
           )}
         </div>
       </header>
+    </>
+  );
+
+  // Stage: a product whose landing content is filled (copied from its
+  // marketing page) gets the full landing page instead. Its buttons follow
+  // HeroActions' rules: a cohort applies through its Tally form, a
+  // masterclass goes to checkout, and the phone apps get Continue on web
+  // with every price left out.
+  const landing = STAGE_ENABLED && offering.status === "active" && isLanding(offering.landing) ? offering.landing : null;
+  if (landing) {
+    const action: LandingAction = applyUrl
+      ? { kind: "apply", href: applyUrl }
+      : isNative()
+        ? { kind: "native", webPath: `/p/${offering.slug}` }
+        : {
+            kind: "buy",
+            price: Number(offering.price_inr) || 0,
+            go: (surface) => {
+              track({ name: "pay_cta_tapped", slug: offering.slug, surface });
+              navigate(`/checkout/${offering.id}`);
+            },
+          };
+    return (
+      <div className="po-page min-h-screen bg-background">
+        {topBar}
+        <main>
+          <Suspense fallback={<div className="min-h-[70vh]" />}>
+            <StageLanding
+              landing={landing}
+              action={action}
+              after={
+                <Suspense fallback={null}>
+                  <StageAlsoFrom offeringId={offering.id} tier={offering.product_tier} />
+                </Suspense>
+              }
+            />
+          </Suspense>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  return (
+    <div className="po-page min-h-screen bg-background">
+
+      {topBar}
 
       <main className={`po-main mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8 ${railEligible ? "max-w-5xl lg:max-w-7xl" : "max-w-5xl xl:max-w-6xl"}`}>
         {/* Marketing flow + (on lg, web only) a sticky purchase rail.
