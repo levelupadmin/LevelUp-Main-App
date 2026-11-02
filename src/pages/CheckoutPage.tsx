@@ -780,12 +780,19 @@ export default function CheckoutPage() {
       releasePay();
     });
     rzp.open();
-    // Keep "Opening secure payment" up until Razorpay's window has loaded,
-    // then stay on only as its backdrop.
+    // Keep "Opening secure payment" up until Razorpay's window is on screen
+    // (checkout.js builds its frame ahead of time, so its load event has
+    // already fired), then stay on only as its backdrop.
     const shown = () => setProgress((p) => (p === "opening" ? "sheet" : p));
-    document.querySelector<HTMLIFrameElement>("iframe.razorpay-checkout-frame")
-      ?.addEventListener("load", () => window.setTimeout(shown, 300), { once: true });
-    window.setTimeout(shown, 12000);
+    const started = Date.now();
+    const watch = window.setInterval(() => {
+      const box = document.querySelector<HTMLElement>(".razorpay-container");
+      const up = !!box && getComputedStyle(box).display !== "none" && box.getBoundingClientRect().height > 0;
+      if (up || Date.now() - started > 12000) {
+        window.clearInterval(watch);
+        window.setTimeout(shown, up ? 1200 : 0);
+      }
+    }, 200);
   };
 
   /* -- Check payment status --

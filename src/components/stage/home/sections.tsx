@@ -2,10 +2,10 @@ import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, ChevronLeft, ChevronRight, Compass, Play } from "lucide-react";
 import { tapTick } from "@/lib/haptics";
+import { media } from "@/components/stage/landing/landing";
 import {
   FORMAT_COPY, LANG, formatFacts, inr, runtime,
-  type CatalogItem, type FormatSummary, type FreeLesson, type StageCatalog,
-} from "./catalog";
+  type CatalogItem, type FormatSummary, type FreeLesson, type StageCatalog, WORKSHOP_ART } from "./catalog";
 
 /*
  * The discovery sections of the round-4 Home (15_LMS_Experience_Lab/home.html):
@@ -140,7 +140,7 @@ export function ProductCard({ x, showTag }: { x: CatalogItem; showTag?: boolean 
   return (
     <button className="pd" type="button" onClick={() => { void tapTick(); navigate(`/p/${o.slug}`); }}>
       <span className="pd-art">
-        {o.thumbnail_url && <img src={o.thumbnail_url} alt="" loading="lazy" />}
+        {(o.thumbnail_url || t === "workshop") && <img src={o.thumbnail_url || media(WORKSHOP_ART)} alt="" loading="lazy" />}
         {showTag && <span className="tag">{TIER_WORD[t]}</span>}
         {x.owned && <span className="tag tag--yours">Yours</span>}
       </span>
