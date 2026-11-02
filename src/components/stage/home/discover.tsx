@@ -24,8 +24,16 @@ const SLIDES: { slug: string; title?: string }[] = [
   { slug: "ravi-basrur-teaches-music-composition", title: "Learn music from Ravi Basrur" },
   { slug: "creator-academy" },
 ];
+/** Masterclasses in leveluplearning.in's order; any other comes after. */
+const MASTERCLASSES = [
+  "karthick-subbaraj-teaches-filmmaking", "anthony-gonsalvez-teaches-film-editing", "g-venket-ram-teaches-photography",
+  "drk-kiran-teaches-art-direction", "ravi-basrur-teaches-music-composition", "lokesh-kanagaraj-teaches-film-making",
+  "nelson-dilipkumar-teaches-filmmaking",
+];
 /** Live cohorts with a page, in this order. */
 const COHORTS = ["breakthrough-filmmakers-program", "video-editing-academy", "creator-academy"];
+const byOrder = (order: string[]) => (a: CatalogItem, b: CatalogItem) =>
+  (order.indexOf(a.offering.slug) + 99) % 99 - (order.indexOf(b.offering.slug) + 99) % 99;
 /** A workshop without its own picture: a real LevelUp live session. */
 const WORKSHOP_ART = "cohort/l3c/a7bd60764e98.png";
 
@@ -37,6 +45,8 @@ export interface Head {
   facts: { label: string; value: string }[] | null;
   /** a wide picture for the masterclass's card */
   card: string | null;
+  /** the masterclass's poster tile from leveluplearning.in, copied into the landing bucket */
+  poster: string | null;
 }
 export function useLandingHeads() {
   return useQuery({
@@ -45,7 +55,7 @@ export function useLandingHeads() {
     queryFn: async (): Promise<Head[]> => {
       const { data, error } = await supabase
         .from("offerings")
-        .select("id, slug, title, product_tier, price_inr, v:landing->v, hero:landing->hero, facts:landing->facts, card:landing->card")
+        .select("id, slug, title, product_tier, price_inr, v:landing->v, hero:landing->hero, facts:landing->facts, card:landing->card, poster:landing->poster")
         .eq("is_public", true).eq("status", "active")
         .not("landing", "is", null);
       if (error) throw error;
@@ -206,10 +216,10 @@ export function HomeCarousel({ heads }: { heads: Head[] }) {
   );
 }
 
-/* ---- the three rows: the same wide card for every format ---- */
+/* ---- the three rows: masterclasses as the website's poster tiles, cohorts and workshops as wide cards ---- */
 interface Card { id: string; slug: string; art: string | null; kicker: string | null; title: string; meta: string }
 
-function CardRow({ id, title, tier, cards }: { id: string; title: string; tier: Tier; cards: Card[] }) {
+function CardRow({ id, title, tier, cards, poster }: { id: string; title: string; tier: Tier; cards: Card[]; poster?: boolean }) {
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
   if (!cards.length) return null;
@@ -228,13 +238,15 @@ function CardRow({ id, title, tier, cards }: { id: string; title: string; tier: 
           <button className="sec-link" type="button" onClick={() => navigate(`/explore?tier=${tier}`)}>See all</button>
         </span>
       </div>
-      <div ref={ref} className="hc-rail">
+      <div ref={ref} className={`hc-rail${poster ? " hc-rail--poster" : ""}`}>
         {cards.map((c) => (
-          <button key={c.id} type="button" className="hc-card" onClick={() => { void tapTick(); navigate(`/p/${c.slug}`); }}>
+          <button key={c.id} type="button" className={`hc-card${poster ? " hc-card--poster" : ""}`} aria-label={poster ? c.title : undefined}
+            onClick={() => { void tapTick(); navigate(`/p/${c.slug}`); }}>
             <span className="hc-card-art">{c.art && <img src={c.art} alt="" loading="lazy" decoding="async" />}</span>
             <span className="hc-card-b">
               {c.kicker && <span className="hc-eyebrow">{c.kicker}</span>}
-              <b className="hc-card-t">{c.title}</b>
+              {/* a poster already carries the name */}
+              {!poster && <b className="hc-card-t">{c.title}</b>}
               {c.meta && <span className="hc-card-m">{c.meta}</span>}
             </span>
           </button>
@@ -250,16 +262,17 @@ export function HomeRows({ data, heads }: { data: StageCatalog; heads: Head[] })
   const list = (t: Tier) => data.formats.find((f) => f.tier === t)?.list.filter((x) => !x.owned) ?? [];
   const price = (x: CatalogItem) => (!native && x.offering.price > 0 ? inr(x.offering.price) : null);
 
-  const masterclasses: Card[] = list("masterclass").map((x) => ({
+  const posters = list("masterclass").every((x) => bySlug.get(x.offering.slug)?.poster);
+  const masterclasses: Card[] = list("masterclass").sort(byOrder(MASTERCLASSES)).map((x) => ({
     id: x.offering.id, slug: x.offering.slug,
-    art: media(bySlug.get(x.offering.slug)?.card) ?? x.offering.thumbnail_url,
+    art: (posters ? media(bySlug.get(x.offering.slug)?.poster) : media(bySlug.get(x.offering.slug)?.card)) ?? x.offering.thumbnail_url,
     kicker: null,
     title: x.offering.title,
     meta: [x.lessons ? `${x.lessons} lessons` : null, price(x)].filter(Boolean).join(" · "),
   }));
   const cohorts: Card[] = list("live_cohort")
     .filter((x) => bySlug.get(x.offering.slug)?.v === 2)
-    .sort((a, b) => (COHORTS.indexOf(a.offering.slug) + 99) % 99 - (COHORTS.indexOf(b.offering.slug) + 99) % 99)
+    .sort(byOrder(COHORTS))
     .map((x) => {
       const h = bySlug.get(x.offering.slug);
       return {
@@ -280,7 +293,7 @@ export function HomeRows({ data, heads }: { data: StageCatalog; heads: Head[] })
 
   return (
     <>
-      <CardRow id="hcMcH" title="Masterclasses" tier="masterclass" cards={masterclasses} />
+      <CardRow id="hcMcH" title="Masterclasses" tier="masterclass" cards={masterclasses} poster={posters} />
       <CardRow id="hcCoH" title="Live cohorts" tier="live_cohort" cards={cohorts} />
       <CardRow id="hcWsH" title="Workshops" tier="workshop" cards={workshops} />
     </>

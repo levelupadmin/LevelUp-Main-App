@@ -423,10 +423,16 @@
 .hc-card-b { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 13px 15px 15px; flex: 1; }
 .hc-card-t { font: 680 17px/1.2 var(--font-display); letter-spacing: -0.01em; text-wrap: balance; }
 .hc-card-m { font-size: 13px; color: var(--s-text-2); font-variant-numeric: tabular-nums; }
+/* masterclasses: leveluplearning.in's own poster tiles, 3:4, the name is on the poster */
+.hc-rail--poster { grid-auto-columns: 44%; }
+.hc-card--poster { background: none; border-radius: 0; overflow: visible; }
+.hc-card--poster .hc-card-art { aspect-ratio: 3 / 4; border-radius: 14px; background: var(--s-surface-2); }
+.hc-card--poster .hc-card-b { padding: 8px 2px 0; }
 
 @media (min-width: 640px) {
   .hc-slide { flex-basis: 70%; }
   .hc-rail { grid-auto-columns: calc((100% - 12px) / 2.2); }
+  .hc-rail--poster { grid-auto-columns: calc((100% - 36px) / 3.4); }
 }
 @media (min-width: 900px) {
   .hc-track { gap: 0; margin: 0; padding: 0; scroll-padding: 0; border-radius: var(--s-r-card); }
@@ -438,5 +444,6 @@
   .hc-go { margin-top: 8px; height: 48px; padding: 0 20px; border-radius: 16px; background: var(--s-brand); color: var(--s-brand-ink); }
   .hc-ctrl { justify-content: space-between; }
   .hc-rail { grid-auto-columns: calc((100% - 32px) / 3); gap: 16px; margin: 0; padding: 0 0 4px; scroll-padding: 0; }
+  .hc-rail--poster { grid-auto-columns: calc((100% - 64px) / 4.4); }
   .hc-card:hover .hc-card-art img { transform: scale(1.03); }
 }
