@@ -47,6 +47,9 @@ const AdminCourseEditor = () => {
   const [availableOfferings, setAvailableOfferings] = useState<OfferingOption[]>([]);
   const [allOfferings, setAllOfferings] = useState<AllOffering[]>([]);
   const [linkedOfferingIds, setLinkedOfferingIds] = useState<string[]>([]);
+  // True when the course's offering links failed to load: the ticked list is
+  // then not the truth, so Save must not touch the links at all.
+  const [linksLoadFailed, setLinksLoadFailed] = useState(false);
 
   const [form, setForm] = useState({
     title: "",
@@ -118,6 +121,14 @@ const AdminCourseEditor = () => {
           });
         }
 
+        if (ocsRes.error) {
+          setLinksLoadFailed(true);
+          toast({
+            title: "Couldn't load which offerings contain this course",
+            description: "Saving will leave those links as they are. Reload to edit them.",
+            variant: "destructive",
+          });
+        }
         const linkedIds = (ocsRes.data || []).map((oc) => oc.offering_id);
         setLinkedOfferingIds(linkedIds);
 
@@ -132,6 +143,58 @@ const AdminCourseEditor = () => {
     };
     load();
   }, [courseId, isNew]);
+
+  /** "synced" | "kept" (admin declined an access-removing change) | "failed" (error shown). */
+  const syncOfferingLinks = async (savedCourseId: string): Promise<"synced" | "kept" | "failed"> => {
+    const fail = (description: string) => {
+      toast({ title: "Offering links not saved", description, variant: "destructive" });
+      return "failed" as const;
+    };
+    if (linksLoadFailed) return "kept";
+    const { data: current, error: readErr } = await supabase
+      .from("offering_courses")
+      .select("offering_id")
+      .eq("course_id", savedCourseId);
+    if (readErr) return fail(`Couldn't read the current links, so nothing was changed. ${readErr.message}`);
+
+    const currentIds = new Set((current || []).map((r) => r.offering_id));
+    const wanted = new Set(linkedOfferingIds);
+    const toAdd = [...wanted].filter((id) => !currentIds.has(id));
+    const toRemove = [...currentIds].filter((id) => !wanted.has(id));
+
+    if (toRemove.length > 0) {
+      const { data: enrols, error: enrolErr } = await supabase
+        .from("enrolments")
+        .select("user_id")
+        .in("offering_id", toRemove)
+        .eq("status", "active");
+      if (enrolErr) return fail(`Couldn't check who would lose access, so nothing was changed. ${enrolErr.message}`);
+      const students = new Set((enrols || []).map((e) => e.user_id)).size;
+      const names = toRemove
+        .map((id) => allOfferings.find((o) => o.id === id)?.title || "an offering")
+        .join(", ");
+      const message = students > 0
+        ? `Unlinking this course from ${names} removes it for ${students} student${students === 1 ? "" : "s"} who have access through ${toRemove.length === 1 ? "it" : "them"}. Continue?`
+        : `Unlink this course from ${names}?`;
+      if (!confirm(message)) return "kept";
+    }
+
+    if (toAdd.length > 0) {
+      const { error } = await supabase
+        .from("offering_courses")
+        .insert(toAdd.map((oid) => ({ offering_id: oid, course_id: savedCourseId })));
+      if (error) return fail(error.message);
+    }
+    if (toRemove.length > 0) {
+      const { error } = await supabase
+        .from("offering_courses")
+        .delete()
+        .eq("course_id", savedCourseId)
+        .in("offering_id", toRemove);
+      if (error) return fail(error.message);
+    }
+    return "synced";
+  };
 
   const handleSave = async () => {
     if (!form.title.trim()) {
@@ -228,14 +291,18 @@ const AdminCourseEditor = () => {
       return;
     }
 
-    // Sync offering_courses (bidirectional linking)
+    // Sync offering_courses. Students reach a course only through these links,
+    // so never wipe-and-reinsert: diff the ticked offerings against what the
+    // database holds right now, add the new ones, remove only the unticked
+    // ones, and ask first when a removal takes access away.
+    let linksKept = false;
     if (savedCourseId) {
-      await supabase.from("offering_courses").delete().eq("course_id", savedCourseId);
-      if (linkedOfferingIds.length > 0) {
-        await supabase.from("offering_courses").insert(
-          linkedOfferingIds.map((oid) => ({ offering_id: oid, course_id: savedCourseId! }))
-        );
+      const linkResult = await syncOfferingLinks(savedCourseId);
+      if (linkResult === "failed") {
+        setSaving(false);
+        return;
       }
+      linksKept = linkResult === "kept";
     }
 
     // Audit log
@@ -249,7 +316,9 @@ const AdminCourseEditor = () => {
       });
     }
 
-    toast({ title: "Course saved" });
+    toast(linksKept
+      ? { title: "Course saved", description: "Its offering links were left as they were." }
+      : { title: "Course saved" });
 
     if (isNew && savedCourseId) {
       navigate(`/admin/courses/${savedCourseId}/edit`);
