@@ -49,16 +49,17 @@ type Step = "wall" | "phone" | "code";
 type VerifyBody = Record<string, string>;
 type VerifyReply = { ok: boolean; data: { error?: string; detail?: string; access_token?: string; refresh_token?: string; is_new_user?: boolean } };
 
-// Same rule as Login.tsx: brand-new accounts and anyone without crafts go
-// through onboarding; a buyer coming back from checkout sees their order first.
+// Same rule as Login.tsx: brand-new accounts and anyone never asked their
+// crafts (craft_interests still NULL) go through onboarding, once; a skip
+// saves an empty list, which counts as asked. A buyer coming back from
+// checkout sees their order first.
 // Duplicated rather than imported so the flag-off /login stays byte-identical.
 const resolvePostAuthDestination = async (userId: string, fallback: string): Promise<string> => {
   if (fallback.startsWith("/thank-you/")) return fallback;
   try {
     const { data, error } = await supabase.from("users").select("craft_interests").eq("id", userId).single();
     if (error) return "/onboarding";
-    const crafts = (data?.craft_interests ?? []).filter(Boolean);
-    return crafts.length > 0 ? fallback : "/onboarding";
+    return data?.craft_interests != null ? fallback : "/onboarding";
   } catch {
     return "/onboarding";
   }

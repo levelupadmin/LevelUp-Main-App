@@ -28,11 +28,13 @@ import { springs, instant, otpSuccess, useMotionSafe } from "@/lib/motion";
 import { isStagingTestLogin } from "@/lib/stagingLogin";
 import heroCinematic from "@/assets/login/hero-cinematic.jpg";
 
-// After a session is minted, brand-new phone-first accounts haven't told us
+// After a session is minted, brand-new phone-first accounts haven't been asked
 // their crafts yet (and signups haven't given a name/email), so we route them
-// through /onboarding. Returning users with craft_interests already set go
-// straight to their intended destination. Defensive: any read failure falls
-// back to /onboarding so we never strand a user who lacks crafts.
+// through /onboarding. The picker asks ONCE: craft_interests is NULL until
+// Onboarding first shows it, then a list (empty if they skipped), so anyone
+// already asked goes straight to their intended destination, picks or not.
+// Defensive: any read failure falls back to /onboarding, which bounces an
+// already-asked account straight to /home.
 const resolvePostAuthDestination = async (
   userId: string,
   fallback: string
@@ -47,8 +49,7 @@ const resolvePostAuthDestination = async (
       .eq("id", userId)
       .single();
     if (error) return "/onboarding";
-    const crafts = (data?.craft_interests ?? []).filter(Boolean);
-    return crafts.length > 0 ? fallback : "/onboarding";
+    return data?.craft_interests != null ? fallback : "/onboarding";
   } catch {
     return "/onboarding";
   }
