@@ -12,7 +12,7 @@ import fontkit from "npm:@pdf-lib/fontkit@1.1.1";
 import qrcode from "npm:qrcode-generator@1.4.4";
 
 export type FieldKey = "name" | "date" | "number" | "line" | "verify" | "qr";
-export type FontKey = "sans" | "sans-regular" | "serif" | "script";
+export type FontKey = "sans" | "sans-regular" | "serif" | "script" | "inter" | "inter-bold";
 
 export interface DesignField {
   key: FieldKey;
@@ -44,6 +44,8 @@ export const FONT_FILES: Record<FontKey, string> = {
   "sans-regular": "fonts/sans-regular.ttf",
   serif: "fonts/serif.ttf",
   script: "fonts/script.ttf",
+  inter: "fonts/inter.ttf",
+  "inter-bold": "fonts/inter-bold.ttf",
 };
 
 export const FIELD_KEYS: FieldKey[] = ["name", "date", "number", "line", "verify", "qr"];
@@ -53,7 +55,9 @@ const FONT_KEYS = Object.keys(FONT_FILES) as FontKey[];
 
 /** The bold face used for **marked** words inside a line. */
 export function boldOf(font: FontKey): FontKey {
-  return font === "sans-regular" ? "sans" : font;
+  if (font === "sans-regular") return "sans";
+  if (font === "inter") return "inter-bold";
+  return font;
 }
 
 /** Split "a **b** c" into [{text:"a ",bold:false},{text:"b",bold:true},{text:" c",bold:false}]. */

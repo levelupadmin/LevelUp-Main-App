@@ -81,8 +81,8 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selected, setSelected] = useState<FieldKey>("name");
   const [sampleName, setSampleName] = useState(SAMPLE_VALUES.name);
-  const [sampleStart, setSampleStart] = useState("2026-02-02");
-  const [sampleEnd, setSampleEnd] = useState("2026-05-16");
+  const sampleStart = "2026-02-01";
+  const sampleEnd = "2026-05-01";
   const [busy, setBusy] = useState<string | null>(null);
   const [assign, setAssign] = useState<{ design: DesignRow | null; courseId: string; mode: "auto" | "manual"; threshold: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -337,11 +337,7 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
                     <Textarea rows={4} value={draft.line_template} onChange={(e) => setDraft({ ...draft, line_template: e.target.value })}
                       placeholder={"In recognition of the successful completion of LevelUp Learning's\n**12-week intensive Video Editing Cohort,** conducted from\n{start} to {end}."} />
                   </label>
-                  <p className="text-xs text-muted-foreground">{"{start}"} and {"{end}"} become each batch's dates, set on the Issue screen. Put ** around words to make them bold. A new line starts a new printed line.</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="text-xs text-muted-foreground">Try a start<Input type="date" value={sampleStart} onChange={(e) => setSampleStart(e.target.value)} /></label>
-                    <label className="text-xs text-muted-foreground">Try an end<Input type="date" value={sampleEnd} onChange={(e) => setSampleEnd(e.target.value)} /></label>
-                  </div>
+                  <p className="text-xs text-muted-foreground">{"{start}"} and {"{end}"} become each batch's start and end month, picked on the Issue screen (the preview uses February 2026 to May 2026). Put ** around words to make them bold. A new line starts a new printed line.</p>
                 </div>
               )}
             </div>

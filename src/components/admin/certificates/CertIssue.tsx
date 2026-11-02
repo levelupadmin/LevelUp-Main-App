@@ -28,6 +28,37 @@ const CHUNK = 5;
 
 const looksOff = (name: string | null) => !name || name.trim().length < 4 || !/\s/.test(name.trim());
 
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const THIS_YEAR = new Date().getFullYear();
+const YEARS = Array.from({ length: 8 }, (_, i) => String(THIS_YEAR - 4 + i));
+
+/** "2026-09-01" → { m: "09", y: "2026" }; the day is never used. */
+const splitMonth = (iso: string) => ({ m: iso ? iso.slice(5, 7) : "", y: iso ? iso.slice(0, 4) : "" });
+const joinMonth = (m: string, y: string) => (m && y ? `${y}-${m}-01` : "");
+
+function MonthPicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const { m, y } = splitMonth(value);
+  return (
+    <div className="text-xs text-muted-foreground space-y-1">
+      <span>{label}</span>
+      <div className="grid grid-cols-[1fr_96px] gap-2">
+        <Select value={m} onValueChange={(nm) => onChange(joinMonth(nm, y || String(THIS_YEAR)))}>
+          <SelectTrigger aria-label={`${label} month`}><SelectValue placeholder="Month" /></SelectTrigger>
+          <SelectContent>
+            {MONTH_NAMES.map((name, i) => <SelectItem key={name} value={String(i + 1).padStart(2, "0")}>{name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={y} onValueChange={(ny) => onChange(joinMonth(m || "01", ny))}>
+          <SelectTrigger aria-label={`${label} year`}><SelectValue placeholder="Year" /></SelectTrigger>
+          <SelectContent>
+            {YEARS.map((yy) => <SelectItem key={yy} value={yy}>{yy}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
 export default function CertIssue({ courseId, onCourse, onStudent }: { courseId: string | null; onCourse: (id: string) => void; onStudent: (userId: string) => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -42,7 +73,7 @@ export default function CertIssue({ courseId, onCourse, onStudent }: { courseId:
   const [reason, setReason] = useState("");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
-  const [batch, setBatch] = useState<{ start: string; end: string; style: DateStyle; line: string } | null>(null);
+  const [batch, setBatch] = useState<{ start: string; end: string; line: string } | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
 
   const course = overview.data?.find((r) => r.course_id === courseId) ?? null;
@@ -57,7 +88,6 @@ export default function CertIssue({ courseId, onCourse, onStudent }: { courseId:
     setBatch({
       start: course.period_start ?? "",
       end: course.period_end ?? "",
-      style: course.date_style ?? "month",
       line: course.line_text ?? "",
     });
   }, [course?.course_id, course?.period_start, course?.period_end, course?.date_style, course?.line_text]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -66,12 +96,12 @@ export default function CertIssue({ courseId, onCourse, onStudent }: { courseId:
   const hasLineField = !!design?.fields.some((f) => f.key === "line");
   const sentence = (batch?.line.trim() || designSentence).trim();
   const datesNeeded = needsDates(sentence);
-  const printedLine = batch ? fillLine(sentence, { start: batch.start || null, end: batch.end || null, style: batch.style }) : "";
+  const printedLine = batch ? fillLine(sentence, { start: batch.start || null, end: batch.end || null, style: "month" as DateStyle }) : "";
   const batchDirty =
     !!course && !!batch &&
     (batch.start !== (course.period_start ?? "") ||
       batch.end !== (course.period_end ?? "") ||
-      batch.style !== (course.date_style ?? "month") ||
+      (course.date_style ?? "month") !== "month" ||
       batch.line.trim() !== (course.line_text ?? "").trim());
   const datesMissing = datesNeeded && (!batch?.start || !batch?.end);
   const datesBackwards = !!batch?.start && !!batch?.end && batch.end < batch.start;
@@ -110,7 +140,7 @@ export default function CertIssue({ courseId, onCourse, onStudent }: { courseId:
         course_id: courseId,
         start: batch.start || null,
         end: batch.end || null,
-        style: batch.style,
+        style: "month",
         line_text: batch.line,
       });
       await qc.invalidateQueries({ queryKey: ["admin-cert-overview"] });
@@ -191,29 +221,16 @@ export default function CertIssue({ courseId, onCourse, onStudent }: { courseId:
               <p className="text-sm font-semibold">This batch</p>
               <p className="text-xs text-muted-foreground">Saved on the course and printed on every certificate you issue for it.</p>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <label className="text-xs text-muted-foreground">Started
-                <Input type="date" value={batch.start} onChange={(e) => setBatch({ ...batch, start: e.target.value })} />
-              </label>
-              <label className="text-xs text-muted-foreground">Ended
-                <Input type="date" value={batch.end} onChange={(e) => setBatch({ ...batch, end: e.target.value })} />
-              </label>
-              <label className="text-xs text-muted-foreground">Print dates as
-                <Select value={batch.style} onValueChange={(v) => setBatch({ ...batch, style: v as DateStyle })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="month">July 2025</SelectItem>
-                    <SelectItem value="day">19 July 2025</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <MonthPicker label="Start month" value={batch.start} onChange={(v) => setBatch({ ...batch, start: v })} />
+              <MonthPicker label="End month" value={batch.end} onChange={(v) => setBatch({ ...batch, end: v })} />
             </div>
             {hasLineField ? (
               <>
                 <label className="block text-xs text-muted-foreground">Wording for this batch (leave empty to use the design's)
                   <Textarea rows={3} value={batch.line} placeholder={designSentence || "conducted from {start} to {end}"} onChange={(e) => setBatch({ ...batch, line: e.target.value })} />
                 </label>
-                <p className="text-xs text-muted-foreground">{"{start}"} and {"{end}"} become the dates; wrap words in ** to make them bold.</p>
+                <p className="text-xs text-muted-foreground">{"{start}"} and {"{end}"} become the months above; wrap words in ** to make them bold.</p>
                 <div className="rounded-md bg-background p-3 text-sm whitespace-pre-line">
                   <span className="text-xs text-muted-foreground block mb-1">Prints as</span>
                   {printedLine ? printedLine.replace(/\*\*/g, "") : <span className="text-muted-foreground">Nothing (no sentence on this design)</span>}
@@ -222,14 +239,14 @@ export default function CertIssue({ courseId, onCourse, onStudent }: { courseId:
             ) : (
               <p className="text-xs text-warning">This design has no place for the batch sentence yet, so the dates aren't printed. In Designs, open it, switch on Batch line and place it.</p>
             )}
-            {datesMissing && <p className="text-xs text-warning">Add the start and end dates before issuing.</p>}
-            {datesBackwards && <p className="text-xs text-destructive">The end date is before the start date.</p>}
+            {datesMissing && <p className="text-xs text-warning">Pick the start and end month before issuing.</p>}
+            {datesBackwards && <p className="text-xs text-destructive">The end month is before the start month.</p>}
             <div className="flex gap-2">
               <Button size="sm" variant="outline" disabled={!batchDirty || batchBusy || datesBackwards} onClick={async () => { if (await saveBatch()) toast({ title: "Batch saved" }); }}>
                 {batchBusy ? "Saving…" : "Save batch"}
               </Button>
               {design && (
-                <Button size="sm" variant="ghost" onClick={() => previewDesignPdf(design, { sample_name: previewName, line_text: sentence, start: batch.start, end: batch.end, style: batch.style }).catch((e: Error) => toast({ title: e.message, variant: "destructive" }))}>
+                <Button size="sm" variant="ghost" onClick={() => previewDesignPdf(design, { sample_name: previewName, line_text: sentence, start: batch.start, end: batch.end, style: "month" }).catch((e: Error) => toast({ title: e.message, variant: "destructive" }))}>
                   Preview the real PDF
                 </Button>
               )}

@@ -11,7 +11,7 @@ import { supabase, supabaseUrl } from "@/integrations/supabase/client";
  */
 
 export type FieldKey = "name" | "date" | "number" | "line" | "verify" | "qr";
-export type FontKey = "sans" | "sans-regular" | "serif" | "script";
+export type FontKey = "sans" | "sans-regular" | "serif" | "script" | "inter" | "inter-bold";
 
 export interface DesignField {
   key: FieldKey;
@@ -37,7 +37,8 @@ export interface CertificateRender {
 export const LINE_GAP = 1.4;
 
 /** The bold face used for **marked** words (mirrors render.ts). */
-export const boldOf = (font: FontKey | undefined): FontKey => (!font || font === "sans-regular" ? "sans" : font);
+export const boldOf = (font: FontKey | undefined): FontKey =>
+  !font || font === "sans-regular" ? "sans" : font === "inter" ? "inter-bold" : font;
 
 export function segments(line: string): { text: string; bold: boolean }[] {
   return line.split("**").map((text, i) => ({ text, bold: i % 2 === 1 })).filter((sg) => sg.text);
@@ -77,6 +78,8 @@ export const FONT_LABELS: Record<FontKey, string> = {
   "sans-regular": "Sans",
   serif: "Serif",
   script: "Script",
+  inter: "Inter",
+  "inter-bold": "Inter bold",
 };
 
 export const DESIGN_BUCKET = "certificate-designs";
@@ -89,6 +92,8 @@ const FONT_FAMILY: Record<FontKey, string> = {
   "sans-regular": "LUCertSansRegular",
   serif: "LUCertSerif",
   script: "LUCertScript",
+  inter: "LUCertInter",
+  "inter-bold": "LUCertInterBold",
 };
 
 export const fontFamilyFor = (font: FontKey | undefined) => `'${FONT_FAMILY[font ?? "sans"]}', sans-serif`;
