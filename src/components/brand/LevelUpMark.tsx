@@ -8,8 +8,9 @@
 // replace it everywhere once Stage is the default (keep LevelUpWordmark and the
 // boot splash in lockstep until then: CLAUDE.md Tier 1).
 //
-// Colour: letters use currentColor; the line uses `lineClassName` (e.g.
-// "text-brand-text") so the line can carry the accent while the name stays neutral.
+// Colour: the whole mark, line included, is currentColor: white on the dark
+// app, like the real logo. The line never takes the accent (founder,
+// 2026-11-02). `lineClassName` is only for layout classes.
 
 import * as React from "react";
 import { motion } from "framer-motion";
@@ -40,7 +41,7 @@ export interface LevelUpMarkProps {
   /** The small "learning" line under the name. */
   showSub?: boolean;
   className?: string;
-  /** Classes for the rising line, usually a text colour: "text-brand-text". */
+  /** Layout classes for the rising line. Never a colour: the line stays the logo's own white. */
   lineClassName?: string;
   /** Fires as node i starts drawing. Hook sound + haptics here. */
   onNode?: (i: NodeIndex) => void;

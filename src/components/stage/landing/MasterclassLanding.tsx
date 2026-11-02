@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Cta, Faqs, ForYou, Loop, Player, Reviews, Section, StickyBar } from "./parts";
 import { callName, clock, inr, media, priceFree, runtime, type LandingAction, type MasterclassLanding as Data } from "./landing";
@@ -17,7 +17,8 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
   const heroCta = useRef<HTMLDivElement | null>(null);
   const [allLessons, setAllLessons] = useState(false);
   const price = action.kind === "buy" ? action.price : d.facts.price;
-  const lessons = allLessons ? d.lessons.items : d.lessons.items.slice(0, 6);
+  const lessonItems = d.lessons?.items ?? [];
+  const lessons = allLessons ? lessonItems : lessonItems.slice(0, 6);
 
   const facts = [
     { label: "Lessons", value: String(d.facts.lessons) },
@@ -31,7 +32,7 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
     <div className="stage-ui ld ld--mc">
       {/* Hero: the mentor's own loop, the claim, one action */}
       <section className="ld-hero" aria-labelledby="ld-h1">
-        <div className="ld-hero-media">
+        <div className="ld-hero-media ld-hero-media--fit" style={heroShape(d)}>
           <picture>
             {d.hero.image.m && <source media="(max-width: 899px)" srcSet={media(d.hero.image.m)} />}
             <img src={media(d.hero.image.d)} alt={d.hero.alt} style={d.hero.position ? { objectPosition: d.hero.position } : undefined} fetchPriority="high" />
@@ -104,7 +105,7 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
         </Section>
       )}
 
-      <Section id="ld-lessons" eyebrow="The lessons" title={`${d.facts.lessons} lessons, ${runtime(d.facts.minutes)}`} body={d.lessons.body}>
+      <Section id="ld-lessons" eyebrow="The lessons" title={`${d.facts.lessons} lessons, ${runtime(d.facts.minutes)}`} body={d.lessons?.body}>
         <div className="cd-lessons ld-lessons">
           {lessons.map((l) => (
             <div key={l.n} className="cd-lesson ld-lesson">
@@ -117,9 +118,9 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
             </div>
           ))}
         </div>
-        {d.lessons.items.length > 6 && (
+        {lessonItems.length > 6 && (
           <button type="button" className="btn btn--md btn--secondary ld-more" onClick={() => setAllLessons((v) => !v)}>
-            {allLessons ? "Show fewer lessons" : `Show all ${d.lessons.items.length} lessons`}
+            {allLessons ? "Show fewer lessons" : `Show all ${lessonItems.length} lessons`}
           </button>
         )}
       </Section>
@@ -140,7 +141,7 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
         </figure>
       )}
 
-      {d.quotes.items.length > 0 && (
+      {d.quotes && d.quotes.items.length > 0 && (
         <Section id="ld-quotes" eyebrow="From the lessons" title={`In ${callName(d.name)}'s words`} body={d.quotes.body}>
           <div className="ld-rail ld-quotes">
             {d.quotes.items.map((q) => (
@@ -188,7 +189,7 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
         </div>
       </Section>
 
-      {d.reviews.items.length > 0 && (
+      {d.reviews && d.reviews.items.length > 0 && (
         <Section id="ld-reviews" eyebrow="Reviews" title="What buyers wrote" body={d.reviews.body}>
           <Reviews items={d.reviews.items} />
         </Section>
@@ -248,6 +249,19 @@ export default function MasterclassLanding({ d, action, after }: { d: Data; acti
       )}
     </div>
   );
+}
+
+/**
+ * The hero frame takes the photo's own shape (founder, 2026-11-02: a portrait
+ * squeezed into a wide box cut G Venket Ram's face): --ar-m on phones and
+ * tablets, --ar-d on laptops, kept between portrait 4:5 and wide 3:2.
+ */
+function heroShape(d: Data): CSSProperties | undefined {
+  const s = d.hero.size;
+  if (!s) return undefined;
+  const clamp = (r: number) => Math.min(1.5, Math.max(0.8, r));
+  const m = s.m ?? s.d;
+  return { "--ar-d": clamp(s.d[0] / s.d[1]), "--ar-m": clamp(m[0] / m[1]) } as CSSProperties;
 }
 
 /** The hero loop, phone or desktop cut, playing only on screen. */

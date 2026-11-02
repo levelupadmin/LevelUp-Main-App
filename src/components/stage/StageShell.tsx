@@ -84,7 +84,7 @@ export default function StageShell() {
 
       {/* Desktop sidebar */}
       <aside className="hm-side" aria-label="Main navigation">
-        <Link to="/home" className="side-logo" aria-label="LevelUp home"><LevelUpMark showSub={false} lineClassName="text-brand-text" /></Link>
+        <Link to="/home" className="side-logo" aria-label="LevelUp home"><LevelUpMark /></Link>
         {nav.map((item) => (
           <Link key={item.path} to={item.path} className={`nav${isOn(item.path) ? " is-on" : ""}`} aria-current={isOn(item.path) ? "page" : undefined}>
             <item.icon className="ic" />{item.label}
@@ -115,7 +115,7 @@ export default function StageShell() {
       <div className="sh-main">
         {/* Top bar */}
         <header className="sh-top">
-          <Link to="/home" className="sh-logo" aria-label="LevelUp home"><LevelUpMark showSub={false} lineClassName="text-brand-text" /></Link>
+          <Link to="/home" className="sh-logo" aria-label="LevelUp home"><LevelUpMark /></Link>
           <Link to="/explore" className="sh-search"><Search className="ic" />Search masterclasses, cohorts and workshops</Link>
           <Link to="/explore" className="ibtn ibtn--search" aria-label="Search"><Search className="ic" /></Link>
           <div className="sh-notif">

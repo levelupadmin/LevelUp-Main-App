@@ -7,7 +7,7 @@
 html[data-brand="stage"] .ty-top { background-color: hsl(var(--background)); backdrop-filter: none; -webkit-backdrop-filter: none; border-color: transparent; }
 
 /* the line, drawn large: the moment itself */
-html[data-brand="stage"] .ty-mark { display: block; width: 132px; height: auto; margin: 8px auto 0; color: hsl(var(--brand-text)); }
+html[data-brand="stage"] .ty-mark { display: block; width: 132px; height: auto; margin: 8px auto 0; color: hsl(var(--foreground)); }
 @media (min-width: 640px) {
   html[data-brand="stage"] .ty-mark { width: 168px; }
 }

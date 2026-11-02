@@ -48,7 +48,7 @@ export default function StageOnboarding(p: Props) {
   return (
     <div className="stage-ui ob">
       <header className="ob-top">
-        <LevelUpMark showSub={false} className="!h-[26px] w-auto ob-logo" lineClassName="text-brand-text" />
+        <LevelUpMark className="!h-[28px] w-auto ob-logo" />
         {p.totalSteps > 1 && (
           <span className="ob-dots" aria-label={`Step ${p.stepNum} of ${p.totalSteps}`}>
             {Array.from({ length: p.totalSteps }, (_, i) => <i key={i} className={i < p.stepNum ? "is-on" : undefined} />)}

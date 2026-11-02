@@ -845,7 +845,7 @@ export default function ThankYou() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <Link to="/" aria-label="LevelUp Learning home" className="inline-flex items-center">
             {STAGE_ENABLED ? (
-              <LevelUpMark showSub={false} lineClassName="text-brand-text" className="!h-[26px] w-auto text-foreground" />
+              <LevelUpMark className="!h-[28px] w-auto text-foreground" />
             ) : (
               <LevelUpWordmark className="h-7 w-auto text-foreground" />
             )}
@@ -866,7 +866,7 @@ export default function ThankYou() {
           <motion.div variants={arrivalItem}>
             {STAGE_ENABLED ? (
               // Stage: the line draws itself, large (spec 12.1, thank-you row).
-              <LevelUpMark play={reduced ? "none" : "draw"} showWord={false} lineClassName="text-brand-text" className="ty-mark" title="" />
+              <LevelUpMark play={reduced ? "none" : "draw"} showWord={false} className="ty-mark" title="" />
             ) : thankYouThumb ? (
               <img
                 src={thankYouThumb}

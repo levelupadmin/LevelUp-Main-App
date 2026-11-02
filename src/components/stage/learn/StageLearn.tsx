@@ -50,7 +50,7 @@ const short = (ms: number) => new Date(ms + IST).toUTCString().slice(0, 11).repl
 function Empty({ title, body, cta, onCta }: { title: string; body: string; cta?: string; onCta?: () => void }) {
   return (
     <div className="lrn-empty">
-      <LevelUpMark play="draw" showWord={false} className="lrn-empty-mark" lineClassName="text-brand-text" title="" />
+      <LevelUpMark play="draw" showWord={false} className="lrn-empty-mark" title="" />
       <h3 className="lrn-empty-t">{title}</h3>
       <p className="lrn-empty-s">{body}</p>
       {cta && onCta && <button className="btn btn--md" type="button" onClick={onCta}>{cta}</button>}

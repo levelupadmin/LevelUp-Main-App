@@ -1499,7 +1499,7 @@ export default function PublicOffering() {
             </button>
             <Link to="/" aria-label="LevelUp Learning home" className="flex shrink-0 items-center">
               {STAGE_ENABLED ? (
-                <LevelUpMark showSub={false} lineClassName="text-brand-text" className="!h-[26px] w-auto text-foreground" />
+                <LevelUpMark className="!h-[28px] w-auto text-foreground" />
               ) : (
                 <LevelUpWordmark className="h-7 w-auto text-foreground" />
               )}

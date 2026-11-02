@@ -36,6 +36,8 @@ export interface MasterclassLanding {
     lines: string[];
     proof: string | null;
     image: { d: string; m: string | null };
+    /** pixel sizes, so the hero frame takes each photo's own shape and never cuts a face */
+    size?: { d: [number, number]; m: [number, number] | null };
     video: { d: string | null; m: string | null };
     alt: string;
     position: string | null;
@@ -54,12 +56,13 @@ export interface MasterclassLanding {
   on_set: { image: string; alt: string } | null;
   lessons: { body: string | null; items: { n: number; title: string; line: string | null; seconds: number | null }[] };
   skills: { skill: string; lesson: string | null }[];
-  quotes: { body: string | null; items: { text: string; lesson: string | null }[] };
+  /** null when the page has no quotes (Karthik) */
+  quotes: { body: string | null; items: { text: string; lesson: string | null }[] } | null;
   included: Item[];
   bonuses: { heading: string | null; items: Item[] } | null;
   value: { label: string; value: string; note?: string | null }[];
   certificate: { image: string; alt: string } | null;
-  reviews: { body: string | null; items: Review[] };
+  reviews: { body: string | null; items: Review[] } | null;
   for_you: string[];
   not_for_you: string[];
   faqs: Faq[];
@@ -69,41 +72,47 @@ export interface MasterclassLanding {
   refund: { days: number; sentence: string; short: string; steps: { title: string; body: string }[] } | null;
 }
 
+/**
+ * A live cohort's page, v2: the same sections in the same order for every
+ * cohort (founder, 2026-11-02: "keep a pattern for the cohorts"), carrying
+ * only what someone needs to decide; "See the full program" links to the
+ * cohort's website page for the rest. Text is the cohort page's own,
+ * trimmed; nothing invented.
+ */
 export interface CohortLanding {
   kind: "cohort";
-  v: 1;
+  v: 2;
   code: string;
-  source_url: string;
   name: string;
-  /** The page's own top-to-bottom order, by the keys below; each "other_sections" takes the next one. */
-  section_order: string[];
-  hero: { eyebrow: string | null; headline: string; lines: string[]; image: string | null; video: string | null; video_m?: string | null };
-  trailer: Video | null;
+  /** the cohort's full page on leveluplearning.live */
+  full_page_url: string;
+  hero: {
+    eyebrow: string; headline: string; sub: string; image: string | null; video?: string | null; video_m?: string | null; position?: string | null;
+    /** real people instead of one picture: a grid of portraits (Creator Academy's own creators) */
+    mosaic?: string[];
+  };
+  /** 4 or 5: duration, format, time each week, next cohort, fee */
   facts: { label: string; value: string }[];
-  intro: { heading: string | null; body: string[] } | null;
-  outcomes: { title: string; body: string | null; image: string | null; kicker?: string | null }[];
-  curriculum: { heading: string | null; body: string | null; modules: { label: string | null; title: string; points: string[] }[] } | null;
-  format: { title: string; body: string | null; kicker?: string | null }[];
-  mentors: { name: string; role: string | null; credits: string | null; photo: string | null }[];
-  student_work: { title: string | null; by: string | null; kind: "video" | "image"; url: string; poster: string | null }[];
-  testimonials: { quote: string | null; name: string | null; role: string | null; photo: string | null; video: string | null }[];
-  stats: { value: string; label: string }[];
-  for_you: string[];
-  not_for_you: string[];
-  admission: { heading: string | null; steps: { title: string; body: string | null }[] } | null;
-  fees: { price_text: string[]; notes: string[]; includes?: string[] } | null;
+  trailer: Video | null;
+  make: { title: string; body?: string | null; items: { title: string; body: string; image?: string | null }[] };
+  how: { title: string; items: { title: string; body: string }[] };
+  learn: { title: string; body?: string | null; modules: { label?: string | null; title: string; line: string }[] };
+  mentors: { title: string; body?: string | null; items: { name: string; role?: string | null; line?: string | null; photo?: string | null }[]; work?: string[] };
+  proof: {
+    title: string;
+    stats: { value: string; label: string }[];
+    quotes?: { text: string; name: string; role?: string | null }[];
+    creators?: { name: string; handle?: string | null; followers?: string | null; photo?: string | null }[];
+    logos?: { title: string; items: string[] } | null;
+    photos?: string[];
+  };
+  fit: { yes: { title: string; body: string }[]; no?: string | null } | null;
+  admission: { title: string; steps: { title: string; body?: string | null }[] };
+  fee: { price: string; note?: string | null; includes: string[]; extras?: string[] };
   faqs: Faq[];
-  cta: { label: string; url: string; heading?: string | null; body?: string | null; image?: string | null };
-  other_sections: { heading: string; body: string[]; media: string[] }[];
-  /**
-   * false while the program's Vimeo videos only allow embedding on its own
-   * website (Vimeo privacy: specific domains); those stories stay hidden
-   * instead of showing "This video isn't available". Set true once the app's
-   * domains are on the allow list.
-   */
+  closing: { title: string; body?: string | null };
+  /** false while the program's Vimeo videos only embed on its own website */
   vimeo_embeds?: boolean;
-  /** The page's own eyebrow, heading and intro line for a section, by key; the template's defaults otherwise. */
-  titles?: Record<string, { eyebrow?: string | null; title?: string | null; body?: string | null }>;
 }
 
 export type Landing = MasterclassLanding | CohortLanding;
@@ -122,7 +131,8 @@ export type LandingAction =
   | { kind: "native"; webPath: string };
 
 export const isLanding = (v: unknown): v is Landing =>
-  !!v && typeof v === "object" && ((v as Landing).kind === "masterclass" || (v as Landing).kind === "cohort") && (v as Landing).v === 1;
+  !!v && typeof v === "object" &&
+  (((v as Landing).kind === "masterclass" && (v as Landing).v === 1) || ((v as Landing).kind === "cohort" && (v as Landing).v === 2));
 
 /** A key in the public landing bucket, or an absolute URL, as a URL. */
 export const media = (key: string | null | undefined): string | undefined =>

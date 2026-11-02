@@ -321,7 +321,7 @@ export default function StageLogin() {
         )}
 
         <header className="fo-top">
-          <span className="fo-logo"><LevelUpMark showSub={false} className="lu-logo" lineClassName="text-brand-text" /></span>
+          <span className="fo-logo"><LevelUpMark className="lu-logo" /></span>
           <button className="fo-back" type="button" onClick={back} aria-label="Back"><ChevronLeft className="ic" /></button>
         </header>
 

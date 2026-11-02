@@ -107,12 +107,12 @@ export function BrandIntro({ mode, posters = [], ready = true, onDone }: BrandIn
     >
       {first && !reduced && (
         <>
-          {/* the lights come down: a faint accent glow behind the mark */}
+          {/* the lights come down: a faint white glow behind the mark */}
           <div
             className="absolute inset-0"
             style={{
               background:
-                "radial-gradient(70% 45% at 50% 50%, hsl(var(--brand-text) / 0.09) 0%, hsl(var(--background)) 70%)",
+                "radial-gradient(70% 45% at 50% 50%, hsl(var(--foreground) / 0.07) 0%, hsl(var(--background)) 70%)",
             }}
           />
           {posters.length >= 6 && (
@@ -147,7 +147,7 @@ export function BrandIntro({ mode, posters = [], ready = true, onDone }: BrandIn
           <motion.div
             className="absolute left-[-20%] right-[-20%] top-1/2 h-px"
             style={{
-              background: "linear-gradient(90deg, transparent, hsl(var(--brand-text) / 0.8) 50%, transparent)",
+              background: "linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.8) 50%, transparent)",
               transformOrigin: "center",
             }}
             initial={{ scaleX: 0, opacity: 0 }}
@@ -165,7 +165,7 @@ export function BrandIntro({ mode, posters = [], ready = true, onDone }: BrandIn
           animate={leaving ? { scale: 1.08 } : { scale: 1 }} // lifts toward you as it fades
           transition={{ duration: outMs / 1000, ease: [0.65, 0, 0.35, 1] }}
         >
-          <LevelUpMark play="intro" lineClassName="text-brand-text" onNode={onNode} />
+          <LevelUpMark play="intro" onNode={onNode} />
         </motion.div>
       ) : (
         // The boot splash, continued: same still mark, same colour, same breathe.

@@ -85,7 +85,7 @@ export function SignInMoment({ eyebrow, title, onReveal, onDone }: SignInMomentP
     <motion.div
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-[30px] text-foreground"
       style={{
-        background: "radial-gradient(70% 45% at 50% 42%, hsl(var(--brand) / 0.16) 0%, hsl(var(--background)) 72%)",
+        background: "radial-gradient(70% 45% at 50% 42%, hsl(var(--foreground) / 0.07) 0%, hsl(var(--background)) 72%)",
         pointerEvents: leaving ? "none" : "auto",
       }}
       initial={{ opacity: 0 }}
@@ -104,7 +104,7 @@ export function SignInMoment({ eyebrow, title, onReveal, onDone }: SignInMomentP
         animate={leaving && !reduced ? { y: -40, scale: 0.8 } : { y: 0, scale: 1 }}
         transition={{ duration: outMs / 1000, ease: [0.65, 0, 0.35, 1] }}
       >
-        <LevelUpMark play="signin" showWord={false} title="" lineClassName="text-brand-text" onNode={onNode} />
+        <LevelUpMark play="signin" showWord={false} title="" onNode={onNode} />
       </motion.div>
 
       <motion.div
