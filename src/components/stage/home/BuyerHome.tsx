@@ -128,7 +128,7 @@ export function cardView(i: OwnedThing, now: number): CardView {
     const pct = i.week && i.weekCount ? Math.max(4, Math.round((i.week.week_number / i.weekCount) * 100)) : 4;
     const nextAt = i.next ? Date.parse(i.next.scheduled_at) : 0;
     return {
-      key: i.offering.id, img, title: i.offering.title, path: i.roomPath, go: "Open cohort room",
+      key: i.offering.id, img, title: i.offering.title, path: i.roomPath, go: "Open cohort",
       fmt: <><span>Live cohort</span><b>· {i.batchName}</b></>,
       prog: i.week ? <div className="prog"><div className="prog-bar"><i style={{ width: `${pct}%` }} /></div><span><b>Week {i.week.week_number}</b> of {i.weekCount}</span></div> : null,
       next: i.live
