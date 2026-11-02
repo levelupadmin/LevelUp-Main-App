@@ -46,7 +46,8 @@ import CollapsibleDescription from "@/components/checkout/CollapsibleDescription
 import AfterYouPay from "@/components/checkout/AfterYouPay";
 import PaymentNotice, { type PaymentIssue } from "@/components/checkout/PaymentNotice";
 import { readFunctionError } from "@/lib/functionError";
-import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import { razorpayThemeColor } from "@/lib/brand";
+import "@/styles/stage-checkout.css";
 import { checkoutWebPath, type CheckoutPaymentType } from "@/lib/checkoutWebPath";
 
 /* -- Razorpay global type -- */
@@ -683,7 +684,7 @@ export default function CheckoutPage() {
         email: prefillEmail,
         contact: prefillContact,
       },
-      theme: { color: RAZORPAY_THEME_COLOR, backdrop_color: "rgba(0,0,0,0.8)" },
+      theme: { color: razorpayThemeColor(), backdrop_color: "rgba(0,0,0,0.8)" },
       handler: async (response: RazorpaySuccess) => {
         // Razorpay has taken the money. Until verification confirms it, Pay
         // stays locked, here and after a reload.
@@ -1064,8 +1065,8 @@ export default function CheckoutPage() {
     <RevealOnMount
       skeleton={<CheckoutColdSkeleton showGuestForm={!user} showTrustPanel={!isStaged} />}
     >
-    <div className="min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 pt-4 md:pt-20 pb-28 lg:pb-12">
-      <Card className="w-full max-w-[560px] border-border bg-surface">
+    <div className="co-page min-h-screen bg-canvas flex flex-col lg:flex-row lg:items-start lg:justify-center gap-8 px-4 pt-4 md:pt-20 pb-28 lg:pb-12">
+      <Card className="co-card w-full max-w-[560px] border-border bg-surface">
         <CardContent className="p-5 md:p-8 space-y-5 md:space-y-6">
           {/* -- Back link --
               A buyer from a www masterclass page (the link names it in
@@ -1083,7 +1084,7 @@ export default function CheckoutPage() {
               else if (offeringId) navigate(`/browse`);
               else navigate(-1);
             }}
-            className="inline-flex items-center gap-1.5 min-h-[44px] -my-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="co-back inline-flex items-center gap-1.5 min-h-[44px] -my-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -1101,11 +1102,11 @@ export default function CheckoutPage() {
                   src={offering.thumbnail_url || offering.banner_url || ""}
                   alt=""
                   decoding="async"
-                  className="h-14 w-14 sm:h-16 sm:w-16 rounded-xl object-cover shrink-0"
+                  className="co-thumb h-14 w-14 sm:h-16 sm:w-16 rounded-xl object-cover shrink-0"
                 />
               )}
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-semibold leading-snug text-foreground">
+                <h1 className="co-title text-lg sm:text-xl font-semibold leading-snug text-foreground">
                   {offering.title}
                 </h1>
                 {offering.instructor_name && (
@@ -1420,7 +1421,7 @@ export default function CheckoutPage() {
               Total line keeps Pay on the first screen of a phone. Coupons,
               add-ons, an MRP or exclusive GST bring back the itemised receipt. -- */}
           {!showBreakdown ? (
-            <div className="space-y-0.5">
+            <div className="co-total space-y-0.5">
               <div className="flex items-baseline gap-2 text-base font-semibold">
                 <span className="text-foreground shrink-0">Total</span>
                 <span className="flex-1 border-b border-dotted border-border/60 translate-y-[-3px]" aria-hidden />
@@ -1529,7 +1530,7 @@ export default function CheckoutPage() {
             ref={inCardPayRef}
             variant="champagne"
             size="xl"
-            className="w-full"
+            className="co-pay w-full"
             onClick={handlePay}
             // handlePay fires a deliberate heavier hapticImpact("medium") for the
             // money moment; suppress the Button's default tapTick so the pay tap

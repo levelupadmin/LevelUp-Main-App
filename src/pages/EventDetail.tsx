@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isAndroid, isNative } from "@/lib/platform";
 import ContinueOnWebCTA from "@/components/ContinueOnWebCTA";
-import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import { razorpayThemeColor } from "@/lib/brand";
 import usePageTitle from "@/hooks/usePageTitle";
 import InitialsAvatar from "@/components/InitialsAvatar";
 import { format } from "date-fns";
@@ -170,7 +170,7 @@ const EventDetail = () => {
             email: profile?.email || "",
             name: profile?.full_name || "",
           },
-          theme: { color: RAZORPAY_THEME_COLOR },
+          theme: { color: razorpayThemeColor() },
         };
         if (!(window as any).Razorpay) {
           // Release the in-flight lock, otherwise the guard above

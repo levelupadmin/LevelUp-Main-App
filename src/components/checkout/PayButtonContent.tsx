@@ -1,6 +1,8 @@
 import { Check } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { durations, easings, useMotionSafe } from "@/lib/motion";
+import { STAGE_ENABLED } from "@/lib/appearance";
+import { LevelUpLoader } from "@/components/brand/LevelUpLoader";
 
 /**
  * PayButtonContent — the CRED/Swiggy-style processing arc for the champagne Pay
@@ -102,24 +104,29 @@ export default function PayButtonContent({ status, label }: PayButtonContentProp
         animate={{ opacity: status === "processing" ? 1 : 0 }}
         transition={{ duration: durations.fast, ease: easings.out }}
       >
-        <motion.span
-          className="block h-2 w-2 rounded-full bg-current"
-          animate={
-            status === "processing"
-              ? { opacity: [0.4, 1] }
-              : { opacity: 1 }
-          }
-          transition={
-            status === "processing"
-              ? {
-                  duration: durations.base,
-                  ease: easings.inOut,
-                  repeat: Infinity,
-                  repeatType: "reverse",
-                }
-              : { duration: 0 }
-          }
-        />
+        {/* Stage (spec 12.1, checkout): the LevelUp loader in the button. */}
+        {STAGE_ENABLED ? (
+          <LevelUpLoader size={28} label="Processing" />
+        ) : (
+          <motion.span
+            className="block h-2 w-2 rounded-full bg-current"
+            animate={
+              status === "processing"
+                ? { opacity: [0.4, 1] }
+                : { opacity: 1 }
+            }
+            transition={
+              status === "processing"
+                ? {
+                    duration: durations.base,
+                    ease: easings.inOut,
+                    repeat: Infinity,
+                    repeatType: "reverse",
+                  }
+                : { duration: 0 }
+            }
+          />
+        )}
       </motion.span>
 
       {/* Success layer — the check pops on the celebration spring, one beat

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,6 +11,12 @@ import { CraftPicker } from "@/components/auth/CraftPicker";
 import { Reveal } from "@/components/motion/Reveal";
 import { toast } from "@/lib/toast";
 import { hapticImpact } from "@/lib/haptics";
+import { STAGE_ENABLED } from "@/lib/appearance";
+
+// Its own chunk, so the flag-off build never loads the Stage view or its CSS.
+const loadStageOnboarding = () => import("@/components/stage/onboarding/StageOnboarding");
+const StageOnboarding = lazy(loadStageOnboarding);
+if (STAGE_ENABLED) void loadStageOnboarding();
 
 // Post-OTP onboarding. Phone-first auth means a brand-new account lands here
 // with only a phone number on file, so this page is where we collect the
@@ -195,6 +201,28 @@ const Onboarding = () => {
   const stepNum = step === "profile" ? 1 : 2;
   const totalSteps = needsProfile ? 2 : 1;
   const displayStepNum = needsProfile ? stepNum : 1;
+
+  if (STAGE_ENABLED) {
+    return (
+      <Suspense fallback={<div className="min-h-[100dvh] bg-background" />}>
+        <StageOnboarding
+          step={step}
+          stepNum={displayStepNum}
+          totalSteps={totalSteps}
+          saving={saving}
+          fullName={fullName}
+          setFullName={setFullName}
+          email={email}
+          setEmail={setEmail}
+          profileValid={profileValid}
+          onProfileNext={handleProfileNext}
+          crafts={crafts}
+          toggleCraft={toggleCraft}
+          onFinish={finishOnboarding}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-canvas flex flex-col safe-top safe-bottom">

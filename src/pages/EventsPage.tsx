@@ -11,7 +11,7 @@ import { eventDateTimeLabel, eventDurationLabel } from "@/lib/event-format";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { isNative } from "@/lib/platform";
-import { RAZORPAY_THEME_COLOR } from "@/lib/brand";
+import { razorpayThemeColor } from "@/lib/brand";
 import { format, isSameDay } from "date-fns";
 import { TimeStateBadge } from "@/components/live/TimeStateBadge";
 
@@ -202,7 +202,7 @@ const EventsPage = () => {
             email: profile?.email || "",
             name: profile?.full_name || "",
           },
-          theme: { color: RAZORPAY_THEME_COLOR },
+          theme: { color: razorpayThemeColor() },
         };
         if (!(window as any).Razorpay) {
           // Release the in-flight lock, otherwise the guard above
