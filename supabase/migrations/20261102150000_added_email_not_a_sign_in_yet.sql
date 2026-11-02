@@ -8,7 +8,8 @@
 -- writing public.users only (as on live before this release), and keeps the
 -- newer check that refuses an email another account already signs in with.
 --
--- Undo: re-run 20261102140100_onboarding_email_signs_in.sql.
+-- Undo: re-create the function as in commit 2be2887 (20261102140100), and
+-- only once the app confirms a new address with a code.
 create or replace function public.set_onboarding_profile(p_full_name text, p_email text)
  returns void
  language plpgsql

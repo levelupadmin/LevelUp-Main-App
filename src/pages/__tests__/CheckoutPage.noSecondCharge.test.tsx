@@ -348,6 +348,15 @@ describe("CheckoutPage: no second charge", () => {
     for (const b of payButtons()) expect(b).toBeDisabled();
   });
 
+  it("by default (verify-first off), a signed-out buyer gets today's form: name, email and phone, then Pay", async () => {
+    invokeImpl.fn = async () => ({ data: { available: false }, error: null });
+    renderCheckout();
+    expect(await screen.findByLabelText("Full name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Email address")).toBeInTheDocument();
+    expect(screen.getByLabelText("Phone number")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Verify your details to pay" })).toBeNull();
+  });
+
   it("with verify-first on, a signed-out buyer verifies before Pay works, and no guest order is made", async () => {
     window.localStorage.setItem("VITE_CHECKOUT_VERIFY", "on");
     invokeImpl.fn = async () => ({ data: { available: false }, error: null });
