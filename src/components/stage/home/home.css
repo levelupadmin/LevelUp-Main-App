@@ -449,3 +449,14 @@
   .hc-rail--poster { grid-auto-columns: calc((100% - 64px) / 4.4); }
   .hc-card:hover .hc-card-art img { transform: scale(1.03); }
 }
+
+/* ==========================================================================
+   Applicant card: someone mid-application (fee pending, in review, decision
+   ready, or the claim step). One chip, the program, one line, one way in.
+   ========================================================================== */
+.hm-app { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px; border-radius: var(--s-r-card); background: var(--s-surface-2); box-shadow: inset 0 0 0 1px var(--s-brand-line); }
+.hm-app-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--s-brand-soft); color: var(--s-brand-text); font: 650 10.5px/1 var(--font-body); letter-spacing: .09em; text-transform: uppercase; }
+.hm-app-t { margin: 2px 0 0; font: 640 18px/1.25 var(--font-body); letter-spacing: -0.01em; text-wrap: balance; }
+.hm-app-s { margin: 0; max-width: 40em; color: var(--s-text-2); font-size: 14.5px; line-height: 1.5; }
+.hm-app-go { margin-top: 6px; align-self: stretch; }
+@media (min-width: 640px) { .hm-app-go { align-self: flex-start; } }

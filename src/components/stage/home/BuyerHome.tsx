@@ -4,12 +4,14 @@ import { ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Lock
 import { toast } from "sonner";
 import { tapTick } from "@/lib/haptics";
 import { sessionTimeState } from "@/lib/room";
+import type { ApplicantStageView } from "@/hooks/useApplicantStage";
 import {
   buildAgenda, downloadIcs, endOf, joinWindow, pickLoud, recordingHref, sessionPath, sessionWho, zoomLinkFor,
   type AgendaRow, type BuyerHome as BuyerData, type CohortItem, type CourseItem, type LiveWorkshopItem, type Loud, type OwnedThing, type Session,
 } from "./buyer";
 import { FORMAT_COPY, TIERS, formatFacts, type StageCatalog, type Tier } from "./catalog";
 import { ProductCard } from "./sections";
+import StageApplicantCard from "./ApplicantCard";
 
 /*
  * Home for someone who owns something: the round-4 mockup
@@ -281,7 +283,7 @@ function ExploreMore({ catalog, data, onOpen }: { catalog: StageCatalog; data: B
   );
 }
 
-export default function BuyerHome({ data, catalog, firstName }: { data: BuyerData; catalog: StageCatalog | null; firstName: string }) {
+export default function BuyerHome({ data, catalog, firstName, applicant }: { data: BuyerData; catalog: StageCatalog | null; firstName: string; applicant?: ApplicantStageView | null }) {
   const navigate = useNavigate();
   const now = useNow(30_000);
   const loud = useMemo(() => pickLoud(data.items, now), [data.items, now]);
@@ -299,6 +301,7 @@ export default function BuyerHome({ data, catalog, firstName }: { data: BuyerDat
       <div className={`hm-grid${hasRail ? " has-rail" : ""}`}>
         <div className="hm-main">
           {loud && <NextCard loud={loud} />}
+          {applicant && <StageApplicantCard view={applicant} />}
           <OwnCards items={data.items} now={now} onOpen={open} />
           {hasRail && <div className="only-narrow-week"><Week agenda={agenda} now={now} sfx="p" onOpen={open} /></div>}
           {catalog && <ExploreMore catalog={catalog} data={data} onOpen={open} />}
