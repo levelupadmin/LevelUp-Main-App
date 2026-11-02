@@ -4,12 +4,14 @@ import { ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Lock
 import { toast } from "sonner";
 import { tapTick } from "@/lib/haptics";
 import { sessionTimeState } from "@/lib/room";
+import type { ApplicantStageView } from "@/hooks/useApplicantStage";
 import {
-  buildAgenda, downloadIcs, endOf, joinWindow, pickLoud, zoomLinkFor,
+  buildAgenda, downloadIcs, endOf, joinWindow, pickLoud, recordingHref, sessionPath, sessionWho, zoomLinkFor,
   type AgendaRow, type BuyerHome as BuyerData, type CohortItem, type CourseItem, type LiveWorkshopItem, type Loud, type OwnedThing, type Session,
 } from "./buyer";
 import { FORMAT_COPY, TIERS, formatFacts, type StageCatalog, type Tier } from "./catalog";
 import { ProductCard } from "./sections";
+import StageApplicantCard from "./ApplicantCard";
 
 /*
  * Home for someone who owns something: the round-4 mockup
@@ -46,26 +48,31 @@ async function join(s: Session) {
   else toast(`The Zoom link opens at ${time(joinWindow(s).opens)}.`);
 }
 
+const hours = (mins: number) => (mins % 60 === 0 ? `${mins / 60} hour${mins === 60 ? "" : "s"}` : `${mins} min`);
+
 function sessionMeta(l: Loud) {
   if (l.item.kind === "cohort") {
     const wk = l.item.weeks.find((w) => w.id === l.s.week_id);
     return <>{l.item.batchName}{wk && <> <span className="sep">·</span> Week {wk.week_number}</>} <span className="sep">·</span> Zoom</>;
   }
   const mins = l.s.duration_minutes ?? 60;
-  return <>Workshop <span className="sep">·</span> {mins % 60 === 0 ? `${mins / 60} hours` : `${mins} min`} <span className="sep">·</span> Zoom</>;
+  // A live session on a course (a masterclass Q&A): the course's name.
+  const what = l.item.kind === "liveworkshop" ? "Workshop" : l.item.courseTitle;
+  return <>{what} <span className="sep">·</span> {hours(mins)} <span className="sep">·</span> Zoom</>;
 }
 
-function NextCard({ loud, onOpen }: { loud: Loud; onOpen: (path: string) => void }) {
+function NextCard({ loud }: { loud: Loud }) {
   const now = useNow(1000);
   const s = loud.s, i = loud.item;
   const start = Date.parse(s.scheduled_at), end = endOf(s);
   const state = sessionTimeState(s, now);
   const w = joinWindow(s);
   const zoomOk = now >= w.opens && now < w.closes && s.status !== "cancelled";
-  const path = i.kind === "cohort" ? i.roomPath : i.path;
-  const art = <div className="next-art">{i.offering.thumbnail_url && <img src={i.offering.thumbnail_url} alt="" />}</div>;
+  const recording = state === "recorded" ? recordingHref(s.recording_url) : null;
+  const pic = i.kind === "masterclass" || i.kind === "workshop" || i.kind === "course" ? i.art : i.offering.thumbnail_url;
+  const art = <div className="next-art">{pic && <img src={pic} alt="" />}</div>;
   const title = <h2 className="next-t">{s.title}</h2>;
-  const joinLabel = i.kind === "cohort" ? "Join class" : "Join workshop";
+  const joinLabel = i.kind === "cohort" ? "Join class" : i.kind === "liveworkshop" ? "Join workshop" : "Join session";
 
   if (state === "live") {
     return (
@@ -82,10 +89,10 @@ function NextCard({ loud, onOpen }: { loud: Loud; onOpen: (path: string) => void
       <section className="next next--done" aria-label="Today's class">
         <span className="next-pill"><Check className="ic" />Ended at {time(end)}</span>{art}
         <div className="next-body">{title}<div className="next-m">{sessionMeta(loud)}</div>
-          <div className="next-m dim">{state === "recorded" ? "The recording is ready." : "The recording shows up here once it is uploaded."}</div></div>
+          <div className="next-m dim">{recording ? "The recording is ready." : "The recording shows up here once it is uploaded."}</div></div>
         <div className="next-acts">
-          {state === "recorded"
-            ? <button className="btn btn--block" type="button" onClick={() => onOpen(path)}><PlayCircle className="ic" />Watch the recording</button>
+          {recording
+            ? <a className="btn btn--block" href={recording} target="_blank" rel="noopener noreferrer" onClick={() => void tapTick()}><PlayCircle className="ic" />Watch the recording</a>
             : zoomOk ? <button className="btn btn--block btn--secondary" type="button" onClick={() => void join(s)}><Video className="ic" />Rejoin on Zoom</button> : null}
         </div>
       </section>
@@ -105,7 +112,7 @@ function NextCard({ loud, onOpen }: { loud: Loud; onOpen: (path: string) => void
         {zoomOk
           ? <button className="btn btn--block" type="button" onClick={() => void join(s)}><Video className="ic" />{joinLabel}</button>
           : <>
-              <button className="btn btn--block" type="button" onClick={() => { void tapTick(); downloadIcs(s, i.kind === "cohort" ? i.batchName : i.offering.title); }}><CalendarDays className="ic" />Add to calendar</button>
+              <button className="btn btn--block" type="button" onClick={() => { void tapTick(); downloadIcs(s, i.kind === "cohort" ? i.batchName : i.kind === "liveworkshop" ? i.offering.title : i.courseTitle); }}><CalendarDays className="ic" />Add to calendar</button>
               <span className="next-unlock"><Lock className="ic" />Zoom link opens at {time(w.opens)}</span>
             </>}
       </div>
@@ -141,7 +148,7 @@ export function cardView(i: OwnedThing, now: number): CardView {
       key: i.offering.id, img, title: i.session.title || i.offering.title, path: i.path, go: "Open workshop",
       fmt: <><span>Workshop</span><b>· live</b></>,
       prog: <div className="prog"><CalendarDays className="ic" /><span><b>{cap(relDay(d, now))}</b>, {time(d)}</span></div>,
-      next: live ? <><i className="pulse" /><span><span className="live-t">Live now</span></span></> : <><Clock className="ic" /><span>One live session, {mins % 60 === 0 ? `${mins / 60} hours` : `${mins} min`}</span></>,
+      next: live ? <><i className="pulse" /><span><span className="live-t">Live now</span></span></> : <><Clock className="ic" /><span>One live session, {hours(mins)}</span></>,
       where: <><Video className="ic" /><span>On Zoom</span></>,
       side: live ? <><span className="live-t"><i className="pulse" />LIVE</span>Workshop</> : <>Workshop · {short(d)}</>,
     };
@@ -150,10 +157,11 @@ export function cardView(i: OwnedThing, now: number): CardView {
   const unit = c.kind === "workshop" ? "video" : "lesson";
   const pct = Math.max(c.done ? 4 : 0, Math.round((c.done / Math.max(1, c.total)) * 100));
   return {
-    key: c.offering.id, img, title: c.courseTitle,
+    // One card per course: a bundle's courses share the offering id.
+    key: `${c.offering.id}:${c.courseId ?? ""}`, img: c.art, title: c.courseTitle,
     path: c.next ? `/chapters/${c.next.id}` : c.courseId ? `/courses/${c.courseId}` : `/p/${c.offering.slug}`,
     go: c.next ? (c.started ? `Resume ${unit} ${c.nextIndex}` : `Start ${unit} 1`) : "Watch again",
-    fmt: <span>{TIER_WORD[c.kind]}</span>,
+    fmt: c.partOf ? <><span>{TIER_WORD[c.kind]}</span><b className="oc-from">· {c.partOf}</b></> : <span>{TIER_WORD[c.kind]}</span>,
     prog: <div className="prog"><div className="prog-bar"><i style={{ width: `${pct}%` }} /></div><span><b>{c.done}</b> of {c.total} {unit}s</span></div>,
     next: c.next
       ? <><PlayCircle className="ic" /><span>{unit === "lesson" ? "Lesson" : "Video"} {c.nextIndex}: {c.next.title}{c.position > 0 && <span className="dim"> · resume at {mmss(c.position)}</span>}</span></>
@@ -200,8 +208,8 @@ export function AgendaList({ rows, now, onOpen }: { rows: AgendaRow[]; now: numb
         const k = dayKey(x.at), same = k === prev;
         prev = k;
         const today = k === dayKey(now);
-        const who = x.item.kind === "cohort" ? x.item.batchName : "Workshop";
-        const path = x.item.kind === "cohort" ? x.item.roomPath : x.item.path;
+        const who = sessionWho(x.item);
+        const path = sessionPath(x.item);
         return (
           <button className={`ag-row${same ? " same-day" : ""}`} type="button" key={x.key} onClick={() => onOpen(path)}>
             <span className={`ag-day${today ? " is-today" : ""}`}>{!same && <><span className="dl">{today ? "Today" : DAYS[ist(x.at).getUTCDay()].slice(0, 3)}</span><span className="dn">{ist(x.at).getUTCDate()}</span></>}</span>
@@ -275,7 +283,7 @@ function ExploreMore({ catalog, data, onOpen }: { catalog: StageCatalog; data: B
   );
 }
 
-export default function BuyerHome({ data, catalog, firstName }: { data: BuyerData; catalog: StageCatalog | null; firstName: string }) {
+export default function BuyerHome({ data, catalog, firstName, applicant }: { data: BuyerData; catalog: StageCatalog | null; firstName: string; applicant?: ApplicantStageView | null }) {
   const navigate = useNavigate();
   const now = useNow(30_000);
   const loud = useMemo(() => pickLoud(data.items, now), [data.items, now]);
@@ -292,7 +300,8 @@ export default function BuyerHome({ data, catalog, firstName }: { data: BuyerDat
       </div>
       <div className={`hm-grid${hasRail ? " has-rail" : ""}`}>
         <div className="hm-main">
-          {loud && <NextCard loud={loud} onOpen={open} />}
+          {loud && <NextCard loud={loud} />}
+          {applicant && <StageApplicantCard view={applicant} />}
           <OwnCards items={data.items} now={now} onOpen={open} />
           {hasRail && <div className="only-narrow-week"><Week agenda={agenda} now={now} sfx="p" onOpen={open} /></div>}
           {catalog && <ExploreMore catalog={catalog} data={data} onOpen={open} />}

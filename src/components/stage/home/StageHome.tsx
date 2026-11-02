@@ -1,9 +1,11 @@
 import usePageTitle from "@/hooks/usePageTitle";
 import { useAuth } from "@/contexts/AuthContext";
+import { useApplicantStage } from "@/hooks/useApplicantStage";
 import { useStageCatalog } from "./catalog";
 import { useBuyerHome } from "./buyer";
 import BuyerHome from "./BuyerHome";
-import { SectionsError, SectionsSkeleton } from "./sections";
+import StageApplicantCard from "./ApplicantCard";
+import { LEARNING_LOAD_ERROR, SectionsError, SectionsSkeleton } from "./sections";
 import { HomeCarousel, HomeRows, useLandingHeads } from "./discover";
 import "@/styles/stage-ui.css";
 import "./home.css";
@@ -20,6 +22,9 @@ const longDateIST = (d: Date) =>
  * - owns nothing    -> the carousel of five programmes, then the masterclasses,
  *                      the live cohorts and the workshops as wide cards
  *                      (03_Specs/01_Home_New_Person_Plan.md, round 3).
+ * Someone mid-application sees their application's status card on both (the
+ * classic Home's card, same hook and words). If the read of what they own
+ * fails, they get an error with Retry, never the "owns nothing" Home.
  */
 export default function StageHome() {
   usePageTitle("Home");
@@ -27,12 +32,16 @@ export default function StageHome() {
   const buyer = useBuyerHome();
   const { data, isError, refetch } = useStageCatalog();
   const heads = useLandingHeads();
+  const { view: applicant } = useApplicantStage();
 
   const full = (profile?.full_name ?? "").trim();
   const first = full && full !== PLACEHOLDER_NAME ? full.split(/\s+/)[0] : "";
 
   if (buyer.isLoading) return <div className="hm-inner"><SectionsSkeleton /></div>;
-  if (buyer.data && buyer.data.items.length > 0) return <BuyerHome data={buyer.data} catalog={data} firstName={first} />;
+  if (buyer.data && buyer.data.items.length > 0) return <BuyerHome data={buyer.data} catalog={data} firstName={first} applicant={applicant} />;
+  // No answer about what they own (data stays from the last good read, so this
+  // is only a first read that failed): an error, not the new-person Home.
+  const ownedFailed = buyer.isError && !buyer.data;
 
   return (
     <div className="hm-inner">
@@ -40,8 +49,12 @@ export default function StageHome() {
         <span className="eyebrow">{longDateIST(new Date())}</span>
         <h1 className="hm-h1">{first ? `Welcome, ${first}` : "Welcome to LevelUp"}</h1>
       </div>
-      {isError || buyer.isError ? (
-        <SectionsError onRetry={() => { void refetch(); void buyer.refetch(); }} />
+      {applicant && <StageApplicantCard view={applicant} />}
+      {ownedFailed || isError ? (
+        <SectionsError
+          message={ownedFailed ? LEARNING_LOAD_ERROR : undefined}
+          onRetry={() => { if (isError) void refetch(); if (buyer.isError) void buyer.refetch(); }}
+        />
       ) : !data ? (
         <SectionsSkeleton />
       ) : (

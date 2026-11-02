@@ -222,11 +222,15 @@ export function SectionsSkeleton() {
   );
 }
 
-export function SectionsError({ onRetry }: { onRetry: () => void }) {
+/** A read failed: say what did not load and offer Retry (never an empty state). */
+export function SectionsError({ onRetry, message = "We couldn't load the catalogue. Check your connection and try again." }: { onRetry: () => void; message?: string }) {
   return (
-    <div className="cat-cta">
-      <p>We couldn't load the catalogue. Check your connection and try again.</p>
+    <div className="cat-cta" role="alert">
+      <p>{message}</p>
       <button className="btn btn--secondary" type="button" onClick={onRetry}>Retry</button>
     </div>
   );
 }
+
+/** What My learning, Home and the sidebar say when the read of what someone owns fails. */
+export const LEARNING_LOAD_ERROR = "We couldn't load your learning. Check your connection and try again.";

@@ -25,3 +25,7 @@
 .lrn-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; border: 0; background: none; color: var(--s-text-2); font: 600 14px/1 var(--font-body); cursor: pointer; margin-bottom: 8px; }
 .lrn-back .ic { width: 16px; height: 16px; }
 .lrn-legacy { display: flex; flex-direction: column; }
+
+/* recordings: a link out to the recording itself, with the old Live tab's "Watch" */
+.lrn-rec { grid-template-columns: 22px minmax(0, 1fr) auto; text-decoration: none; }
+.lrn-rec-go { color: var(--s-brand-text); font: 620 14px/1 var(--font-body); }
