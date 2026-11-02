@@ -33,6 +33,11 @@ import { durations, easings, useMotionSafe } from "@/lib/motion";
 import { resolveHandoff } from "./publicOfferingHandoff";
 import { formatRuntime } from "@/lib/thankYouCourse";
 import { track } from "@/lib/analytics";
+import { STAGE_ENABLED } from "@/lib/appearance";
+import StageAlsoFrom from "@/components/stage/offering/StageAlsoFrom";
+// Stage look for this page: every rule is scoped to html[data-brand="stage"]
+// and keyed on the po-* hook classes below, so the flag-off page is unchanged.
+import "@/styles/stage-offering.css";
 import {
   Check,
   Tag,
@@ -359,7 +364,7 @@ function HeroBanner({
       className="w-full"
     >
       <motion.div
-        className="relative flex w-full flex-col sm:block aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
+        className="po-hero relative flex w-full flex-col sm:block aspect-[4/5] sm:aspect-[16/10] lg:aspect-[21/9] rounded-3xl overflow-hidden bg-[hsl(var(--surface))] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)]"
         style={{ transformOrigin: "center" }}
         initial={{ scale: enabled ? 1.04 : 1, opacity: enabled ? 0 : 1 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -418,20 +423,20 @@ function HeroBanner({
         >
           <motion.p
             variants={overlayReveal}
-            className="text-[10px] sm:text-xs font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/80 mb-3"
+            className="po-eyebrow text-[10px] sm:text-xs font-mono uppercase tracking-[0.18em] text-[hsl(var(--cream))]/80 mb-3"
           >
             {eyebrow}
           </motion.p>
           <motion.h1
             variants={overlayReveal}
-            className="text-[clamp(28px,8vw,36px)] leading-[1.05] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch] break-words [text-wrap:balance]"
+            className="po-title text-[clamp(28px,8vw,36px)] leading-[1.05] sm:text-5xl lg:text-[64px] lg:leading-[1.02] font-bold text-foreground tracking-[-0.02em] max-w-[18ch] break-words [text-wrap:balance]"
           >
             {offering.title}
           </motion.h1>
           {offering.subtitle && (
             <motion.p
               variants={overlayReveal}
-              className="mt-3 sm:mt-4 text-base sm:text-xl lg:text-2xl text-foreground/85 font-['Instrument_Serif'] italic max-w-[42ch]"
+              className="po-subtitle mt-3 sm:mt-4 text-base sm:text-xl lg:text-2xl text-foreground/85 font-['Instrument_Serif'] italic max-w-[42ch]"
             >
               {offering.subtitle}
             </motion.p>
@@ -643,7 +648,7 @@ function HeroActions({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6 py-2">
         <div className="space-y-1">
           <div className="flex items-baseline gap-3">
-            <span className="text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
+            <span className="po-price text-3xl sm:text-4xl font-bold text-foreground tracking-[-0.01em] tabular-nums">
               {price > 0 ? `₹${Number(price).toLocaleString("en-IN")}` : "Free"}
             </span>
             {showStrike && (
@@ -652,6 +657,10 @@ function HeroActions({
               </span>
             )}
           </div>
+          {/* Stage (round-3 mockup): a one-time masterclass price says what it buys. */}
+          {STAGE_ENABLED && price > 0 && offering.product_tier === "masterclass" && (offering as any).validity_days == null && (
+            <p className="po-keep">Yours to keep</p>
+          )}
           {savings > 0 && (
             <p className="text-xs sm:text-sm font-medium text-[hsl(var(--success))] tabular-nums">
               Save ₹{savings.toLocaleString("en-IN")}
@@ -671,7 +680,8 @@ function HeroActions({
               className="h-12 px-5 text-base font-medium border-[hsl(var(--cream))]/40 hover:bg-[hsl(var(--cream))]/10"
             >
               <Play className="h-4 w-4 mr-2 fill-current" />
-              Watch trailer
+              {/* It plays the first free lesson, so under Stage it says so. */}
+              {STAGE_ENABLED ? "Watch a free lesson" : "Watch trailer"}
             </Button>
           )}
           <Button
@@ -1451,7 +1461,7 @@ export default function PublicOffering() {
   const railEligible = !isNative() && offering.status !== "archived";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="po-page min-h-screen bg-background">
 
       {/* Top bar. This is a PUBLIC route that renders OUTSIDE StudentLayout,
           so it must own its own notch handling: `safe-top` pushes the bar
@@ -1493,7 +1503,7 @@ export default function PublicOffering() {
         </div>
       </header>
 
-      <main className={`mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8 ${railEligible ? "max-w-5xl lg:max-w-7xl" : "max-w-5xl xl:max-w-6xl"}`}>
+      <main className={`po-main mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-8 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-8 ${railEligible ? "max-w-5xl lg:max-w-7xl" : "max-w-5xl xl:max-w-6xl"}`}>
         {/* Marketing flow + (on lg, web only) a sticky purchase rail.
             Checkout lives on its own route (/checkout/&lt;offeringId&gt;) so
             this page can stay purely about helping the buyer decide. The
@@ -1689,6 +1699,10 @@ export default function PublicOffering() {
                 </div>
               </div>
             )}
+
+            {/* Stage: the round-3 mockup's "Also from LevelUp" rail, after the
+                last buy button so it never competes with it. */}
+            {STAGE_ENABLED && <StageAlsoFrom offeringId={offering.id} tier={offering.product_tier} />}
         </div>
 
         {/* Desktop sticky purchase rail (lg+, web only, see railEligible). */}

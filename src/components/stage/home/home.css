@@ -132,10 +132,10 @@
 /* ==========================================================================
    Explore: the catalogue, last and quiet.
    ========================================================================== */
-.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -20px; padding: 0 20px; }
-.chips::-webkit-scrollbar { display: none; }
-.chip { flex: none; height: 38px; padding: 0 15px; border: 0; border-radius: 999px; background: var(--s-surface-2); color: var(--s-text); font: 600 14px/1 var(--font-body); cursor: pointer; }
-.chip.is-on { background: var(--s-text); color: var(--s-bg); }
+.s-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -20px; padding: 0 20px; }
+.s-chips::-webkit-scrollbar { display: none; }
+.s-chip { flex: none; height: 38px; padding: 0 15px; border: 0; border-radius: 999px; background: var(--s-surface-2); color: var(--s-text); font: 600 14px/1 var(--font-body); cursor: pointer; }
+.s-chip.is-on { background: var(--s-text); color: var(--s-bg); }
 .rail { display: grid; grid-auto-flow: column; grid-auto-columns: 74%; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 20px; scrollbar-width: none; margin: 0 -20px; padding: 0 20px; }
 .rail::-webkit-scrollbar { display: none; }
 .pc { scroll-snap-align: start; display: flex; flex-direction: column; gap: 10px; border: 0; padding: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
@@ -188,7 +188,7 @@
   .oc-go .ic { display: none; }
   .oc-where { justify-content: center; }
 
-  .chips { margin: 0; padding: 0; }
+  .s-chips { margin: 0; padding: 0; }
   .rail { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-columns: auto; margin: 0; padding: 0; overflow: visible; gap: 20px 16px; }
   .pc:hover .pc-art img { transform: scale(1.03); }
 }
@@ -376,7 +376,7 @@
 .hm-skel { display: flex; flex-direction: column; gap: 20px; }
 .pd-meta > span { display: contents; }
 .ex-head { display: flex; flex-direction: column; gap: 14px; }
-@media (min-width: 900px) { .chips { overflow: visible; flex-wrap: wrap; } }
+@media (min-width: 900px) { .s-chips { overflow: visible; flex-wrap: wrap; } }
 
 /* Buyer Home bits the mockup styled inline or in its lab layer */
 .next-unlock { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; font: 600 13.5px/1.3 var(--font-body); opacity: .92; }

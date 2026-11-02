@@ -3,7 +3,7 @@
    From 15_LMS_Experience_Lab/home.html (round 4): on a phone, a top bar and
    a four-tab bar; from 900px, a 248px sidebar that always lists what you own,
    and a top bar with search. Same rules as the mockup's .hm-side / .hm-top /
-   .tabbar, with fixed positioning because here the document scrolls.
+   .sh-tabbar, with fixed positioning because here the document scrolls.
    ========================================================================== */
 .sh { min-height: 100dvh; background: var(--s-bg); }
 
@@ -27,11 +27,11 @@
 .sh-legacy { padding-top: 8px; }
 
 /* ---- tab bar (phone) ---- */
-.tabbar { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 6px 8px calc(var(--s-sab) + 6px);
+.sh-tabbar { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 6px 8px calc(var(--s-sab) + 6px);
   background: color-mix(in srgb, var(--s-surface) 86%, transparent); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: inset 0 1px 0 var(--s-line); }
-.tab { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 48px; padding: 6px 0 2px; border: 0; background: none; color: var(--s-text-3); font: 600 11px/1 var(--font-body); cursor: pointer; text-decoration: none; }
-.tab .ic { width: 22px; height: 22px; }
-.tab.is-on { color: var(--s-brand-text); }
+.sh-tab { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 48px; padding: 6px 0 2px; border: 0; background: none; color: var(--s-text-3); font: 600 11px/1 var(--font-body); cursor: pointer; text-decoration: none; }
+.sh-tab .ic { width: 22px; height: 22px; }
+.sh-tab.is-on { color: var(--s-brand-text); }
 
 /* ---- sidebar (desktop) ---- */
 .hm-side { display: none; }
@@ -41,7 +41,7 @@
 }
 
 @media (min-width: 900px) {
-  .tabbar { display: none; }
+  .sh-tabbar { display: none; }
   .hm-side { display: flex; flex-direction: column; gap: 4px; position: fixed; z-index: 45; top: 0; bottom: 0; left: 0; width: 248px; padding: 24px 14px 16px; background: var(--s-surface); box-shadow: inset -1px 0 0 var(--s-line); overflow-y: auto; }
   .side-logo { padding: 2px 12px 22px; display: flex; color: var(--s-text); }
   .side-logo svg { height: 30px; width: auto; }

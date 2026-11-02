@@ -149,12 +149,12 @@ export default function StageShell() {
       </div>
 
       {/* Phone tab bar */}
-      <nav className="tabbar" aria-label="Main navigation">
+      <nav className="sh-tabbar" aria-label="Main navigation">
         {nav.map((item) => (
           <Link
             key={item.path}
             to={item.path}
-            className={`tab${isOn(item.path) ? " is-on" : ""}`}
+            className={`sh-tab${isOn(item.path) ? " is-on" : ""}`}
             aria-current={isOn(item.path) ? "page" : undefined}
             onClick={() => { void hapticSelection(); }}
           >

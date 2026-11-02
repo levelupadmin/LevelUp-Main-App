@@ -43,10 +43,10 @@ export default function StageExplore() {
           <span className="eyebrow">Explore</span>
           <h1 className="hm-h1">Everything you can learn here</h1>
         </div>
-        <div className="chips" role="tablist" aria-label="Formats">
-          <button type="button" role="tab" aria-selected={!tier} className={`chip${!tier ? " is-on" : ""}`} onClick={() => pick(null)}>All</button>
+        <div className="s-chips" role="tablist" aria-label="Formats">
+          <button type="button" role="tab" aria-selected={!tier} className={`s-chip${!tier ? " is-on" : ""}`} onClick={() => pick(null)}>All</button>
           {TIERS.map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={tier === t} className={`chip${tier === t ? " is-on" : ""}`} onClick={() => pick(t)}>
+            <button key={t} type="button" role="tab" aria-selected={tier === t} className={`s-chip${tier === t ? " is-on" : ""}`} onClick={() => pick(t)}>
               {FORMAT_COPY[t].plural}
             </button>
           ))}
