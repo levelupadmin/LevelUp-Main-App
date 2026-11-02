@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { callCertificates, downloadCertificate, formatDay } from "@/lib/certificates";
@@ -28,6 +29,8 @@ export default function CertStudent({ initialUserId }: { initialUserId?: string 
   const [person, setPerson] = useState<Person | null>(null);
   const [dialog, setDialog] = useState<Dialogs>(null);
   const [text, setText] = useState("");
+  const [name, setName] = useState("");
+  const [toProfile, setToProfile] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -171,7 +174,7 @@ export default function CertStudent({ initialUserId }: { initialUserId?: string 
                       <td className="px-3 py-2">
                         <div className="flex flex-wrap justify-end gap-1.5">
                           {!r.certificate_id && r.template_ready && (
-                            <Button size="sm" onClick={() => { setText(""); setDialog({ kind: "issue", row: r, below: !eligible && r.issue_mode === "auto" }); }}>
+                            <Button size="sm" onClick={() => { setText(""); setName(person.full_name ?? ""); setToProfile(true); setDialog({ kind: "issue", row: r, below: !eligible && r.issue_mode === "auto" }); }}>
                               {eligible || r.issue_mode === "manual" ? "Issue and email" : "Issue anyway"}
                             </Button>
                           )}
@@ -179,7 +182,7 @@ export default function CertStudent({ initialUserId }: { initialUserId?: string 
                             <>
                               <Button size="sm" onClick={() => { setText(r.email_to ?? person.email ?? ""); setDialog({ kind: "resend", row: r }); }}>Send email again</Button>
                               <Button size="sm" variant="outline" onClick={() => act(async () => { await downloadCertificate(r.certificate_id!, { admin: true }); return "Download started"; })}>Download</Button>
-                              <Button size="sm" variant="outline" onClick={() => { setText(r.name_on_certificate ?? ""); setDialog({ kind: "rename", row: r }); }}>Fix name</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setText(r.name_on_certificate ?? ""); setToProfile(true); setDialog({ kind: "rename", row: r }); }}>Fix name</Button>
                               <Button size="sm" variant="ghost" onClick={() => { setText(""); setDialog({ kind: "revoke", row: r }); }}>Cancel</Button>
                             </>
                           )}
@@ -210,16 +213,27 @@ export default function CertStudent({ initialUserId }: { initialUserId?: string 
                     : "It's made now and emailed if they have an email."}
                 </DialogDescription>
               </DialogHeader>
+              <label className="block text-xs text-muted-foreground">Name as it will print
+                <Input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+              </label>
+              {name.trim() !== (person?.full_name ?? "").trim() && (
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={toProfile} onCheckedChange={(v) => setToProfile(!!v)} /> Also save this name to their profile
+                </label>
+              )}
               {dialog.below && <Textarea placeholder="Reason (kept on record)" value={text} onChange={(e) => setText(e.target.value)} />}
               <DialogFooter>
                 <Button
-                  disabled={busy || (dialog.below && text.trim().length < 3)}
+                  disabled={busy || name.trim().length < 2 || (dialog.below && text.trim().length < 3)}
                   onClick={() => act(async () => {
+                    const changed = name.trim() !== (person?.full_name ?? "").trim();
                     const r = await callCertificates<{ results: { result: string; number?: string; email?: string; error?: string }[] }>({
                       action: "admin_issue", course_id: dialog.row.course_id, user_ids: [person!.id], reason: text.trim() || undefined,
+                      names: changed ? { [person!.id]: name.trim() } : {}, update_profile: toProfile,
                     });
+                    if (changed && toProfile) setPerson({ ...person!, full_name: name.trim() });
                     const res = r.results[0];
-                    if (res?.result !== "issued") throw new Error(res?.result === "need_name" ? "This account has no usable name. Add their name in Users first." : res?.error ?? `Not issued (${res?.result})`);
+                    if (res?.result !== "issued") throw new Error(res?.result === "need_name" || res?.result === "bad_name" ? "Type the name as it should print." : res?.error ?? `Not issued (${res?.result})`);
                     return `Issued ${res.number} ${emailWord(res.email)}`;
                   })}
                 >
@@ -250,9 +264,13 @@ export default function CertStudent({ initialUserId }: { initialUserId?: string 
                 <DialogDescription>Same certificate number, a new PDF with the new name, emailed again. The old name stays in the history.</DialogDescription>
               </DialogHeader>
               <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={60} />
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={toProfile} onCheckedChange={(v) => setToProfile(!!v)} /> Also save this name to their profile
+              </label>
               <DialogFooter>
                 <Button disabled={busy || text.trim().length < 2} onClick={() => act(async () => {
-                  const r = await callCertificates<{ email: string }>({ action: "admin_reissue", certificate_id: dialog.row.certificate_id, name: text.trim() });
+                  const r = await callCertificates<{ email: string }>({ action: "admin_reissue", certificate_id: dialog.row.certificate_id, name: text.trim(), update_profile: toProfile });
+                  if (toProfile) setPerson({ ...person!, full_name: text.trim() });
                   return `Reissued ${emailWord(r.email)}`;
                 })}>{busy ? "Reissuing…" : "Reissue and email"}</Button>
               </DialogFooter>

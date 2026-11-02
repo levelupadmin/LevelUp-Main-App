@@ -36,6 +36,33 @@ export interface CertificateRender {
 
 export const LINE_GAP = 1.4;
 
+/** The bold face used for **marked** words (mirrors render.ts). */
+export const boldOf = (font: FontKey | undefined): FontKey => (!font || font === "sans-regular" ? "sans" : font);
+
+export function segments(line: string): { text: string; bold: boolean }[] {
+  return line.split("**").map((text, i) => ({ text, bold: i % 2 === 1 })).filter((sg) => sg.text);
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+export type DateStyle = "month" | "day";
+
+/** "2026-02-01" → "February 2026" (month) or "1 February 2026" (day). */
+export function formatBatchDate(iso: string | null | undefined, style: DateStyle): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m) return iso;
+  return style === "day" && d ? `${d} ${MONTHS[m - 1]} ${y}` : `${MONTHS[m - 1]} ${y}`;
+}
+
+export const needsDates = (line: string | null | undefined) => /\{(start|end)\}/i.test(line ?? "");
+
+export function fillLine(line: string, period: { start: string | null; end: string | null; style: DateStyle }): string {
+  return line
+    .replace(/\{start\}/gi, formatBatchDate(period.start, period.style))
+    .replace(/\{end\}/gi, formatBatchDate(period.end, period.style));
+}
+
 export const FIELD_LABELS: Record<FieldKey, string> = {
   name: "Name",
   date: "Completion date",
@@ -143,7 +170,7 @@ export async function previewDesignPdf(design: {
   image_width: number;
   image_height: number;
   fields: DesignField[];
-}, extra: { line_text?: string; sample_name?: string } = {}) {
+}, extra: { line_text?: string; sample_name?: string; start?: string; end?: string; style?: DateStyle } = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(`${supabaseUrl}/functions/v1/certificates`, {
     method: "POST",

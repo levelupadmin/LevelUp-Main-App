@@ -21,8 +21,11 @@ import { corsHeadersFor } from "../_shared/cors.ts";
 import { timingSafeEqual } from "../_shared/crypto.ts";
 import { isSyntheticEmail } from "../_shared/phone.ts";
 import {
+  boldOf,
   cleanFields,
+  fillLine,
   FONT_FILES,
+  needsDates,
   renderCertificatePdf,
   type CertificateValues,
   type DesignField,
@@ -55,6 +58,9 @@ interface Template {
   issue_mode: "auto" | "manual";
   completion_threshold: number;
   line_text: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  date_style: "month" | "day";
   is_active: boolean;
 }
 interface Design {
@@ -64,6 +70,7 @@ interface Design {
   image_width: number;
   image_height: number;
   fields: unknown;
+  line_template: string | null;
   updated_at: string;
 }
 interface Cert {
@@ -168,13 +175,13 @@ async function countEvents(admin: Admin, filter: { certificate_id?: string; kind
 async function loadTemplate(admin: Admin, courseId: string): Promise<{ template: Template; design: Design } | null> {
   const { data: t } = await admin
     .from("certificate_templates")
-    .select("id,course_id,design_id,issue_mode,completion_threshold,line_text,is_active")
+    .select("id,course_id,design_id,issue_mode,completion_threshold,line_text,period_start,period_end,date_style,is_active")
     .eq("course_id", courseId)
     .maybeSingle();
   if (!t || !t.is_active || !t.design_id) return null;
   const { data: d } = await admin
     .from("certificate_designs")
-    .select("id,name,image_path,image_width,image_height,fields,updated_at")
+    .select("id,name,image_path,image_width,image_height,fields,line_template,updated_at")
     .eq("id", t.design_id)
     .maybeSingle();
   if (!d) return null;
@@ -231,7 +238,11 @@ async function publicBytes(path: string): Promise<Uint8Array> {
 
 async function fontsFor(fields: DesignField[]) {
   const wanted = new Set<FontKey>(["sans"]);
-  fields.forEach((f) => f.font && wanted.add(f.font));
+  fields.forEach((f) => {
+    if (!f.font) return;
+    wanted.add(f.font);
+    wanted.add(boldOf(f.font));
+  });
   const out: Partial<Record<FontKey, Uint8Array>> = {};
   for (const key of wanted) {
     let bytes = fontCache.get(key);
@@ -260,6 +271,34 @@ function designImageUrl(path: string) {
 }
 
 // ── Making the PDF ──────────────────────────────────────────────────
+/** The sentence printed on the certificate: the course's own wording if it
+ *  has one, else the design's, with the batch dates filled in. */
+function lineFor(template: Template, design: Design): string {
+  const raw = (template.line_text ?? "").trim() || (design.line_template ?? "").trim();
+  if (!raw) return "";
+  if (needsDates(raw) && (!template.period_start || !template.period_end)) {
+    throw new HttpError(409, "no_dates", "Set this batch's start and end dates first (Certificates → Issue to a group).");
+  }
+  return fillLine(raw, { start: template.period_start, end: template.period_end, style: template.date_style ?? "month" });
+}
+
+/** Admin corrected the name: keep the student's profile in step and record it. */
+async function saveProfileName(admin: Admin, userId: string, name: string, actorId: string, oldName: string | null) {
+  if (oldName && oldName.trim() === name) return false;
+  const { error } = await admin.from("users").update({ full_name: name }).eq("id", userId);
+  if (error) {
+    console.error("profile name update failed", { userId, error: error.message });
+    return false;
+  }
+  await admin.from("admin_audit_logs").insert({
+    actor_user_id: actorId,
+    action: "user.update_name",
+    target_table: "users",
+    target_id: userId,
+    metadata: { via: "certificates", from: oldName, to: name },
+  });
+  return true;
+}
 async function renderAndStore(admin: Admin, cert: Cert, template: Template, design: Design, courseTitle: string): Promise<Cert> {
   const fields = cleanFields(design.fields);
   const code = cert.verify_code!;
@@ -267,7 +306,7 @@ async function renderAndStore(admin: Admin, cert: Cert, template: Template, desi
     name: cert.name_on_certificate ?? "",
     date: printableDate(cert.completed_on ?? istDate(new Date(cert.created_at))),
     number: cert.certificate_number,
-    line: template.line_text ?? "",
+    line: lineFor(template, design),
     verify: verifyUrlFor(code).replace(/^https?:\/\//, ""),
     verifyUrl: verifyUrlFor(code),
   };
@@ -328,6 +367,7 @@ async function issue(
 ): Promise<{ cert: Cert; created: boolean }> {
   const existing = await loadCert(admin, { userId: opts.userId, courseId: opts.courseId });
   if (existing) return { cert: existing, created: false };
+  lineFor(opts.template, opts.design); // no row is created when the batch dates are missing
 
   const { data: number, error: numErr } = await admin.rpc("next_certificate_number");
   if (numErr || !number) throw new Error(`could not get a certificate number: ${numErr?.message ?? "empty"}`);
@@ -387,13 +427,13 @@ async function ensurePdf(admin: Admin, cert: Cert): Promise<Cert> {
   if (cert.pdf_path) return cert;
   const { data: t } = await admin
     .from("certificate_templates")
-    .select("id,course_id,design_id,issue_mode,completion_threshold,line_text,is_active")
+    .select("id,course_id,design_id,issue_mode,completion_threshold,line_text,period_start,period_end,date_style,is_active")
     .eq("id", cert.template_id)
     .maybeSingle();
   if (!t?.design_id) throw new HttpError(409, "no_design", "This course has no certificate design yet.");
   const { data: d } = await admin
     .from("certificate_designs")
-    .select("id,name,image_path,image_width,image_height,fields,updated_at")
+    .select("id,name,image_path,image_width,image_height,fields,line_template,updated_at")
     .eq("id", t.design_id)
     .single();
   return await renderAndStore(admin, cert, t as Template, d as Design, await courseTitle(admin, cert.course_id));
@@ -619,10 +659,12 @@ async function adminIssue(admin: Admin, actorId: string, body: Record<string, un
   const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 300) : "";
   const sendEmail = body.send_email !== false;
   const names = (body.names && typeof body.names === "object" ? body.names : {}) as Record<string, string>;
+  const updateProfile = body.update_profile !== false;
   const emailOverride = typeof body.email === "string" ? body.email : null;
 
   const setup = await loadTemplate(admin, courseId);
   if (!setup) throw new HttpError(409, "not_ready", "Set up a certificate design for this course first.");
+  lineFor(setup.template, setup.design); // missing batch dates stop the whole run, before anything is made
   const actor: Actor = { kind: "admin", id: actorId };
   const results: Record<string, unknown>[] = [];
 
@@ -647,11 +689,17 @@ async function adminIssue(admin: Admin, actorId: string, body: Record<string, un
         continue;
       }
       const profile = await profileOf(admin, userId);
-      const name = usableName(names[userId]) ?? usableName(profile?.full_name);
+      const typed = names[userId] == null ? null : usableName(names[userId]);
+      if (names[userId] != null && !typed) {
+        results.push({ user_id: userId, result: "bad_name" });
+        continue;
+      }
+      const name = typed ?? usableName(profile?.full_name);
       if (!name) {
         results.push({ user_id: userId, result: "need_name" });
         continue;
       }
+      const profileUpdated = typed && updateProfile ? await saveProfileName(admin, userId, typed, actorId, profile?.full_name ?? null) : false;
       const { cert } = await issue(admin, {
         userId,
         courseId,
@@ -666,7 +714,7 @@ async function adminIssue(admin: Admin, actorId: string, body: Record<string, un
         completedOn: istDate(new Date()),
       });
       const mail = sendEmail ? await emailCertificate(admin, cert, actor, emailOverride) : { email: "not_sent" };
-      results.push({ user_id: userId, result: "issued", certificate_id: cert.id, number: cert.certificate_number, email: mail.email });
+      results.push({ user_id: userId, result: "issued", certificate_id: cert.id, number: cert.certificate_number, email: mail.email, profile_updated: profileUpdated });
     } catch (err) {
       console.error("admin_issue failed", { userId, err: err instanceof Error ? err.message : String(err) });
       results.push({ user_id: userId, result: "error", error: err instanceof Error ? err.message : String(err) });
@@ -702,6 +750,10 @@ async function adminCertAction(admin: Admin, actorId: string, action: string, bo
     if (error) throw new Error(error.message);
     const fresh = await ensurePdf(admin, data as Cert);
     await logEvent(admin, { ...base, kind: "reissued", detail: { old_name: cert.name_on_certificate, new_name: name } });
+    if (body.update_profile !== false) {
+      const profile = await profileOf(admin, cert.user_id);
+      await saveProfileName(admin, cert.user_id, name, actorId, profile?.full_name ?? null);
+    }
     const mail = body.send_email === false ? { email: "not_sent" } : await emailCertificate(admin, fresh, actor);
     return { result: "reissued", ...mail };
   }
@@ -718,6 +770,38 @@ async function adminCertAction(admin: Admin, actorId: string, action: string, bo
     return { result: "restored" };
   }
   throw new HttpError(400, "bad_request", "Unknown action");
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+async function adminSetBatch(admin: Admin, actorId: string, body: Record<string, unknown>) {
+  const courseId = String(body.course_id ?? "");
+  if (!UUID_RE.test(courseId)) throw new HttpError(400, "bad_request", "course_id is required");
+  const start = typeof body.start === "string" && ISO_DATE.test(body.start) ? body.start : null;
+  const end = typeof body.end === "string" && ISO_DATE.test(body.end) ? body.end : null;
+  if (start && end && end < start) throw new HttpError(400, "bad_dates", "The end date is before the start date.");
+  const style = body.style === "day" ? "day" : "month";
+  const patch: Record<string, unknown> = { period_start: start, period_end: end, date_style: style };
+  if ("line_text" in body) {
+    const text = typeof body.line_text === "string" ? body.line_text.trim().slice(0, 600) : "";
+    patch.line_text = text || null;
+  }
+  const { data, error } = await admin
+    .from("certificate_templates")
+    .update(patch)
+    .eq("course_id", courseId)
+    .select("id, period_start, period_end, date_style, line_text")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new HttpError(409, "not_ready", "Set up a certificate design for this course first.");
+  await admin.from("admin_audit_logs").insert({
+    actor_user_id: actorId,
+    action: "certificates.set_batch",
+    target_table: "certificate_templates",
+    target_id: data.id,
+    metadata: patch,
+  });
+  return { result: "saved", ...data };
 }
 
 async function adminPreview(body: Record<string, unknown>) {
@@ -737,7 +821,16 @@ async function adminPreview(body: Record<string, unknown>) {
       name: usableName(String(body.sample_name ?? "")) ?? "Priya Raman",
       date: printableDate(istDate(new Date())),
       number: "LU-CERT-000000",
-      line: typeof body.line_text === "string" ? body.line_text : "",
+      line: fillLine(
+        typeof body.line_text === "string" && body.line_text.trim()
+          ? body.line_text
+          : typeof design.line_template === "string" ? design.line_template : "",
+        {
+          start: typeof body.start === "string" && ISO_DATE.test(body.start) ? body.start : null,
+          end: typeof body.end === "string" && ISO_DATE.test(body.end) ? body.end : null,
+          style: body.style === "day" ? "day" : "month",
+        },
+      ),
       verify: verifyUrlFor(code).replace(/^https?:\/\//, ""),
       verifyUrl: verifyUrlFor(code),
     },
@@ -828,6 +921,7 @@ Deno.serve(async (req) => {
       const { data: me } = await admin.from("users").select("role").eq("id", user.id).maybeSingle();
       if (me?.role !== "owner" && me?.role !== "admin") return json({ error: "Admins only." }, 403);
       if (action === "admin_issue") return json(await adminIssue(admin, user.id, body));
+      if (action === "admin_set_batch") return json(await adminSetBatch(admin, user.id, body));
       if (action === "admin_preview") {
         const pdf = await adminPreview(body);
         return new Response(new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), { headers: { ...cors, "Content-Type": "application/pdf" } });

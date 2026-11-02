@@ -19,6 +19,10 @@ export interface OverviewRow {
   issue_mode: "auto" | "manual";
   threshold: number;
   line_text: string | null;
+  line_template: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  date_style: "month" | "day";
   total_lessons: number;
   students: number;
   eligible: number;
@@ -85,6 +89,7 @@ export interface DesignRow {
   image_width: number;
   image_height: number;
   fields: DesignField[];
+  line_template: string | null;
   created_at: string;
   updated_at: string;
   archived_at: string | null;

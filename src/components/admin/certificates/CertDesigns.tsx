@@ -18,6 +18,7 @@ import {
   designPublicUrl,
   DESIGN_BUCKET,
   FIELD_LABELS,
+  fillLine,
   FONT_LABELS,
   previewDesignPdf,
   SAMPLE_VALUES,
@@ -38,6 +39,7 @@ interface Draft {
   image_width: number;
   image_height: number;
   fields: DesignField[];
+  line_template: string;
 }
 
 /** Turn any uploaded image into a JPEG (the PDF engine embeds JPEGs cheaply). */
@@ -79,9 +81,10 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selected, setSelected] = useState<FieldKey>("name");
   const [sampleName, setSampleName] = useState(SAMPLE_VALUES.name);
-  const [sampleLine, setSampleLine] = useState("");
+  const [sampleStart, setSampleStart] = useState("2026-02-02");
+  const [sampleEnd, setSampleEnd] = useState("2026-05-16");
   const [busy, setBusy] = useState<string | null>(null);
-  const [assign, setAssign] = useState<{ design: DesignRow | null; courseId: string; mode: "auto" | "manual"; line: string; threshold: number } | null>(null);
+  const [assign, setAssign] = useState<{ design: DesignRow | null; courseId: string; mode: "auto" | "manual"; threshold: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Opened from the Overview's "Set up" button: start the assign step for that course.
@@ -91,7 +94,6 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
       design: null,
       courseId: assignFor.course_id,
       mode: assignFor.product_tier === "masterclass" ? "auto" : "manual",
-      line: assignFor.line_text ?? "",
       threshold: assignFor.threshold ?? 85,
     });
   }, [assignFor]);
@@ -133,6 +135,7 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
         image_width: width,
         image_height: height,
         fields: DEFAULT_FIELDS.map((f) => ({ ...f })),
+        line_template: "",
       });
       setSelected("name");
     } catch (e) {
@@ -157,6 +160,7 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
       image_width: draft.image_width,
       image_height: draft.image_height,
       fields: draft.fields,
+      line_template: draft.line_template.trim() || null,
     };
     const { error } = draft.id
       ? await db.from("certificate_designs").update(row).eq("id", draft.id)
@@ -181,7 +185,6 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
         design_id: assign.design.id,
         issue_mode: assign.mode,
         completion_threshold: Math.min(100, Math.max(1, Math.round(assign.threshold || 85))),
-        line_text: assign.line.trim() || null,
         is_active: true,
         background_image_url: designPublicUrl(assign.design.image_path),
         variable_positions: [],
@@ -225,7 +228,7 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
           <div className="flex-1" />
           <Button variant="outline" disabled={busy === "pdf"} onClick={async () => {
             setBusy("pdf");
-            try { await previewDesignPdf(draft, { sample_name: sampleName, line_text: sampleLine }); }
+            try { await previewDesignPdf(draft, { sample_name: sampleName, line_text: draft.line_template, start: sampleStart, end: sampleEnd, style: "month" }); }
             catch (e) { toast({ title: (e as Error).message, variant: "destructive" }); }
             finally { setBusy(null); }
           }}>{busy === "pdf" ? "Making PDF…" : "Preview the real PDF"}</Button>
@@ -240,7 +243,7 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
               width={draft.image_width}
               height={draft.image_height}
               fields={draft.fields}
-              values={{ ...SAMPLE_VALUES, name: sampleName, line: sampleLine }}
+              values={{ ...SAMPLE_VALUES, name: sampleName, line: fillLine(draft.line_template, { start: sampleStart, end: sampleEnd, style: "month" }) }}
               selected={selected}
               onPick={(p) => setField({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })}
             />
@@ -329,9 +332,17 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
                 <Input value={sampleName} onChange={(e) => setSampleName(e.target.value)} />
               </label>
               {draft.fields.some((f) => f.key === "line") && (
-                <label className="block text-xs text-muted-foreground">Try a batch line (each course sets its own)
-                  <Textarea rows={3} value={sampleLine} onChange={(e) => setSampleLine(e.target.value)} placeholder="Batch 25 · February to May 2026" />
-                </label>
+                <div className="space-y-2">
+                  <label className="block text-xs text-muted-foreground">The sentence printed on it (same for every batch)
+                    <Textarea rows={4} value={draft.line_template} onChange={(e) => setDraft({ ...draft, line_template: e.target.value })}
+                      placeholder={"In recognition of the successful completion of LevelUp Learning's\n**12-week intensive Video Editing Cohort,** conducted from\n{start} to {end}."} />
+                  </label>
+                  <p className="text-xs text-muted-foreground">{"{start}"} and {"{end}"} become each batch's dates, set on the Issue screen. Put ** around words to make them bold. A new line starts a new printed line.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-xs text-muted-foreground">Try a start<Input type="date" value={sampleStart} onChange={(e) => setSampleStart(e.target.value)} /></label>
+                    <label className="text-xs text-muted-foreground">Try an end<Input type="date" value={sampleEnd} onChange={(e) => setSampleEnd(e.target.value)} /></label>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -357,7 +368,8 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
           const used = usedBy.get(d.id) ?? [];
           return (
             <div key={d.id} className="rounded-lg border border-border bg-surface p-3 space-y-3">
-              <CertificatePreview imageUrl={designPublicUrl(d.image_path)} width={d.image_width} height={d.image_height} fields={d.fields} values={SAMPLE_VALUES} alt={d.name} />
+              <CertificatePreview imageUrl={designPublicUrl(d.image_path)} width={d.image_width} height={d.image_height} fields={d.fields}
+                values={{ ...SAMPLE_VALUES, line: fillLine(d.line_template ?? "", { start: "2026-02-02", end: "2026-05-16", style: "month" }) }} alt={d.name} />
               <div>
                 <p className="font-medium">{d.name}</p>
                 <p className="text-xs text-muted-foreground">
@@ -365,8 +377,8 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => { setDraft({ id: d.id, name: d.name, kind: d.kind, image_path: d.image_path, image_width: d.image_width, image_height: d.image_height, fields: d.fields }); setSelected("name"); }}>Edit</Button>
-                <Button size="sm" onClick={() => setAssign({ design: d, courseId: "", mode: d.kind === "masterclass" ? "auto" : "manual", line: "", threshold: 85 })}>Use for a course</Button>
+                <Button size="sm" variant="outline" onClick={() => { setDraft({ id: d.id, name: d.name, kind: d.kind, image_path: d.image_path, image_width: d.image_width, image_height: d.image_height, fields: d.fields, line_template: d.line_template ?? "" }); setSelected("name"); }}>Edit</Button>
+                <Button size="sm" onClick={() => setAssign({ design: d, courseId: "", mode: d.kind === "masterclass" ? "auto" : "manual", threshold: 85 })}>Use for a course</Button>
               </div>
             </div>
           );
@@ -404,10 +416,8 @@ export default function CertDesigns({ assignFor, onAssigned }: { assignFor: Over
                   <Input type="number" min={1} max={100} value={assign.threshold} onChange={(e) => setAssign({ ...assign, threshold: Number(e.target.value) })} />
                 </label>
               )}
-              {assign.design?.fields.some((f) => f.key === "line") && (
-                <label className="block text-xs text-muted-foreground">Batch line printed on it
-                  <Textarea rows={3} value={assign.line} onChange={(e) => setAssign({ ...assign, line: e.target.value })} placeholder="Batch 25 · February to May 2026" />
-                </label>
+              {assign.mode === "manual" && (
+                <p className="text-xs text-muted-foreground">Batch dates are set on the Issue screen when you issue.</p>
               )}
             </div>
           )}

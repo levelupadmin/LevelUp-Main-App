@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { QrCode } from "lucide-react";
 import {
+  boldOf,
   ensureCertificateFonts,
   fontFamilyFor,
   LINE_GAP,
+  segments,
   type CertificateRender,
   type DesignField,
   type FieldKey,
@@ -106,7 +108,13 @@ export default function CertificatePreview({ imageUrl, width, height, fields, va
             >
               {lines.map((l, i) => (
                 <span key={i} style={{ display: "block", lineHeight: 1, marginTop: i ? size * (LINE_GAP - 1) : 0 }}>
-                  {l}
+                  {segments(l).map((sg, j) =>
+                    sg.bold ? (
+                      <span key={j} style={{ fontFamily: fontFamilyFor(boldOf(f.font)) }}>{sg.text}</span>
+                    ) : (
+                      <span key={j}>{sg.text}</span>
+                    ),
+                  )}
                 </span>
               ))}
             </span>

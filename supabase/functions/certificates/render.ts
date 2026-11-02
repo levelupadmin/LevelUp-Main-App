@@ -51,6 +51,39 @@ export const FIELD_KEYS: FieldKey[] = ["name", "date", "number", "line", "verify
 export const LINE_GAP = 1.4;
 const FONT_KEYS = Object.keys(FONT_FILES) as FontKey[];
 
+/** The bold face used for **marked** words inside a line. */
+export function boldOf(font: FontKey): FontKey {
+  return font === "sans-regular" ? "sans" : font;
+}
+
+/** Split "a **b** c" into [{text:"a ",bold:false},{text:"b",bold:true},{text:" c",bold:false}]. */
+export function segments(line: string): { text: string; bold: boolean }[] {
+  const out: { text: string; bold: boolean }[] = [];
+  const parts = line.split("**");
+  parts.forEach((text, i) => {
+    if (text) out.push({ text, bold: i % 2 === 1 });
+  });
+  return out;
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** "2026-02-01" → "February 2026" (month) or "1 February 2026" (day). */
+export function formatBatchDate(iso: string, style: "month" | "day"): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m) return iso;
+  return style === "day" && d ? `${d} ${MONTHS[m - 1]} ${y}` : `${MONTHS[m - 1]} ${y}`;
+}
+
+export const needsDates = (line: string) => /\{(start|end)\}/i.test(line);
+
+/** Put the batch dates into the sentence. */
+export function fillLine(line: string, period: { start: string | null; end: string | null; style: "month" | "day" }): string {
+  return line
+    .replace(/\{start\}/gi, period.start ? formatBatchDate(period.start, period.style) : "")
+    .replace(/\{end\}/gi, period.end ? formatBatchDate(period.end, period.style) : "");
+}
+
 const clamp01 = (n: unknown, fallback: number) =>
   typeof n === "number" && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
 
@@ -169,22 +202,30 @@ export async function renderCertificatePdf(opts: {
 
     const text = textFor(field, opts.values);
     if (!text) continue;
-    const { font, centreToBaseline } = await fontFor(field.font ?? "sans");
-    // Line breaks in the text (the per-batch line can be a short paragraph)
+    const regular = await fontFor(field.font ?? "sans");
+    const bold = await fontFor(boldOf(field.font ?? "sans"));
+    // Line breaks in the text (the batch sentence can be a short paragraph)
     // stack lines LINE_GAP apart; `y` is the centre of the whole block.
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    // **marked** words print in the bold face.
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map(segments);
     let size = field.size * H;
-    const widest = () => Math.max(...lines.map((l) => font.widthOfTextAtSize(l, size)));
+    const widthOf = (segs: { text: string; bold: boolean }[]) =>
+      segs.reduce((w, sg) => w + (sg.bold ? bold : regular).font.widthOfTextAtSize(sg.text, size), 0);
+    const widest = () => Math.max(...lines.map(widthOf));
     const max = field.maxWidth ? field.maxWidth * W : Infinity;
     while (widest() > max && size > 4) size *= 0.95;
     const anchor = field.x * W;
     const step = size * LINE_GAP;
     const firstCentre = H - field.y * H + ((lines.length - 1) * step) / 2;
-    lines.forEach((line, i) => {
-      const width = font.widthOfTextAtSize(line, size);
-      const x = field.align === "left" ? anchor : field.align === "right" ? anchor - width : anchor - width / 2;
-      const y = firstCentre - i * step - size * centreToBaseline;
-      page.drawText(line, { x, y, size, font, color: hexColor(field.color) });
+    lines.forEach((segs, i) => {
+      const width = widthOf(segs);
+      let x = field.align === "left" ? anchor : field.align === "right" ? anchor - width : anchor - width / 2;
+      const y = firstCentre - i * step - size * regular.centreToBaseline;
+      for (const sg of segs) {
+        const f = (sg.bold ? bold : regular).font;
+        page.drawText(sg.text, { x, y, size, font: f, color: hexColor(field.color) });
+        x += f.widthOfTextAtSize(sg.text, size);
+      }
     });
   }
 
