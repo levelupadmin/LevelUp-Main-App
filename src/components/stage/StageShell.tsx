@@ -52,7 +52,7 @@ export default function StageShell() {
   const { notifications, unreadCount, loading: notifLoading, markRead, markAllRead } = useNotifications();
   const { data: studioEnabled } = useStudioEnabled();
   const { enabled: roomsEnabled } = useCohortRoomsSurfaceValue();
-  const { data: buyer } = useBuyerHome();
+  const { data: buyer, isLoading: ownedLoading, isError: ownedError, refetch: refetchOwned } = useBuyerHome();
   const owned = useMemo(() => (buyer?.items ?? []).map((i) => cardView(i, Date.now())), [buyer]);
 
   useEffect(() => {
@@ -97,7 +97,23 @@ export default function StageShell() {
             <span className="yi-art">{o.img && <img src={o.img} alt="" />}</span>
             <span><span className="yi-t">{o.title}</span><span className="yi-m">{o.side}</span></span>
           </Link>
-        )) : (
+        )) : ownedLoading ? (
+          // Still reading what they own: the shape of two rows, not "Nothing here yet".
+          <div className="side-skel" role="status" aria-busy="true">
+            <span className="sr">Loading</span>
+            {[0, 1].map((k) => (
+              <span className="side-skel-row" key={k} aria-hidden="true">
+                <span className="side-skel-art skeleton-shimmer" />
+                <span className="side-skel-lines"><span className="skeleton-shimmer" /><span className="skeleton-shimmer" /></span>
+              </span>
+            ))}
+          </div>
+        ) : ownedError && !buyer ? (
+          <div className="side-empty" role="alert">
+            We couldn't load your learning.{" "}
+            <button type="button" className="side-retry" onClick={() => { void tapTick(); void refetchOwned(); }}>Retry</button>
+          </div>
+        ) : (
           <div className="side-empty">Nothing here yet. What you buy shows up here, one click from every page.</div>
         )}
         {(staff || profile?.role === "instructor") && (

@@ -9,7 +9,7 @@ import { LevelUpMark } from "@/components/brand/LevelUpMark";
 import { buildAgenda, pastRecordings, sessionWho, useBuyerHome, type CourseItem, type OwnedThing } from "@/components/stage/home/buyer";
 import { AgendaList, OwnCard, cardView } from "@/components/stage/home/BuyerHome";
 import { useStageCatalog } from "@/components/stage/home/catalog";
-import { ProductCard, SectionsSkeleton } from "@/components/stage/home/sections";
+import { LEARNING_LOAD_ERROR, ProductCard, SectionsError, SectionsSkeleton } from "@/components/stage/home/sections";
 import "@/styles/stage-ui.css";
 import "@/components/stage/home/home.css";
 import "./learn.css";
@@ -26,7 +26,8 @@ const EventsPage = lazy(() => import("@/pages/EventsPage"));
  * tab. The old ?seg= links keep working: courses -> In progress,
  * live -> Schedule, calendar -> Schedule (with Events one tap below).
  * Schedule ends with every past class that has a recording, newest first;
- * Watch opens the recording itself, as the old Live tab's Watch did.
+ * Watch opens the recording itself, as the old Live tab's Watch did. If the
+ * read of what someone owns fails, the tabs that show it say so, with Retry.
  */
 
 type Seg = "progress" | "schedule" | "done" | "saved" | "events";
@@ -91,6 +92,11 @@ export default function StageLearn() {
 
   const body = () => {
     if (buyer.isLoading) return <SectionsSkeleton />;
+    // A failed first read is not "you own nothing". (After a good read the
+    // last answer stays on screen while a refetch fails.)
+    if (buyer.isError && !buyer.data && (seg === "progress" || seg === "schedule" || seg === "done")) {
+      return <SectionsError message={LEARNING_LOAD_ERROR} onRetry={() => { void buyer.refetch(); }} />;
+    }
     if (seg === "progress") {
       if (!inProgress.length) {
         return items.length
