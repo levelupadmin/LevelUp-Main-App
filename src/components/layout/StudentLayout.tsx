@@ -1,4 +1,4 @@
-import { Suspense, useState, useEffect, useMemo, useRef } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import PageMotion from "@/components/motion/PageMotion";
@@ -11,13 +11,12 @@ import Footer from "@/components/Footer";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   Home, BookOpen, MessageSquare, User,
-  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles, Brain
+  Menu, X, Bell, LogOut, ChevronDown, Shield, Video, Calendar, BarChart3, Loader2, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCohortRoomsSurfaceValue } from "@/contexts/CohortRoomsSurfaceContext";
 import RoomNavSlot from "@/components/layout/RoomNavSlot";
 import { useActiveCohort } from "@/hooks/useActiveCohort";
-import { useStudioEnabled } from "@/hooks/useStudio";
 import { hapticSelection, tapTick } from "@/lib/haptics";
 
 // Browse merged into Home, the catalog now lives in the Home feed.
@@ -35,9 +34,6 @@ const MOBILE_NAV_ITEMS = [
   { label: "Learn", icon: BookOpen, path: "/learn" },
   { label: "Community", icon: MessageSquare, path: "/community" },
 ];
-
-// Studio (Content Brain) — inserted into the nav only for active cohort members.
-const STUDIO_NAV_ITEM = { label: "Studio", icon: Brain, path: "/studio" };
 
 interface Props {
   /**
@@ -144,25 +140,11 @@ const StudentLayout = ({ children }: Props) => {
   // and still the only cohort read while rooms are disabled (`RoomNavSlot`
   // owns the room query and is not mounted until the shared gate is enabled).
   const { offeringId: activeCohortId } = useActiveCohort();
-  const { data: studioEnabled } = useStudioEnabled();
   const { enabled: roomsEnabled } = useCohortRoomsSurfaceValue();
 
-  // Studio only appears for active cohort members; everyone else sees the
-  // unchanged bar (additive — never orphans a route).
-  const navItems = useMemo(() => {
-    if (!studioEnabled) return NAV_ITEMS;
-    const arr = [...NAV_ITEMS];
-    const i = arr.findIndex((x) => x.path === "/learn");
-    arr.splice(i >= 0 ? i + 1 : arr.length, 0, STUDIO_NAV_ITEM);
-    return arr;
-  }, [studioEnabled]);
-  const mobileNavItems = useMemo(() => {
-    if (!studioEnabled) return MOBILE_NAV_ITEMS;
-    const arr = [...MOBILE_NAV_ITEMS];
-    const i = arr.findIndex((x) => x.path === "/learn");
-    arr.splice(i >= 0 ? i + 1 : arr.length, 0, STUDIO_NAV_ITEM);
-    return arr;
-  }, [studioEnabled]);
+  // No Studio in the nav (founder, 2 Nov 2026: it was never planned).
+  const navItems = NAV_ITEMS;
+  const mobileNavItems = MOBILE_NAV_ITEMS;
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "Student";
 
