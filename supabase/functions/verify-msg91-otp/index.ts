@@ -314,6 +314,22 @@ Deno.serve(async (req) => {
     if (emailProvenance === "legacy") {
       const existing = await findUserByEmail(admin, signupEmail);
       if (existing) {
+        // Never move a login onto this number when the account already signs
+        // in with another phone (that would lock its owner out), or was opened
+        // by an email code (its owner proved the inbox, not this number).
+        // TagMango's number can be wrong, and its holder would walk into a
+        // stranger's purchases (3 Nov 2026 review). They sign in by email.
+        const existingLast10 = (existing.phone ?? "").replace(/\D/g, "").slice(-10);
+        const otherPhone = !!existingLast10 && existingLast10 !== normPhone.replace(/\D/g, "").slice(-10);
+        if (otherPhone || existing.app_metadata?.signup_via === "tagmango_email_code") {
+          return json(
+            {
+              error: "use_email_sign_in",
+              detail: "Your purchases are on an account that signs in with email. Sign in with your email instead, or write to admin@leveluplearning.in.",
+            },
+            409,
+          );
+        }
         await admin.auth.admin
           .updateUserById(existing.id, {
             phone: normPhone,
@@ -359,7 +375,7 @@ Deno.serve(async (req) => {
 async function findUserByEmail(
   admin: ReturnType<typeof createClient>,
   email: string,
-): Promise<{ id: string; email?: string; user_metadata?: Record<string, unknown> } | null> {
+): Promise<{ id: string; email?: string; phone?: string | null; user_metadata?: Record<string, unknown>; app_metadata?: Record<string, unknown> } | null> {
   const { data, error } = await admin.rpc("find_login_identity", { p_phone: null, p_email: email });
   if (error) {
     console.error("verify-msg91-otp: find_login_identity (email) failed", error);
@@ -371,7 +387,9 @@ async function findUserByEmail(
   return {
     id: row.id,
     email: row.email,
+    phone: full?.user?.phone ?? null,
     user_metadata: (full?.user?.user_metadata as Record<string, unknown>) || {},
+    app_metadata: (full?.user?.app_metadata as Record<string, unknown>) || {},
   };
 }
 

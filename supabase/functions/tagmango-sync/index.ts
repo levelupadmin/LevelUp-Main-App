@@ -2,6 +2,16 @@
  * tagmango-sync — pull masterclass buyers from TagMango every 15 minutes so
  * they get access without waiting for someone to upload a spreadsheet.
  *
+ * ⚠️ NOT SCHEDULED on live (no cron job; last row written 2026-08-07). Before
+ * running it again, fix two things (review of 3 Nov 2026):
+ *   • An admin "Change number" (admin_move_legacy_purchases) moves a buyer's
+ *     rows off a wrong TagMango number. This insert is ON CONFLICT (source,
+ *     phone, program) DO NOTHING, so it would re-add those rows at the OLD
+ *     number, and whoever holds that number could claim them. Skip a
+ *     (source, program, email) that already exists.
+ *   • Emails are written as TagMango sends them. Email sign-in and its claim
+ *     match legacy_enrolments.email lower-case: lower() them on the way in.
+ *
  * WHY
  * Masterclasses are sold and fulfilled on TagMango, not through this app's
  * Razorpay checkout, and nothing carried the purchase across. Access existed

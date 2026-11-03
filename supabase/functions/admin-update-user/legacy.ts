@@ -75,14 +75,16 @@ export async function moveLegacyPurchases(admin: AdminClient, actor: Actor, body
   const buyerEmail = pick("email")?.toLowerCase() ?? null;
 
   // ── Who signs in with the new number today ─────────────────────────────────
-  // auth.users holds "91…" (and rarely "+91…"); profiles hold all three forms.
-  const { data: authRows } = await admin.rpc("admin_find_auth_user", { p_email: null, p_phone: digits });
-  let account: { id: string } | null = (authRows ?? []).find((r: { phone?: string | null }) =>
-    (r.phone ?? "").replace(/\D/g, "") === digits) ?? null;
-  if (!account) {
-    const forms = Array.from(new Set([toPhone, digits, last10(digits)].filter(Boolean)));
-    const { data: profs } = await admin.from("users").select("id").in("phone", forms).is("deleted_at", null).limit(1);
-    if (profs?.length) account = { id: profs[0].id };
+  // Only the LOGIN counts (auth.users), never the profile's phone, which is
+  // unproven. auth.users holds "91…", rarely "+91…" or the bare 10 digits;
+  // each form is an exact, indexed match, so a number abroad can't collide
+  // with an Indian one on its last 10 digits.
+  let account: { id: string } | null = null;
+  const indian = digits.length === 12 && digits.startsWith("91");
+  for (const form of [digits, toPhone, indian ? last10(digits) : null]) {
+    if (!form || account) continue;
+    const { data: authRows } = await admin.rpc("admin_find_auth_user", { p_email: null, p_phone: form });
+    account = (authRows ?? []).find((r: { phone?: string | null }) => r.phone === form) ?? null;
   }
 
   let userId: string;

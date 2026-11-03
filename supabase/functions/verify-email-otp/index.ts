@@ -103,7 +103,8 @@
  * TAGMANGO BUYERS ARE THE ONE SIGNUP (founder, 3 Nov 2026). 58,146 of them
  * bought on TagMango with an email and never had an account here, so they
  * never got a code. A code is now also issued for an address that is on an
- * unclaimed, mapped `legacy_enrolments` row and on no profile at all. The
+ * unclaimed, mapped `legacy_enrolments` row whose number has no account, and
+ * on no profile at all (tagmango_email_buyer). The
  * account is opened only at VERIFY, once the code proves the inbox, and their
  * purchases under that address are attached to it in the same request
  * (claim_purchases_by_verified_email, which also serves any email-only
@@ -520,40 +521,23 @@ type Recipient = { user_id: string } | { to_email: string; to_name: string | nul
 
 /**
  * A TagMango buyer who can be given an account by email: their address is on
- * an unclaimed purchase that is mapped to a product, and on NO profile. A
- * profile holding it means they already have an account under another sign-in
- * (a phone-first student's onboarding email, say), and minting a second one
- * would split their purchases across two accounts; they keep phone sign-in.
- * Read-only, like everything else on the send path.
+ * an unclaimed purchase that is mapped to a product, whose TagMango number
+ * signs in to no account, and the address is on NO profile. Either of those
+ * means they already have an account (by phone, or a phone-first student's
+ * onboarding email), and minting a second one would split their purchases;
+ * they keep phone sign-in. One read-only RPC, the same rule the claim uses.
  */
 async function findTagMangoBuyer(admin: Admin, email: string): Promise<{ name: string | null } | null> {
   if (email.endsWith(SYNTHETIC_EMAIL_SUFFIX)) return null;
-
-  const { data: profiles, error: profErr } = await admin
-    .from("users")
-    .select("id")
-    .ilike("email", email.replace(/[\\%_]/g, (c) => `\\${c}`))
-    .limit(1);
-  if (profErr) {
-    console.error("verify-email-otp: profile lookup failed", profErr);
-    return null;
-  }
-  if (profiles?.length) return null;
-
-  // legacy_enrolments.email is stored lower-case, as normalizeEmail returns it.
-  const { data: rows, error } = await admin
-    .from("legacy_enrolments")
-    .select("full_name")
-    .eq("email", email)
-    .is("claimed_by_user_id", null)
-    .not("offering_id", "is", null)
-    .limit(1);
+  const { data, error } = await admin.rpc("tagmango_email_buyer", { p_email: email });
   if (error) {
     console.error("verify-email-otp: TagMango lookup failed", error);
     return null;
   }
-  if (!rows?.length) return null;
-  const name = typeof rows[0].full_name === "string" ? rows[0].full_name.trim() : "";
+  if (!data) return null;
+  const name = typeof (data as { full_name?: unknown }).full_name === "string"
+    ? ((data as { full_name: string }).full_name).trim()
+    : "";
   return { name: name || null };
 }
 
@@ -574,7 +558,10 @@ async function openBuyerAccount(
   const { data, error } = await admin.auth.admin.createUser({
     email,
     email_confirm: true,
-    user_metadata: { full_name: buyer.name ?? "", signup_via: "tagmango_email_code" },
+    user_metadata: { full_name: buyer.name ?? "" },
+    // Service-role only, so a user can't set it: verify-msg91-otp's legacy
+    // recovery never attaches a phone to an account opened this way.
+    app_metadata: { signup_via: "tagmango_email_code" },
   });
   if (error || !data?.user) {
     console.error("verify-email-otp: could not open the buyer's account", {
