@@ -51,7 +51,9 @@ function fakeAdmin(opts: {
     from,
     rpc: async (fn: string, args: Record<string, unknown>) => {
       rpcs.push({ fn, args });
-      if (fn === "admin_find_auth_user") return { data: args.p_phone ? opts.authByPhone ?? [] : opts.authByEmail ?? [], error: null };
+      if (fn === "admin_find_auth_user") {
+        return { data: args.p_phone ? (opts.authByPhone ?? []).filter((r) => r.phone === args.p_phone) : opts.authByEmail ?? [], error: null };
+      }
       if (fn === "admin_move_legacy_purchases") return { data: opts.moveResult ?? { rows: 4, moved: 4, claimed: 3, stamped: 4, blocked: 0 }, error: null };
       return { data: null, error: null };
     },
@@ -113,10 +115,21 @@ describe("moveLegacyPurchases — Change number for a TagMango buyer", () => {
     expect(f.rpcs.find((r) => r.fn === "admin_move_legacy_purchases")?.args.p_user_id).toBe("acct-1");
   });
 
-  it("finds an account by its profile number too", async () => {
-    const f = fakeAdmin({ legacyRows: gideon, profileByPhone: [{ id: "acct-2" }] });
-    const out = await moveLegacyPurchases(f.admin, actor, body);
-    expect(out).toMatchObject({ ok: false, code: "needs_confirmation", account: { id: "acct-2" } });
+  it("finds a login stored as +91… or as the bare 10 digits", async () => {
+    for (const phone of ["+919930400569", "9930400569"]) {
+      const f = fakeAdmin({ legacyRows: gideon, authByPhone: [{ id: "acct-2", phone }] });
+      expect(await moveLegacyPurchases(f.admin, actor, body)).toMatchObject({ ok: false, code: "needs_confirmation", account: { id: "acct-2" } });
+    }
+  });
+
+  it("does not treat a number only on someone's profile as their login", async () => {
+    const f = fakeAdmin({ legacyRows: gideon, profileByPhone: [{ id: "acct-3" }] });
+    expect(await moveLegacyPurchases(f.admin, actor, body)).toMatchObject({ ok: true, created_account: true });
+  });
+
+  it("does not match a number abroad to an Indian login with the same last 10 digits", async () => {
+    const f = fakeAdmin({ legacyRows: gideon, authByPhone: [{ id: "indian", phone: "917700900123" }, { id: "indian10", phone: "7700900123" }] });
+    expect(await moveLegacyPurchases(f.admin, actor, { ...body, phone: "+447700900123" })).toMatchObject({ ok: true, created_account: true });
   });
 
   it("refuses the same number, a bad number, and a buyer with nothing waiting", async () => {

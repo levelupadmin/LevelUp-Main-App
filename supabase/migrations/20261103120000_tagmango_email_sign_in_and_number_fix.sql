@@ -7,12 +7,14 @@
 -- a phone sign-in with the exact number TagMango holds, which is no help to a
 -- buyer whose number there is wrong (the Gideon Thevar case).
 --
--- 1. claim_purchases_by_verified_email: verify-email-otp calls it right after
---    a correct code, so the address is proven, not asserted. It only attaches
---    into an account that signs in with that address and has NO phone: an
---    account with a phone can be entered by whoever holds that phone, so the
---    inbox owner's purchases must not land there (an admin moves those with
---    #2 instead).
+-- 1. tagmango_email_buyer + claim_purchases_by_verified_email: verify-email-otp
+--    issues a code to a buyer's address, and after a correct code (proof, not
+--    assertion) attaches what was bought with it. Only into an account that
+--    signs in with that address and has NO phone (an account with a phone can
+--    be entered by whoever holds it), and never a purchase whose TagMango
+--    number already signs in to an account: that one belongs to that number's
+--    phone claim, and taking it by email would split a person's purchases
+--    across two accounts (review of a975c8f). An admin moves such cases with #2.
 -- 2. admin_move_legacy_purchases: the admin "Change number" for a TagMango
 --    buyer. Moves their unclaimed purchases to the right number and, given an
 --    account, attaches them to it now.
@@ -22,8 +24,46 @@
 -- grant, and only a row the account now ACTIVELY holds is stamped claimed, so
 -- a refunded purchase stays claimable instead of being burnt.
 --
--- Undo: drop both functions. Rows they stamped keep claimed_by_user_id; the
+-- Before tagmango-sync is ever run again: it would re-add a moved purchase at
+-- its old TagMango number (its insert is ON CONFLICT (source, phone, program)
+-- DO NOTHING), and it does not lower-case emails. Fix both there first.
+--
+-- Undo: drop the three functions. Rows they stamped keep claimed_by_user_id; the
 -- admin audit log ("legacy.move_number") lists every move with its old number.
+
+create or replace function public.tagmango_email_buyer(p_email text)
+ returns jsonb
+ language sql
+ stable
+ security definer
+ set search_path to 'public', 'pg_temp'
+as $function$
+  -- Non-null ({"full_name": ...}) when this address may be given an account by
+  -- email: it is on an unclaimed, mapped TagMango purchase whose number signs
+  -- in nowhere, and on no profile (a profile holding it means they already have
+  -- an account under another sign-in). Mirrors the claim's rule above.
+  select case when count(*) = 0 then null
+              else jsonb_build_object('full_name', max(nullif(btrim(le.full_name), ''))) end
+    from public.legacy_enrolments le
+   where le.email = lower(btrim(coalesce(p_email, '')))
+     and le.claimed_by_user_id is null
+     and le.offering_id is not null
+     and not exists (select 1 from public.users u where lower(u.email) = le.email)
+     and not exists (
+       select 1 from auth.users au
+        where au.phone in (ltrim(le.phone, '+'), le.phone)
+           or (le.phone ~ '^\+91[0-9]{10}$' and au.phone = right(le.phone, 10))
+     );
+$function$;
+
+comment on function public.tagmango_email_buyer(text) is
+  'SERVICE-ROLE-ONLY (verify-email-otp send path). Whether a TagMango buyer with no account may get an email sign-in code, and their TagMango name.';
+
+revoke all     on function public.tagmango_email_buyer(text) from public;
+revoke all     on function public.tagmango_email_buyer(text) from anon;
+revoke all     on function public.tagmango_email_buyer(text) from authenticated;
+grant  execute on function public.tagmango_email_buyer(text) to service_role;
+
 
 create or replace function public.claim_purchases_by_verified_email(p_user_id uuid, p_email text)
  returns jsonb
@@ -66,6 +106,13 @@ begin
          select 1 from public.enrolments e
           where e.user_id = p_user_id and e.offering_id = le.offering_id
        )
+       and not exists (
+         -- The TagMango number already signs in somewhere: its phone claim owns it.
+         select 1 from auth.users au2
+          where au2.id <> p_user_id
+            and (au2.phone in (ltrim(le.phone, '+'), le.phone)
+                 or (le.phone ~ '^\+91[0-9]{10}$' and au2.phone = right(le.phone, 10)))
+       )
     on conflict do nothing;
     get diagnostics v_claimed = row_count;
 
@@ -75,6 +122,13 @@ begin
      where le.claimed_by_user_id is null
        and le.offering_id is not null
        and le.email = v_email
+       and not exists (
+         -- The TagMango number already signs in somewhere: its phone claim owns it.
+         select 1 from auth.users au2
+          where au2.id <> p_user_id
+            and (au2.phone in (ltrim(le.phone, '+'), le.phone)
+                 or (le.phone ~ '^\+91[0-9]{10}$' and au2.phone = right(le.phone, 10)))
+       )
        and exists (
          select 1 from public.enrolments e
           where e.user_id = p_user_id
