@@ -34,20 +34,31 @@ Deno.serve(async (req) => {
 
     const template_key = typeof body.template_key === "string" ? body.template_key : null;
     const user_id = typeof body.user_id === "string" ? body.user_id : null;
+    // An address instead of an account: verify-email-otp's sign-in code for a
+    // TagMango buyer who has no account yet. Service-role callers only (above).
+    const to_email = typeof body.to_email === "string" ? body.to_email.trim().toLowerCase() : null;
+    const to_name = typeof body.to_name === "string" ? body.to_name : null;
     const variables: Record<string, string> = body.variables && typeof body.variables === "object" ? body.variables : {};
 
-    if (!template_key || !user_id) {
-      return jsonRes({ error: "template_key and user_id required" }, 400);
+    if (!template_key || (!user_id && !to_email)) {
+      return jsonRes({ error: "template_key and user_id (or to_email) required" }, 400);
     }
-    if (!UUID_RE.test(user_id)) return jsonRes({ error: "Invalid user_id" }, 400);
+    if (user_id && !UUID_RE.test(user_id)) return jsonRes({ error: "Invalid user_id" }, 400);
+    if (!user_id && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to_email!)) return jsonRes({ error: "Invalid to_email" }, 400);
     if (template_key.length > 100) return jsonRes({ error: "Invalid template_key" }, 400);
 
     // ── Look up user email ───────────────────────────────────────
-    const { data: userRow } = await admin
-      .from("users")
-      .select("email, full_name")
-      .eq("id", user_id)
-      .maybeSingle();
+    let userRow: { email: string | null; full_name: string | null } | null = null;
+    if (user_id) {
+      const { data } = await admin
+        .from("users")
+        .select("email, full_name")
+        .eq("id", user_id)
+        .maybeSingle();
+      userRow = data;
+    } else {
+      userRow = { email: to_email, full_name: to_name };
+    }
 
     if (!userRow?.email) {
       return jsonRes({ error: "User not found or has no email" }, 404);
@@ -55,7 +66,7 @@ Deno.serve(async (req) => {
 
     // ── Check suppressed_emails ──────────────────────────────────
     if (await isEmailSuppressed(admin, userRow.email)) {
-      return jsonRes({ message: "Email suppressed", user_id });
+      return jsonRes({ message: "Email suppressed", user_id: user_id ?? undefined });
     }
 
     // ── Look up template ─────────────────────────────────────────
@@ -95,7 +106,7 @@ Deno.serve(async (req) => {
     // ── Enqueue email ────────────────────────────────────────────
     const message_id = crypto.randomUUID();
     const run_id = crypto.randomUUID();
-    const idempotency_key = `${template_key}:${user_id}:${message_id}`;
+    const idempotency_key = `${template_key}:${user_id ?? userRow.email}:${message_id}`;
 
     const { error: enqueueErr } = await enqueueEmail(admin, {
       runId: run_id,

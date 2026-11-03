@@ -1,6 +1,7 @@
 // admin-update-user — admin/owner only. Edit a student's name / bio / email /
 // phone in ONE place: auth.users (what OTP login checks) and public.users (the
-// profile) together. All the logic — and its unit tests — live in handler.ts;
+// profile) together. All the logic — and its unit tests — live in handler.ts
+// (and legacy.ts, the "Change number" for a TagMango buyer with no account);
 // this file is CORS, the actor gate, and the HTTP mapping.
 //
 // Business outcomes (validation, clashes, the legacy-purchase confirmation)
@@ -9,6 +10,7 @@
 // message would never reach the admin.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { updateUserContact, type UpdateBody } from "./handler.ts";
+import { moveLegacyPurchases, type MoveLegacyBody } from "./legacy.ts";
 
 function corsFor(req: Request) {
   const origin = req.headers.get("Origin") || "";
@@ -49,8 +51,12 @@ Deno.serve(async (req) => {
       return json({ error: "Forbidden — admins only" }, 403);
     }
 
-    const body = (await req.json().catch(() => null)) as UpdateBody | null;
-    const outcome = await updateUserContact(admin, { id: actor.id, role: actorRow.role }, body);
+    const body = (await req.json().catch(() => null)) as (UpdateBody & { action?: string }) | null;
+    const who = { id: actor.id, role: actorRow.role };
+    // "Change number" for a TagMango buyer with no account yet (legacy.ts).
+    const outcome = body?.action === "move_legacy"
+      ? await moveLegacyPurchases(admin, who, body as unknown as MoveLegacyBody)
+      : await updateUserContact(admin, who, body);
     return json(outcome, 200);
   } catch (e) {
     return json({ ok: false, code: "failed", error: `unexpected: ${String(e instanceof Error ? e.message : e)}` }, 500);

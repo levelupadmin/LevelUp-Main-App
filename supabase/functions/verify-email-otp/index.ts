@@ -38,8 +38,8 @@
  *    service-role key, which would couple a routine key rotation to
  *    invalidating every code in flight.
  *
- * 3. THE CODE IS ONLY EVER MAILED TO THE ADDRESS IT WAS ISSUED FOR, AND THIS
- *    ENDPOINT NEVER WRITES. The uid comes from auth.users (find_login_identity)
+ * 3. THE CODE IS ONLY EVER MAILED TO THE ADDRESS IT WAS ISSUED FOR, AND
+ *    NOTHING IS WRITTEN UNTIL IT IS PROVEN. The uid comes from auth.users (find_login_identity)
  *    but `queue-transactional-email` mails whatever `public.users.email` holds
  *    for that uid — a write-once mirror with no AFTER UPDATE trigger
  *    (20260405075530) that handle_new_user may deliberately have left NULL
@@ -51,6 +51,8 @@
  *    and hand out entitlements to whoever typed the address, before any proof
  *    of control — the same trigger whose failure inside a user-write
  *    transaction caused the June legacy-login outage (20260603120000:12-18).
+ *    The only writes are on a CORRECT code: a TagMango buyer's new account and
+ *    the purchases bought with the address just proven (see below).
  *
  * 4. BRUTE-FORCE HAS A CEILING THAT A RESEND CANNOT RESET, AND IT IS NOT THE
  *    ROW COUNTER. `attempt_count` cannot be one: the hash compare has to run
@@ -82,11 +84,11 @@
  * platform injects. Rotating the pepper invalidates codes issued in the
  * previous OTP_TTL_SECONDS window and nothing else.
  *
- * DELIVERY. The existing `queue-transactional-email` function takes a USER ID,
- * not an address (queue-transactional-email/index.ts:35-54), so the send path
- * is: normalise -> find_login_identity -> assert the mirror address -> queue
- * with the uid it returned. With no uid we never call the queue at all, and
- * still return SEND_ACCEPTED.
+ * DELIVERY. `queue-transactional-email` mails a USER ID's mirror address, so
+ * the account path is: normalise -> find_login_identity -> assert the mirror
+ * address -> queue with the uid it returned. A TagMango buyer (below) has no
+ * uid yet, so their code is queued to the address itself (`to_email`). With
+ * neither we never call the queue at all, and still return SEND_ACCEPTED.
  *
  * PHONE-ONLY LEGACY USERS carry a synthetic `<digits>@phone.leveluplearning.in`
  * address (`_shared/phone.ts` syntheticEmail) whose domain has no MX record.
@@ -98,10 +100,16 @@
  * for any caller who can type a phone number. They log in by phone; nothing is
  * mailed, and the response never branches on it.
  *
- * NO SIGNUP HAPPENS HERE. A code is only ever issued for an address that
- * already resolves to an auth user; provisioning is the intake path's job
- * (`_shared/identity.ts`, called from the Tally poller). There is no signup
- * screen and no password anywhere in this flow.
+ * TAGMANGO BUYERS ARE THE ONE SIGNUP (founder, 3 Nov 2026). 58,146 of them
+ * bought on TagMango with an email and never had an account here, so they
+ * never got a code. A code is now also issued for an address that is on an
+ * unclaimed, mapped `legacy_enrolments` row and on no profile at all. The
+ * account is opened only at VERIFY, once the code proves the inbox, and their
+ * purchases under that address are attached to it in the same request
+ * (claim_purchases_by_verified_email, which also serves any email-only
+ * account). Every other address still needs an account first; provisioning is
+ * the intake path's job (`_shared/identity.ts`, called from the Tally poller).
+ * There is no signup screen and no password anywhere in this flow.
  */
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
@@ -385,13 +393,23 @@ Deno.serve(async (req) => {
   }
   if (!claimed || claimed.length === 0) return json({ error: "code_already_used" }, 401);
 
-  const identity = await findIdentity(admin, email);
+  let identity = await findIdentity(admin, email);
+  let isNewUser = false;
   if (!identity) {
-    // A code only exists for an address that resolved to a user, so this is a
-    // race (account removed mid-flight), not an unknown address.
-    console.error("verify-email-otp: verified code has no identity", { email: maskEmail(email) });
-    return json(INVALID_CODE, 401);
+    // A code only exists for an address with an account or a TagMango
+    // purchase, so with no account this is a buyer, and the code just proved
+    // the inbox is theirs: open their account now.
+    identity = await openBuyerAccount(admin, email);
+    if (!identity) {
+      console.error("verify-email-otp: verified code has no identity", { email: maskEmail(email) });
+      return json(INVALID_CODE, 401);
+    }
+    isNewUser = true;
   }
+
+  // Purchases bought with this address attach now, on proof rather than on
+  // assertion. Best effort: a failed claim never blocks the sign-in.
+  await claimByVerifiedEmail(admin, identity.id, email);
 
   // The OTP proves control of THIS address, so minting against the canonical
   // stored address for the row it resolved to is the same identity.
@@ -403,7 +421,7 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   await settleProvenIdentity(admin as any, identity.id, session.access_token);
 
-  return json({ ...session, user_id: identity.id, is_new_user: false });
+  return json({ ...session, user_id: identity.id, is_new_user: isNewUser });
 });
 
 /**
@@ -424,12 +442,19 @@ async function holdUntilFloor(startedAt: number): Promise<void> {
  */
 async function issueCode(admin: Admin, email: string): Promise<void> {
   const identity = await findIdentity(admin, email);
-  // No account for this address: no code row, no mail, and the caller still
-  // gets SEND_ACCEPTED from the single shared return.
-  if (!identity) return;
-
-  // Never mail a code anywhere but the address it was issued for.
-  if (!(await isDeliverableToRequestedAddress(admin, identity.id, email))) return;
+  let recipient: Recipient;
+  if (identity) {
+    // Never mail a code anywhere but the address it was issued for.
+    if (!(await isDeliverableToRequestedAddress(admin, identity.id, email))) return;
+    recipient = { user_id: identity.id };
+  } else {
+    // No account: only a TagMango buyer still gets a code. Anyone else gets no
+    // code row and no mail, and the caller still gets SEND_ACCEPTED from the
+    // single shared return.
+    const buyer = await findTagMangoBuyer(admin, email);
+    if (!buyer) return;
+    recipient = { to_email: email, to_name: buyer.name };
+  }
 
   // A live code already in flight is re-used rather than re-issued, so a repeat
   // request inside the cooldown costs no email at all.
@@ -486,7 +511,92 @@ async function issueCode(admin: Admin, email: string): Promise<void> {
   // a template lookup, a render loop and an enqueue; awaiting it here would put
   // all of that on the known-address branch only, which is exactly the timing
   // oracle the floor exists to remove.
-  runInBackground(queueOtpEmail(identity.id, code));
+  runInBackground(queueOtpEmail(recipient, code));
+}
+
+/** Who the code is mailed to: an account (its mirror address, asserted equal
+ *  above), or a TagMango buyer's address before they have an account. */
+type Recipient = { user_id: string } | { to_email: string; to_name: string | null };
+
+/**
+ * A TagMango buyer who can be given an account by email: their address is on
+ * an unclaimed purchase that is mapped to a product, and on NO profile. A
+ * profile holding it means they already have an account under another sign-in
+ * (a phone-first student's onboarding email, say), and minting a second one
+ * would split their purchases across two accounts; they keep phone sign-in.
+ * Read-only, like everything else on the send path.
+ */
+async function findTagMangoBuyer(admin: Admin, email: string): Promise<{ name: string | null } | null> {
+  if (email.endsWith(SYNTHETIC_EMAIL_SUFFIX)) return null;
+
+  const { data: profiles, error: profErr } = await admin
+    .from("users")
+    .select("id")
+    .ilike("email", email.replace(/[\\%_]/g, (c) => `\\${c}`))
+    .limit(1);
+  if (profErr) {
+    console.error("verify-email-otp: profile lookup failed", profErr);
+    return null;
+  }
+  if (profiles?.length) return null;
+
+  // legacy_enrolments.email is stored lower-case, as normalizeEmail returns it.
+  const { data: rows, error } = await admin
+    .from("legacy_enrolments")
+    .select("full_name")
+    .eq("email", email)
+    .is("claimed_by_user_id", null)
+    .not("offering_id", "is", null)
+    .limit(1);
+  if (error) {
+    console.error("verify-email-otp: TagMango lookup failed", error);
+    return null;
+  }
+  if (!rows?.length) return null;
+  const name = typeof rows[0].full_name === "string" ? rows[0].full_name.trim() : "";
+  return { name: name || null };
+}
+
+/**
+ * Open the account for a TagMango buyer who just proved their inbox. Signs in
+ * with that address alone (no phone), so claim_purchases_by_verified_email can
+ * attach their purchases to it. Re-checks the buyer first: the code was issued
+ * minutes ago and the address may have been taken since. If someone opened an
+ * account for it in between, that account is the one we sign into.
+ */
+async function openBuyerAccount(
+  admin: Admin,
+  email: string,
+): Promise<{ id: string; email?: string | null } | null> {
+  const buyer = await findTagMangoBuyer(admin, email);
+  if (!buyer) return await findIdentity(admin, email);
+
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    user_metadata: { full_name: buyer.name ?? "", signup_via: "tagmango_email_code" },
+  });
+  if (error || !data?.user) {
+    console.error("verify-email-otp: could not open the buyer's account", {
+      email: maskEmail(email),
+      reason: error?.message,
+    });
+    return await findIdentity(admin, email);
+  }
+  return { id: data.user.id, email: data.user.email ?? email };
+}
+
+/** Attach the TagMango purchases bought with this (just proven) address. */
+async function claimByVerifiedEmail(admin: Admin, userId: string, email: string): Promise<void> {
+  const { data, error } = await admin.rpc("claim_purchases_by_verified_email", {
+    p_user_id: userId,
+    p_email: email,
+  });
+  if (error) {
+    console.error("verify-email-otp: email claim failed", { user_id: userId, reason: error.message });
+  } else if ((data as { claimed?: number } | null)?.claimed) {
+    console.log("verify-email-otp: attached TagMango purchases", { user_id: userId, ...(data as object) });
+  }
 }
 
 /**
@@ -677,7 +787,8 @@ function runInBackground(task: Promise<void>): void {
  * Delivery failure is logged and swallowed: the caller's response must not
  * change shape because our mail queue had a bad minute.
  */
-async function queueOtpEmail(userId: string, code: string): Promise<void> {
+async function queueOtpEmail(recipient: Recipient, code: string): Promise<void> {
+  const who = "user_id" in recipient ? { user_id: recipient.user_id } : { to: maskEmail(recipient.to_email) };
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/queue-transactional-email`, {
       method: "POST",
@@ -687,7 +798,7 @@ async function queueOtpEmail(userId: string, code: string): Promise<void> {
       },
       body: JSON.stringify({
         template_key: TEMPLATE_KEY,
-        user_id: userId,
+        ...recipient,
         variables: {
           otp_code: code,
           expiry_minutes: String(Math.round(OTP_TTL_SECONDS / 60)),
@@ -698,7 +809,7 @@ async function queueOtpEmail(userId: string, code: string): Promise<void> {
     if (!res.ok) {
       console.error("verify-email-otp: queue-transactional-email rejected", {
         status: res.status,
-        user_id: userId,
+        ...who,
         template_key: TEMPLATE_KEY,
       });
       return;
@@ -714,7 +825,7 @@ async function queueOtpEmail(userId: string, code: string): Promise<void> {
     if (payload?.message === "Email suppressed") {
       console.error(
         "verify-email-otp: LOGIN CODE BLOCKED — address is on suppressed_emails, user cannot log in by email",
-        { user_id: userId, template_key: TEMPLATE_KEY },
+        { ...who, template_key: TEMPLATE_KEY },
       );
     }
   } catch (err) {

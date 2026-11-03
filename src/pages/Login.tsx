@@ -302,7 +302,11 @@ const Login = () => {
       return;
     }
     if (!isIndianPhone) {
-      goToStep("email_input");
+      // Numbers outside India sign in by email: the code tab when it is on (it
+      // mails through Brevo), else the link step, whose mail comes from
+      // Supabase's built-in sender (2 emails an hour for the whole app).
+      if (flag(EMAIL_OTP_TAB)) setAuthTab("email");
+      else goToStep("email_input");
       return;
     }
     if (isReviewLogin) {
