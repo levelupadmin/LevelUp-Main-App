@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Search, AlertTriangle, Download, Upload } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
 import AdminPhoneInput, { countryOf, phoneProblem, toE164, typedNumber } from "@/components/admin/AdminPhoneInput";
+import LegacyNumberDialog from "@/components/admin/LegacyNumberDialog";
 import type { Country } from "react-phone-number-input";
 
 interface UserRow {
@@ -70,6 +71,8 @@ const AdminUsers = () => {
   const [editOrig, setEditOrig] = useState(EMPTY_FORM);
   /** Server asked for a yes before attaching unclaimed TagMango purchases. */
   const [legacyPrompt, setLegacyPrompt] = useState<string | null>(null);
+  /** An "unclaimed legacy" row (no account yet) whose number is being changed. */
+  const [legacyBuyer, setLegacyBuyer] = useState<UserRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmRoleChange, setConfirmRoleChange] = useState(false);
   const [roleFilter, setRoleFilter] = useState("all");
@@ -547,13 +550,13 @@ const AdminUsers = () => {
               return (
               <tr
                 key={u.id || u.phone || u.email}
-                className={`border-b border-border last:border-0 ${isPhantom ? "" : "hover:bg-secondary/30 cursor-pointer"}`}
-                onClick={() => !isPhantom && openEdit(u)}
+                className="border-b border-border last:border-0 hover:bg-secondary/30 cursor-pointer"
+                onClick={() => (isPhantom ? setLegacyBuyer(u) : openEdit(u))}
               >
                 <td className="px-5 py-3 font-medium">
                   <div>{u.full_name || (isPhantom ? <span className="text-muted-foreground italic">unclaimed legacy</span> : "-")}</div>
                   <div className="font-mono text-[10px] text-muted-foreground">
-                    {u.member_number ? `#${u.member_number}` : ""}
+                    {isPhantom ? <span className="text-amber-400">Change number</span> : u.member_number ? `#${u.member_number}` : ""}
                   </div>
                 </td>
                 <td className="px-5 py-3 text-muted-foreground text-xs">{u.email || "-"}</td>
@@ -674,6 +677,12 @@ const AdminUsers = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <LegacyNumberDialog
+        buyer={legacyBuyer}
+        onClose={() => setLegacyBuyer(null)}
+        onDone={() => { setLegacyBuyer(null); load(); }}
+      />
 
       <AlertDialog open={!!legacyPrompt} onOpenChange={(o) => { if (!o) setLegacyPrompt(null); }}>
         <AlertDialogContent>

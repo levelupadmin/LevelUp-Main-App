@@ -178,6 +178,8 @@ interface EmailOtpPanelProps {
   onVerify: (email: string, code: string) => Promise<ActionResult>;
   /** Native keyboards shouldn't pop on mount; web autofocuses. */
   autoFocus?: boolean;
+  /** "Didn't get a code?" advice under the code boxes. */
+  codeHelp?: ReactNode;
 }
 
 /**
@@ -194,6 +196,7 @@ export function EmailOtpPanel({
   onSend,
   onVerify,
   autoFocus,
+  codeHelp,
 }: EmailOtpPanelProps) {
   const ms = useMotionSafe();
   const [stage, setStage] = useState<"address" | "code" | "done">("address");
@@ -257,6 +260,7 @@ export function EmailOtpPanel({
           setStage("address");
           setError(null);
         }}
+        help={codeHelp}
       />
     );
   }
@@ -321,6 +325,7 @@ interface EmailCodeEntryProps {
   onVerify: (code: string) => Promise<ActionResult>;
   onResend: () => Promise<ActionResult>;
   onBack: () => void;
+  help?: ReactNode;
 }
 
 /**
@@ -329,7 +334,7 @@ interface EmailCodeEntryProps {
  * a 30s resend countdown) with the copy the email channel needs; the phone
  * channel keeps using OtpEntryStep itself, untouched.
  */
-function EmailCodeEntry({ email, onVerify, onResend, onBack }: EmailCodeEntryProps) {
+function EmailCodeEntry({ email, onVerify, onResend, onBack, help }: EmailCodeEntryProps) {
   const [code, setCode] = useState("");
   const [verifying, setVerifying] = useState(false);
   const verifyingRef = useRef(false);
@@ -494,6 +499,12 @@ function EmailCodeEntry({ email, onVerify, onResend, onBack }: EmailCodeEntryPro
           ← Use a different email
         </button>
       </div>
+
+      {help && (
+        <div className="rounded-xl border border-border/70 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+          {help}
+        </div>
+      )}
     </div>
   );
 }
@@ -523,6 +534,18 @@ export function EmailSignInPanel({ onSession, autoFocus }: EmailSignInPanelProps
       }
       description="We'll email a code. No password to remember."
       successCaption="Welcome back"
+      codeHelp={
+        // The server answers "sent" for every address, so say plainly when a
+        // code never comes (founder, 3 Nov 2026).
+        <>
+          <p className="mb-1 font-medium text-foreground">Didn't get a code?</p>
+          <ul className="list-disc space-y-1 pl-4">
+            <li>It can take a minute. Check Spam and Promotions too.</li>
+            <li>Use the email you bought with. A code only goes to an email we have on file.</li>
+            <li>Still nothing? Sign in with your phone number, or write to admin@leveluplearning.in.</li>
+          </ul>
+        </>
+      }
       onSend={sendEmailOtp}
       onVerify={async (email, code) => {
         const res = await verifyEmailOtpForSession(email, code);

@@ -85,7 +85,8 @@ vi.mock("framer-motion", async () => {
 });
 
 vi.mock("@/components/auth/PhoneInput", () => ({
-  PhoneInput: () => createElement("input", { type: "tel", "data-testid": "phone" }),
+  PhoneInput: ({ onChange }: { onChange?: (v: string) => void }) =>
+    createElement("input", { type: "tel", "data-testid": "phone", onChange: (e: { target: { value: string } }) => onChange?.(e.target.value) }),
 }));
 vi.mock("@/components/auth/InstructorProof", () => ({ InstructorProof: () => null }));
 vi.mock("@/components/auth/OtpEntryStep", () => ({ OtpEntryStep: () => null }));
@@ -144,6 +145,16 @@ describe("Login ?method=email", () => {
     localStorage.setItem("VITE_EMAIL_OTP_TAB", "true");
     render(createElement(Login));
     expect(screen.getByRole("tab", { name: "Phone" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("sends a number outside India to the Email tab when that flag is on", () => {
+    localStorage.setItem("VITE_EMAIL_OTP_TAB", "true");
+    render(createElement(Login));
+    fireEvent.change(screen.getByTestId("phone"), { target: { value: "+447700900123" } });
+    fireEvent.click(screen.getByRole("button", { name: /send code/i }));
+    expect(screen.getByRole("tab", { name: "Email" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("Send sign-in link")).toBeNull();
+    expect(h.signInWithOtp).not.toHaveBeenCalled();
   });
 
   it("can still go back to the phone form from there", () => {
