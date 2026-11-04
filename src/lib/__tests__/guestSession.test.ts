@@ -64,6 +64,11 @@ describe("freshAccountLoginEmail", () => {
     expect(await freshAccountLoginEmail(other.admin, "u1", ORDER, NOW)).toBeNull();
   });
 
+  it("never signs in again once someone has proved the phone or email", async () => {
+    const proven = fake({ user: { ...freshUser, app_metadata: { created_by_payment_order: ORDER, identity_unproven: false } } });
+    expect(await freshAccountLoginEmail(proven.admin, "u1", ORDER, NOW)).toBeNull();
+  });
+
   it("never signs in an older account", async () => {
     const { admin } = fake({ user: { ...freshUser, created_at: new Date(NOW - FRESH_WINDOW_MS - 1000).toISOString() } });
     expect(await freshAccountLoginEmail(admin, "u1", ORDER, NOW)).toBeNull();

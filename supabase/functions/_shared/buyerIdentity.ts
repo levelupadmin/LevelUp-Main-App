@@ -151,7 +151,8 @@ function paymentStamp(opts: BuyerOptions): Record<string, unknown> {
 }
 
 async function profileOwnerOfEmail(admin: BuyerAdmin, email: string): Promise<string | null> {
-  const { data } = await admin.from("users").select("id").eq("email", email).limit(1);
+  // Profiles may hold the address in any case; match it the way a person would.
+  const { data } = await admin.from("users").select("id").ilike("email", email.replace(/[\\%_]/g, (c) => `\\${c}`)).limit(1);
   const row = Array.isArray(data) ? (data[0] as { id?: string } | undefined) : undefined;
   return row?.id ?? null;
 }

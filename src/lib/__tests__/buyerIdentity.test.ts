@@ -51,6 +51,7 @@ function fakeAdmin(opts: {
         update: (p: unknown) => { mode = "update"; patch = p; return chain; },
         eq: (k: string, v: unknown) => { filters[k] = v; return chain; },
         neq: () => chain,
+        ilike: (k: string, v: unknown) => { filters[k] = v; return chain; },
         limit: async () => {
           calls.push({ kind: `select:${table}:other-owner`, args: filters });
           return { data: opts.emailOwnedElsewhere ? [{ id: "someone-else" }] : [], error: null };

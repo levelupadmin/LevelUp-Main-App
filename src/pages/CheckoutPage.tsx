@@ -688,12 +688,14 @@ export default function CheckoutPage() {
     // that owns the phone (India) or email (elsewhere) they paid with. One code
     // on /login, sent automatically with the details prefilled, proves it and
     // lands them on Thank-you; payment_orders is not anonymously readable.
-    const byEmail = order.isGuest && !!postPaymentNavState(guestPhone, guestEmail, handOff?.login_hint)?.email;
+    const guestState = order.isGuest ? postPaymentNavState(guestPhone, guestEmail, handOff?.login_hint) : undefined;
     toast.success(
       order.isGuest
-        ? byEmail
+        ? guestState?.email
           ? "Payment received. Enter the code we've emailed you to open your course."
-          : "Payment received. Enter the code we've sent to your phone to open your course."
+          : guestState?.phone
+            ? "Payment received. Enter the code we've sent to your phone to open your course."
+            : "Payment received. The course is on your account: sign in as you usually do to open it."
         : `Welcome to ${courseTitle}!`,
     );
     const navState = order.isGuest ? postPaymentNavState(guestPhone, guestEmail, handOff?.login_hint) : undefined;

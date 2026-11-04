@@ -79,6 +79,9 @@ export async function freshAccountLoginEmail(
   const user = data?.user;
   if (error || !user?.email || !user.created_at) return null;
   if (user.app_metadata?.created_by_payment_order !== paymentOrderId) return null;
+  // Once someone has proved the phone or email (settleProvenIdentity), the
+  // account is theirs: no more sessions from payment proof.
+  if (user.app_metadata?.identity_unproven !== true) return null;
   const age = now - new Date(user.created_at).getTime();
   if (!(age >= 0 && age <= FRESH_WINDOW_MS)) return null;
 
