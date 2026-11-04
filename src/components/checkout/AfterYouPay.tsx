@@ -10,7 +10,7 @@ export default function AfterYouPay({ isGuest }: { isGuest: boolean }) {
   const steps = [
     { icon: CreditCard, text: "Pay by UPI, card or netbanking on Razorpay's secure screen." },
     isGuest
-      ? { icon: KeyRound, text: "Confirm your phone number with a one-time code. Your course is tied to that number." }
+      ? { icon: KeyRound, text: "Your account is set up from the details above. Already have one? The course is added to it, and we send you a code to sign in." }
       : { icon: UserCheck, text: "The course is added to the account you're signed in to." },
     { icon: PlayCircle, text: "Lesson 1 opens straight away. Watch on your phone, tablet or laptop." },
   ];

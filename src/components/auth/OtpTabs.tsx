@@ -178,6 +178,10 @@ interface EmailOtpPanelProps {
   onVerify: (email: string, code: string) => Promise<ActionResult>;
   /** Native keyboards shouldn't pop on mount; web autofocuses. */
   autoFocus?: boolean;
+  /** Prefill the address (a buyer who just paid with it). */
+  initialEmail?: string;
+  /** Send the code once on mount when the prefilled address is valid. */
+  autoSend?: boolean;
 }
 
 /**
@@ -194,10 +198,12 @@ export function EmailOtpPanel({
   onSend,
   onVerify,
   autoFocus,
+  initialEmail,
+  autoSend,
 }: EmailOtpPanelProps) {
   const ms = useMotionSafe();
   const [stage, setStage] = useState<"address" | "code" | "done">("address");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -216,6 +222,17 @@ export function EmailOtpPanel({
     }
     setStage("code");
   };
+
+  // After a payment the checkout hands over the address it was paid with:
+  // send the code straight away, once, instead of asking for another tap.
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (!autoSend || autoSentRef.current || stage !== "address") return;
+    if (!EMAIL_RE.test(email.trim())) return;
+    autoSentRef.current = true;
+    void handleSend();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSend]);
 
   if (stage === "done") {
     return (
@@ -505,6 +522,8 @@ interface EmailSignInPanelProps {
    */
   onSession: (session: EmailOtpSession) => Promise<ActionResult>;
   autoFocus?: boolean;
+  initialEmail?: string;
+  autoSend?: boolean;
 }
 
 /**
@@ -512,10 +531,12 @@ interface EmailSignInPanelProps {
  * Every failure is contained here and rendered inline, so a broken email path
  * can never take the phone tab down with it.
  */
-export function EmailSignInPanel({ onSession, autoFocus }: EmailSignInPanelProps) {
+export function EmailSignInPanel({ onSession, autoFocus, initialEmail, autoSend }: EmailSignInPanelProps) {
   return (
     <EmailOtpPanel
       autoFocus={autoFocus}
+      initialEmail={initialEmail}
+      autoSend={autoSend}
       heading={
         <>
           What's your <span className="font-serif-italic text-cream">email</span>?

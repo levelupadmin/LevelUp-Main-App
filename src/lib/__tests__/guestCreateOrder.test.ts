@@ -4,9 +4,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * guest-create-order runs for anyone who types a phone number (no login). Its
  * answer must not depend on whether the typed phone has an account, or on
  * whether that account owns the course: either would tell a stranger something
- * about the person behind the number. The only identity check left is the
- * email half it has always had (an account found by the typed email, with a
- * different phone, is refused).
+ * about the person behind the number. Since 2026-11-04 there is no identity
+ * gate before payment at all: an email that belongs to another phone's account
+ * no longer refuses the sale; it is noted on the order for a person.
  */
 
 type Row = Record<string, unknown> | null;
@@ -163,16 +163,26 @@ describe("guest-create-order", () => {
     expect(fake.state.rpcCalls).not.toContain("find_login_identity");
   });
 
-  it("keeps the email half: an account found by the typed email with another phone is refused", async () => {
+  it("never refuses a sale because the typed email belongs to another phone's account", async () => {
     fake.state.emailUser = { id: "acct_e", phone: "+919111111111" };
-    const res = await call();
-    expect(res.status).toBe(403);
-    expect((await res.json()).error).toMatch(/doesn't match the account on file/);
+    const conflict = await call();
+    const conflictBody = await conflict.json();
+    fake.state.emailUser = null;
+    const clean = await call();
+    const cleanBody = await clean.json();
+    expect(conflict.status).toBe(200);
+    expect(conflictBody.razorpay_order_id).toBe("order_new");
+    expect(Object.keys(conflictBody).sort()).toEqual(Object.keys(cleanBody).sort());
+  });
 
-    // The same phone stored as +91… passes, and so does an account with no phone.
-    fake.state.emailUser = { id: "acct_e", phone: "+919876543210" };
-    expect((await call()).status).toBe(200);
-    fake.state.emailUser = { id: "acct_e", phone: null };
-    expect((await call()).status).toBe(200);
+  it("takes an international number (that buyer's account is keyed on their email)", async () => {
+    const res = await call("jo@example.co.uk", "+447911123456");
+    expect(res.status).toBe(200);
+    expect((await res.json()).razorpay_order_id).toBe("order_new");
+  });
+
+  it("still refuses a number that is not a phone number", async () => {
+    const res = await call("asha@example.com", "12345");
+    expect(res.status).toBe(400);
   });
 });

@@ -167,6 +167,34 @@ describe("resolveOrCreateBuyer", () => {
     expect(calls.some((c) => c.kind === "update:users")).toBe(false);
   });
 
+  it("international number: attaches to the account with that login EMAIL, never matching the number", async () => {
+    const { admin, calls } = fakeAdmin({
+      byPhone: { id: "indian-account-with-same-last-10", email: null, phone: "917911123456" },
+      byEmail: { id: "jo", email: "jo@example.co.uk", phone: null },
+    });
+    const r = await resolveOrCreateBuyer(admin, { name: "Jo", email: "Jo@Example.co.uk", phone: "+447911123456" }, { tag: "t", paid: true });
+    expect(r).toMatchObject({ ok: true, userId: "jo", created: false, matchedBy: "email", loginEmail: "jo@example.co.uk" });
+    expect(calls.some((c) => c.kind === "rpc:find_login_identity" && (c.args as { p_phone: string | null }).p_phone)).toBe(false);
+    expect(calls.some((c) => c.kind === "createUser" || c.kind === "update:users")).toBe(false);
+  });
+
+  it("international number, no account: creates one whose login IS the typed email, with no phone on auth", async () => {
+    const { admin, calls } = fakeAdmin({});
+    const r = await resolveOrCreateBuyer(admin, { name: "Jo", email: "jo@example.co.uk", phone: "+447911123456" }, { tag: "t", paid: true });
+    expect(r).toMatchObject({ ok: true, userId: "new-user", created: true, matchedBy: "created", loginEmail: "jo@example.co.uk" });
+    const cu = calls.find((c) => c.kind === "createUser") as { args: Record<string, unknown> };
+    expect(cu.args).toMatchObject({ email: "jo@example.co.uk", email_confirm: true, user_metadata: { phone: "+447911123456" } });
+    expect(cu.args.phone).toBeUndefined();
+    expect(cu.args.phone_confirm).toBeUndefined();
+    const upd = calls.find((c) => c.kind === "update:users") as { args: { patch: Record<string, unknown> } };
+    expect(upd.args.patch).toEqual({ phone: "+447911123456" });
+  });
+
+  it("international number with no email cannot be given an account", async () => {
+    const { admin } = fakeAdmin({});
+    expect((await resolveOrCreateBuyer(admin, { name: "Jo", phone: "+447911123456" }, { tag: "t", paid: true })).ok).toBe(false);
+  });
+
   it("fails closed with neither phone nor email, with no phone to create on, and on createUser failure", async () => {
     const { admin } = fakeAdmin({});
     expect((await resolveOrCreateBuyer(admin, { name: "x" }, { tag: "t", paid: true })).ok).toBe(false);

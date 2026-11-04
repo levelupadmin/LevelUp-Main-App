@@ -88,7 +88,7 @@ export default function StageLogin() {
   const { user, loading: authLoading } = useAuth();
   usePageTitle("Sign In");
 
-  const fromState = (location.state as { from?: { pathname?: string }; phone?: string } | null) ?? null;
+  const fromState = (location.state as { from?: { pathname?: string }; phone?: string; autoSend?: boolean } | null) ?? null;
   const redirectTarget = resolveLoginRedirect(fromState?.from?.pathname, searchParams.get("next"));
   const prefilled = prefillPhoneParam(fromState?.phone ?? searchParams.get("phone"));
   // A link straight to /login (a sales page, checkout, a guarded route) goes
@@ -205,6 +205,19 @@ export default function StageLogin() {
       setSending(false);
     }
   };
+
+  // A guest who just paid lands here with the number they paid with and
+  // `autoSend`: send the code straight away, once, so the next thing they see
+  // is the code boxes.
+  const afterPayment = redirectTarget.startsWith("/thank-you/") && !!prefilled;
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (autoSentRef.current || !fromState?.autoSend || step !== "phone" || digits.length !== 10) return;
+    if (authLoading || user) return;
+    autoSentRef.current = true;
+    void sendCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user, step]);
 
   const resend = async (channel: "sms" | "whatsapp") => {
     if (reviewLike) return;
@@ -439,8 +452,8 @@ export default function StageLogin() {
         {/* 3. The code */}
         <div className={`fo-step${step === "code" ? " is-on is-arrive" : ""}`} data-s="code" key={`code-${step === "code" ? nonce : "off"}`}>
           <button className="fo-dback rv" style={{ "--k": 0 } as React.CSSProperties} type="button" onClick={back}><ChevronLeft className="ic" />Back</button>
-          <div className="fo-k rv" style={{ "--k": 0 } as React.CSSProperties}>Check your messages</div>
-          <h1 className="fo-t rv" style={{ "--k": 1 } as React.CSSProperties}>Enter the code</h1>
+          <div className="fo-k rv" style={{ "--k": 0 } as React.CSSProperties}>{afterPayment ? "Payment received" : "Check your messages"}</div>
+          <h1 className="fo-t rv" style={{ "--k": 1 } as React.CSSProperties}>{afterPayment ? "Enter the code to open your course" : "Enter the code"}</h1>
           <p className="fo-s rv" style={{ "--k": 2 } as React.CSSProperties}>
             Sent to <b>+91 {formatNational(digits)}</b> by SMS. <button className="linkish" type="button" onClick={() => go("phone")}>Change</button>
           </p>
