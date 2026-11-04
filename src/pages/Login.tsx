@@ -178,7 +178,19 @@ const Login = () => {
   // straight on email sign-in: the Email tab when that flag is on, otherwise
   // the email-link step a non-+91 number reaches today. Without the param
   // nothing below changes.
-  const startOnEmail = searchParams.get("method") === "email";
+  // A guest who just paid with a non-Indian number arrives with the email they
+  // paid with (router state, kept out of the URL) and `autoSend`.
+  const navState = (location.state as { email?: string; autoSend?: boolean } | null) ?? null;
+  const paidEmail = (navState?.email ?? "").trim();
+  const startOnEmail = searchParams.get("method") === "email" || !!paidEmail;
+  // Read once: the email panel sends the code on mount, then autoSend is
+  // dropped from history (below) so a reload does not send another.
+  const [autoSendEmail] = useState(() => !!paidEmail && navState?.autoSend === true);
+  useEffect(() => {
+    if (navState?.autoSend !== true) return;
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...navState, autoSend: false } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [step, setStep] = useState<Step>(() =>
     EMAIL_ONLY_AUTH || (startOnEmail && !flag(EMAIL_OTP_TAB)) ? "email_input" : "phone",
   );
@@ -194,7 +206,7 @@ const Login = () => {
     (location.state as { phone?: string } | null)?.phone ?? searchParams.get("phone"),
   );
   const [phone, setPhone] = useState(prefilledPhone);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(paidEmail);
   const [channel, setChannel] = useState<"sms" | "whatsapp">("sms");
   const [loading, setLoading] = useState(false);
 
@@ -525,7 +537,12 @@ const Login = () => {
             onValueChange={setAuthTab}
             phone={phoneStep}
             email={
-              <EmailSignInPanel autoFocus={!native} onSession={handleEmailSession} />
+              <EmailSignInPanel
+                autoFocus={!native}
+                onSession={handleEmailSession}
+                initialEmail={paidEmail || undefined}
+                autoSend={autoSendEmail}
+              />
             }
           />
         ) : (

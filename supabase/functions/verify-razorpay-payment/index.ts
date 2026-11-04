@@ -13,7 +13,8 @@ function jsonRes(body: unknown, status = 200) {
   });
 }
 
-import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { canonicalBuyerPhone, isIndianBuyerPhone, resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { freshAccountLoginEmail, isPhoneAccountEmail, mintSessionForEmail, type SessionTokens } from "../_shared/guestSession.ts";
 import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { requestClientMeta } from "../_shared/attribution.ts";
 import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
@@ -85,6 +86,45 @@ async function verifyViaApi(
   } catch (err: any) {
     console.error("[verify] Razorpay API error:", err.message);
     return { verified: false, error: err.message, unreachable: true };
+  }
+}
+
+/* ── Guest hand-off after a verified payment (2026-11-04) ──
+   How the buyer gets into the course. `login_hint` says which code they sign
+   in with ("phone" for an Indian number, "email" otherwise). `session` is
+   returned only when the browser proves it made this order (its reuse token)
+   and the account was made by this purchase and holds nothing else
+   (_shared/guestSession.ts): that buyer lands signed in, with no code. An
+   existing account never gets a session from a payment. */
+async function guestHandOff(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  po: Record<string, unknown>,
+  userId: string | null,
+  reuseToken: unknown,
+): Promise<{ login_hint: "phone" | "email"; session?: SessionTokens }> {
+  let login_hint: "phone" | "email" = isIndianBuyerPhone(canonicalBuyerPhone(po.guest_phone as string | null)) ? "phone" : "email";
+  try {
+    // The hint follows the ACCOUNT the course landed on: one whose login is a
+    // phone signs in by SMS even if a foreign number was typed (an NRI's older
+    // Indian account, found by its profile email).
+    if (userId) {
+      const { data } = await admin.auth.admin.getUserById(userId);
+      const authEmail = data?.user?.email as string | null | undefined;
+      if (authEmail) login_hint = isPhoneAccountEmail(authEmail) ? "phone" : "email";
+    }
+    if (!userId || !reuseKeyMatches(po.notes, await requestReuseKey(reuseToken))) return { login_hint };
+    const email = await freshAccountLoginEmail(admin, userId, String(po.id));
+    if (!email) return { login_hint };
+    const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const session = await mintSessionForEmail(admin, anon, email);
+    if (session) console.log("[verify] guest signed in straight after paying", { payment_order_id: po.id });
+    return session ? { login_hint, session } : { login_hint };
+  } catch (e) {
+    console.warn("[verify] guest hand-off fell back to a sign-in code:", e instanceof Error ? e.message : e);
+    return { login_hint };
   }
 }
 
@@ -270,7 +310,13 @@ Deno.serve(async (req) => {
           requestMeta: requestClientMeta(req.headers),
         });
       }
-      return jsonRes({ success: true, already_captured: true });
+      // The webhook may capture a guest order before the checkout's own
+      // verify call lands; the buyer still gets the same hand-off.
+      return jsonRes({
+        success: true,
+        already_captured: true,
+        ...(is_guest ? await guestHandOff(admin, po, (po.user_id as string | null) ?? null, reuse_token) : {}),
+      });
     }
 
     /* ── An order parked for a person stays parked ──
@@ -406,7 +452,7 @@ Deno.serve(async (req) => {
         const buyer = await resolveOrCreateBuyer(
           admin,
           { name: po.guest_name, email: po.guest_email, phone: po.guest_phone },
-          { tag: "verify", paid: true },
+          { tag: "verify", paid: true, orderId: payment_order_id },
         );
         if (!buyer.ok) {
           console.error("[verify] buyer resolution failed for", payment_order_id, buyer.error);
@@ -766,8 +812,9 @@ Deno.serve(async (req) => {
       offering_title: off?.title ?? "your program",
       is_guest: is_guest || false,
       guest_email: responseGuestEmail,
-      // Guests prove the phone they paid with via one OTP on /login.
-      login_hint: is_guest ? "phone" : null,
+      // Guests: a session when this purchase made their account, otherwise
+      // one code on /login (by phone in India, by email elsewhere).
+      ...(is_guest ? await guestHandOff(admin, po, userId, reuse_token) : { login_hint: null }),
     });
   } catch (err: any) {
     console.error("[verify] UNHANDLED ERROR:", err?.message || err, err?.stack);

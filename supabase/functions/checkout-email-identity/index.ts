@@ -39,6 +39,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { enqueueEmail, isEmailSuppressed } from "../_shared/email.ts";
 import { isSyntheticEmail } from "../_shared/phone.ts";
+import { settleProvenIdentity } from "../_shared/guestSession.ts";
 import {
   classifyIdentity,
   internationalE164,
@@ -194,6 +195,10 @@ Deno.serve(async (req) => {
       const loginEmail = await authEmailOf(admin, emailAcct.id);
       const session = loginEmail ? await mintSession(admin, loginEmail) : null;
       if (!session) return json({ error: "session_mint_failed" }, 500);
+      // The email is now proven: a checkout-made account gets every other
+      // session signed out (_shared/guestSession.ts).
+      // deno-lint-ignore no-explicit-any
+      await settleProvenIdentity(admin as any, emailAcct.id, session.access_token);
       return json({ ...session, user_id: emailAcct.id, is_new_user: false });
     }
 

@@ -114,6 +114,7 @@
  */
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+import { settleProvenIdentity } from "../_shared/guestSession.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { syntheticEmail } from "../_shared/phone.ts";
 import {
@@ -416,6 +417,10 @@ Deno.serve(async (req) => {
   const loginEmail = (identity.email || "").trim() || email;
   const session = await mintSession(admin, loginEmail);
   if (!session) return json({ error: "session_mint_failed" }, 500);
+  // The address is now proven: an account a checkout made gets every other
+  // session signed out, and its purchase claim unblocked.
+  // deno-lint-ignore no-explicit-any
+  await settleProvenIdentity(admin as any, identity.id, session.access_token);
 
   return json({ ...session, user_id: identity.id, is_new_user: isNewUser });
 });

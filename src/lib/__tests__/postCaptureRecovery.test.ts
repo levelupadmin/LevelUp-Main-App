@@ -227,6 +227,11 @@ async function deliverWebhook() {
   return webhook(new Request("https://fn.local/razorpay-webhook", { method: "POST", body, headers: { "x-razorpay-signature": signature } }));
 }
 
+// A guest's answer also says how they sign in (verify-razorpay-payment
+// guestHandOff). This fake order carries no phone, so: by email. No session:
+// the call carries no order token.
+const GUEST_CAPTURED = { success: true, already_captured: true, login_hint: "email" };
+
 function callVerify(extra: Record<string, unknown> = {}) {
   return verify(
     new Request("https://fn.local/verify-razorpay-payment", {
@@ -301,7 +306,7 @@ describe("post-capture after an already-captured order", () => {
 
   it("verify starts it when no one has claimed it", async () => {
     const res = await callVerify();
-    expect(await res.json()).toEqual({ success: true, already_captured: true });
+    expect(await res.json()).toEqual(GUEST_CAPTURED);
     expect(fake.schedule).toHaveBeenCalledTimes(1);
     expect(fake.schedule.mock.calls[0][1]).toBe("po_1");
     expect(fake.schedule.mock.calls[0][2]).toMatchObject({ source: "verify" });
@@ -317,7 +322,7 @@ describe("post-capture after an already-captured order", () => {
   it("neither starts it for an order captured more than 48 hours ago, but both still answer", async () => {
     fake.state.po = { ...baseOrder, captured_at: new Date(Date.now() - 49 * 60 * 60 * 1000).toISOString() };
     expect((await deliverWebhook()).status).toBe(200);
-    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    expect(await (await callVerify()).json()).toEqual(GUEST_CAPTURED);
     fake.state.po = { ...baseOrder, captured_at: null };
     await deliverWebhook();
     expect(fake.schedule).not.toHaveBeenCalled();
@@ -363,7 +368,7 @@ describe("a captured order whose course was never granted", () => {
 
   it("verify grants the course before it answers success and starts post-capture", async () => {
     const res = await callVerify();
-    expect(await res.json()).toEqual({ success: true, already_captured: true });
+    expect(await res.json()).toEqual(GUEST_CAPTURED);
     expect(enrolmentInserts()[0].row).toEqual({
       user_id: "user_1",
       offering_id: "off_1",
@@ -386,7 +391,7 @@ describe("a captured order whose course was never granted", () => {
 
   it("a concurrent grant (23505 on enrolments_unique_active) counts as granted", async () => {
     fake.state.insertError = { code: "23505", message: 'duplicate key value violates unique constraint "enrolments_unique_active"' };
-    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    expect(await (await callVerify()).json()).toEqual(GUEST_CAPTURED);
     expect(fake.schedule).toHaveBeenCalledTimes(1);
   });
 
@@ -429,7 +434,7 @@ describe("a captured order whose course was never granted", () => {
       enrolment({ id: "enr_older", payment_order_id: "po_00", status: "expired" }),
       ...strangers(),
     ];
-    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    expect(await (await callVerify()).json()).toEqual(GUEST_CAPTURED);
     expect(enrolmentInserts()[0].row).toMatchObject({ user_id: "user_1", offering_id: "off_1", payment_order_id: "po_1", status: "active" });
     expect(fake.schedule).toHaveBeenCalledTimes(1);
     expect(grantIssue()).toBeUndefined();
@@ -570,7 +575,7 @@ describe("a captured row is not payment proof", () => {
   });
 
   it("the real order still gets its course, and the webhook needs no Razorpay call", async () => {
-    expect(await (await callVerify()).json()).toEqual({ success: true, already_captured: true });
+    expect(await (await callVerify()).json()).toEqual(GUEST_CAPTURED);
     expect(rzp.calls.sort()).toEqual(["https://api.razorpay.com/v1/orders/order_1", "https://api.razorpay.com/v1/payments/pay_1"]);
     expect(enrolmentInserts()).toHaveLength(1);
     rzp.calls = [];

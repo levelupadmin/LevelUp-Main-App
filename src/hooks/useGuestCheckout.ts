@@ -2,6 +2,28 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/lib/toast";
+import { isValidPhoneNumber } from "react-phone-number-input";
+
+/**
+ * A phone the guest checkout accepts. India: the 10-digit number (with or
+ * without +91). Elsewhere (2026-11-04): any valid international number, and
+ * that buyer's account is keyed on their email (_shared/buyerIdentity.ts).
+ */
+export function isValidGuestPhone(raw: string): boolean {
+  const v = (raw ?? "").trim();
+  const digits = v.replace(/\D/g, "");
+  if (!v.startsWith("+") || v.startsWith("+91")) {
+    const national = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+    // An Indian mobile number starts 6 to 9. Razorpay refuses anything else,
+    // and its contact field is locked once we prefill it.
+    return /^[6-9]\d{9}$/.test(national);
+  }
+  try {
+    return isValidPhoneNumber(v);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Guest-checkout fields (name / email / phone) + their validation, for the
@@ -57,8 +79,8 @@ export function useGuestCheckout(user: User | null) {
   /**
    * Validate the guest fields. Marks every field touched (so inline errors
    * surface immediately) and shows a toast on the first failure. The edge
-   * function does the canonical phone normalisation; here we only gate on a
-   * 10-digit or +91-prefixed 12-digit form. Returns true when OK to proceed.
+   * function does the canonical phone normalisation; here we only gate on
+   * isValidGuestPhone. Returns true when OK to proceed.
    */
   function validateGuest(): boolean {
     setGuestTouched({ name: true, email: true, phone: true });
@@ -72,9 +94,8 @@ export function useGuestCheckout(user: User | null) {
       focusField("guest-email");
       return false;
     }
-    const digits = guestPhone.replace(/\D/g, "");
-    if (!(digits.length === 10 || (digits.length === 12 && digits.startsWith("91")))) {
-      toast.error("Please enter a valid 10-digit Indian phone number");
+    if (!isValidGuestPhone(guestPhone)) {
+      toast.error("Please enter a valid phone number");
       focusField("guest-phone");
       return false;
     }

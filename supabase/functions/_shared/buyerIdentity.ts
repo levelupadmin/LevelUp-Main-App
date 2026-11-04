@@ -28,8 +28,17 @@
  *      The typed email is kept on public.users only (admin display), and only
  *      for PAID captures; receipts already go to the order's guest_email.
  *   3. An account that matches ONLY by email (no phone on it, or a different
- *      phone) is never adopted. Adopting it would let anyone with the email
- *      hijack a phone, and the buyer logs in by phone anyway.
+ *      phone) is never adopted for an INDIAN number. Adopting it would let
+ *      anyone with the email hijack a phone, and the buyer logs in by phone.
+ *   4. A NON-Indian number (2026-11-04, the pay-first checkout): the EMAIL is
+ *      the identity, because those buyers sign in by email, never by SMS, and
+ *      matching a foreign number on its last 10 digits could land on an Indian
+ *      account. Existing account with that login email → that account,
+ *      untouched. None → a NEW account whose auth email IS the typed email
+ *      (confirmed, so the email sign-in reaches it). That is safe in a way the
+ *      Indian case is not: the account has no phone login, so the only person
+ *      who can ever sign in to it is whoever reads that inbox. The foreign
+ *      number goes on the profile (and metadata) only, never on auth.
  *
  * No session is minted from payment proof; the buyer proves the phone with
  * one OTP on /login (prefilled) and lands on the Thank-you page.
@@ -57,6 +66,15 @@ export type BuyerOptions = {
    * cannot inherit an attacker-chosen contact address.
    */
   paid: boolean;
+  /**
+   * The payment order this capture is for. A NEW account is stamped with it
+   * (`app_metadata.created_by_payment_order`) and marked `identity_unproven`:
+   * nobody has proved the phone or email yet. _shared/guestSession.ts hands a
+   * session only to an account stamped with this very order, and the first
+   * verified sign-in (verify-msg91-otp / verify-email-otp) clears the mark and
+   * signs out every other session.
+   */
+  orderId?: string | null;
 };
 
 export type BuyerResolution =
@@ -90,6 +108,11 @@ export type BuyerAdmin = {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** A canonical "+91" + 10-digit number: the buyer signs in by SMS code. */
+export function isIndianBuyerPhone(phone: string | null | undefined): boolean {
+  return /^\+91\d{10}$/.test(phone ?? "");
+}
+
 /** Canonical "+<cc><number>" for anything a checkout form may have sent, or null. */
 export function canonicalBuyerPhone(raw: string | null | undefined): string | null {
   const s = (raw ?? "").trim();
@@ -121,6 +144,19 @@ async function findIdentity(
   return row?.id ? { id: row.id, email: row.email ?? null, phone: row.phone ?? null } : null;
 }
 
+function paymentStamp(opts: BuyerOptions): Record<string, unknown> {
+  return opts.orderId
+    ? { app_metadata: { created_by_payment_order: opts.orderId, identity_unproven: true } }
+    : {};
+}
+
+async function profileOwnerOfEmail(admin: BuyerAdmin, email: string): Promise<string | null> {
+  // Profiles may hold the address in any case; match it the way a person would.
+  const { data } = await admin.from("users").select("id").ilike("email", email.replace(/[\\%_]/g, (c) => `\\${c}`)).limit(1);
+  const row = Array.isArray(data) ? (data[0] as { id?: string } | undefined) : undefined;
+  return row?.id ?? null;
+}
+
 async function emailUsedByOtherProfile(admin: BuyerAdmin, email: string, userId: string): Promise<boolean> {
   const { data } = await admin.from("users").select("id").eq("email", email).neq("id", userId).limit(1);
   return Array.isArray(data) && data.length > 0;
@@ -140,8 +176,10 @@ export async function resolveOrCreateBuyer(
   if (!phone && !email) return { ok: false, error: "guest order has neither a usable phone nor email" };
 
   try {
-    // 1. Phone is the identity.
-    if (phone) {
+    const indian = isIndianBuyerPhone(phone);
+
+    // 1. An Indian phone is the identity.
+    if (phone && indian) {
       const byPhone = await findIdentity(admin, phone, null);
       if (byPhone) {
         log("matched existing account by phone", { user_id: byPhone.id });
@@ -149,17 +187,54 @@ export async function resolveOrCreateBuyer(
       }
     }
 
-    // 2. No phone at all (legacy/odd orders only): fall back to an email match.
-    if (!phone && email) {
+    // 2. A non-Indian number (rule 4), or no phone at all (legacy/odd orders
+    //    only): the email is the identity.
+    if (!indian && email) {
       const byEmail = await findIdentity(admin, null, email);
       if (byEmail) {
-        log("matched existing account by email (no phone on order)", { user_id: byEmail.id });
+        log(phone ? "matched existing account by email (international number)" : "matched existing account by email (no phone on order)", { user_id: byEmail.id });
         return { ok: true, userId: byEmail.id, created: false, matchedBy: "email", loginEmail: byEmail.email };
       }
     }
 
-    // 3. Create a new account bound to the phone. Auth email is ALWAYS the
-    //    synthetic placeholder (rule 2); the typed email goes on the profile.
+    // 3. International buyer, no account with that login email.
+    if (phone && !indian) {
+      if (!email) return { ok: false, error: "international number without an email to sign in with" };
+      // The address may sit on an existing PROFILE whose login is a phone (an
+      // NRI with an older Indian account). That is their account: add the
+      // course there. A second account on the same address could never get an
+      // email code (its profile mirror would be empty).
+      const profileOwner = await profileOwnerOfEmail(admin, email);
+      if (profileOwner) {
+        log("matched existing account by profile email (international number)", { user_id: profileOwner });
+        return { ok: true, userId: profileOwner, created: false, matchedBy: "email", loginEmail: null };
+      }
+      // Never plant a confirmed email login from an unpaid (₹0) order.
+      if (!opts.paid) return { ok: false, error: "an international buyer's account is only created on a paid order" };
+      const res = await admin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        user_metadata: { full_name: name ?? "LevelUp Student", phone },
+        ...paymentStamp(opts),
+      });
+      if (res.error || !res.data?.user?.id) {
+        const raced = await findIdentity(admin, null, email);
+        if (raced) {
+          log("createUser lost a race; attached to the account created concurrently", { user_id: raced.id });
+          return { ok: true, userId: raced.id, created: false, matchedBy: "email", loginEmail: raced.email };
+        }
+        return { ok: false, error: `createUser failed: ${res.error?.message ?? "no user returned"}` };
+      }
+      const userId = res.data.user.id;
+      // A brand-new profile (the trigger just mirrored it from auth): the
+      // number is the buyer's contact, kept for receipts and support.
+      if (opts.paid) await admin.from("users").update({ phone }).eq("id", userId);
+      log("created account", { user_id: userId, has_phone: false, international: true });
+      return { ok: true, userId, created: true, matchedBy: "created", loginEmail: email };
+    }
+
+    // 4. Create a new account bound to the Indian phone. Auth email is ALWAYS
+    //    the synthetic placeholder (rule 2); the typed email goes on the profile.
     if (!phone) return { ok: false, error: "cannot create an account without a phone" };
     const res = await admin.auth.admin.createUser({
       email: syntheticEmail(phone),
@@ -167,6 +242,7 @@ export async function resolveOrCreateBuyer(
       phone: phone.replace(/^\+/, ""), // GoTrue stores bare digits
       phone_confirm: true,
       user_metadata: { full_name: name ?? "LevelUp Student", phone },
+      ...paymentStamp(opts),
     });
     if (res.error || !res.data?.user?.id) {
       // Race: razorpay-webhook and verify-razorpay-payment both run for the

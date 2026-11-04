@@ -205,7 +205,7 @@ async function recover(admin: Admin, step: Extract<RecoveryStep, { kind: "captur
       const resolved = await resolveOrCreateBuyer(
         admin,
         { name: o.guest_name, email: o.guest_email, phone: o.guest_phone },
-        { tag: SOURCE, paid: true },
+        { tag: SOURCE, paid: true, orderId: o.id },
       );
       if (!resolved.ok) {
         await park(admin, o, paymentId);

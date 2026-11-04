@@ -8,7 +8,7 @@ import {
   toPaise,
 } from "../_shared/pricing.ts";
 import { normalizePhone } from "../_shared/phone.ts";
-import { resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
+import { canonicalBuyerPhone, isIndianBuyerPhone, resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
 import { freeEnrolmentRefusal } from "../_shared/freeEnrolment.ts";
@@ -64,9 +64,15 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Invalid email format" }, 400);
     }
 
-    const normalizedPhone = normalizePhone(guest_phone);
+    // Indian numbers keep the bare 10 digits this column has always held (every
+    // downstream reader expects that). Other countries (2026-11-04, the
+    // pay-first checkout) are stored as +E.164; their buyers sign in by email.
+    const canonicalPhone = canonicalBuyerPhone(guest_phone);
+    const normalizedPhone = canonicalPhone && isIndianBuyerPhone(canonicalPhone)
+      ? normalizePhone(canonicalPhone)
+      : canonicalPhone;
     if (!normalizedPhone) {
-      return jsonRes({ error: "Invalid phone number, must be 10 digits" }, 400);
+      return jsonRes({ error: "Please enter a valid phone number" }, 400);
     }
 
     const admin = createClient(
@@ -109,26 +115,21 @@ Deno.serve(async (req) => {
     if (offering.status !== "active") return jsonRes({ error: "Offering is not active" }, 400);
     if (!offering.is_public) return jsonRes({ error: "Offering is not available for public purchase" }, 400);
 
-    /* ── SCENARIO VALIDATION (server-side security gate) ──
-       Email half only, as it has always worked: an account found by the
-       typed email whose phone differs is refused. There is no phone half.
-       This function needs no login, so an answer that changed with whether
-       a typed phone has an account would tell a stranger that it does (and,
-       with a guessed email, whose it is). It would protect nothing either:
-       capture credits the phone's account whatever email is typed
-       (_shared/buyerIdentity.ts). The old phone half compared
-       public.users.phone with the bare 10 digits, a form that column never
-       holds (0 of 2,983 on 2026-10-18), so it never fired; dropping it
-       changes no answer. */
+    /* ── No identity gate before payment (2026-11-04) ──
+       This used to refuse (403) when the typed email belonged to an account
+       with a different phone, which killed the sale before Razorpay opened.
+       Payment never changes an account: capture only ADDS the course to the
+       account the phone (India) or email (elsewhere) finds, and writes nothing
+       onto it (_shared/buyerIdentity.ts). So the order goes through, and the
+       mismatch is noted on the order for a person to look at. The answer is
+       the same either way, so it tells a stranger nothing. */
     const { data: emailUser } = await admin
       .from("users")
       .select("id, phone")
-      .eq("email", guest_email)
+      .eq("email", String(guest_email).trim().toLowerCase())
       .maybeSingle();
-
-    if (emailUser && emailUser.phone && normalizePhone(emailUser.phone) !== normalizedPhone) {
-      return jsonRes({ error: "Phone number doesn't match the account on file. Please verify your identity." }, 403);
-    }
+    const identityConflict = !!(emailUser && emailUser.phone &&
+      canonicalBuyerPhone(emailUser.phone) !== canonicalPhone);
 
     /* Whether this phone's account already owns the course is NOT checked
        here. This function runs for anyone who types a phone number (no
@@ -245,6 +246,7 @@ Deno.serve(async (req) => {
         notes: {
           attribution: { ...attribution, ...requestClientMeta(req.headers) },
           ...(reuseKey ? { reuse_key: reuseKey } : {}),
+          ...(identityConflict ? { identity_conflict: "email_belongs_to_another_phone" } : {}),
         },
         captured_at: totalInr <= 0 ? new Date().toISOString() : null,
       })
@@ -293,7 +295,7 @@ Deno.serve(async (req) => {
       const buyer = await resolveOrCreateBuyer(
         admin,
         { name: guest_name, email: guest_email, phone: normalizedPhone },
-        { tag: "guest-create-order", paid: false },
+        { tag: "guest-create-order", paid: false, orderId: po.id },
       );
       if (!buyer.ok) {
         console.error("Guest user resolution error:", buyer.error);

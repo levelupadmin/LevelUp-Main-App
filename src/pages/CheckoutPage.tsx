@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useCheckoutPricing } from "@/hooks/useCheckoutPricing";
 import { useCheckoutCoupon } from "@/hooks/useCheckoutCoupon";
-import { useGuestCheckout } from "@/hooks/useGuestCheckout";
+import { isValidGuestPhone, useGuestCheckout } from "@/hooks/useGuestCheckout";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase, supabaseUrl } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
-import { buildVerifyBody, postPaymentNavState, postPaymentRoute, type RazorpaySuccess } from "@/lib/checkoutVerify";
+import { buildVerifyBody, handOffFrom, postPaymentNavState, postPaymentRoute, razorpayContactLocked, type GuestHandOff, type RazorpaySuccess } from "@/lib/checkoutVerify";
 import {
   cartKey,
   guestReuseToken,
@@ -649,7 +649,12 @@ export default function CheckoutPage() {
   };
 
   /** The order is paid and verified: count the sale once and move on. */
-  const finishPaid = (order: OpenOrder, razorpayPaymentId: string | null, offeringTitle?: string | null) => {
+  const finishPaid = async (
+    order: OpenOrder,
+    razorpayPaymentId: string | null,
+    offeringTitle?: string | null,
+    handOff?: GuestHandOff,
+  ) => {
     // Purchase fires HERE, right after verify and before any redirect: a guest
     // only reaches Thank-you after a phone OTP, and 3 in 35 never sign in, so a
     // Thank-you-only Purchase never reached Meta for them. track() sends it
@@ -668,17 +673,33 @@ export default function CheckoutPage() {
       });
     }
     rememberOpenOrder(null);
-    // Guest: the purchase now sits on the account that owns the phone they
-    // paid with. One OTP on /login (phone prefilled) proves it and lands them
-    // on Thank-you; payment_orders is not anonymously readable.
+    const courseTitle = offeringTitle ?? order.offeringTitle ?? offering?.title ?? "your course";
+    // Guest whose account this purchase just made: verify handed back a
+    // session, so they land on Thank-you signed in, with no code.
+    if (order.isGuest && handOff?.session) {
+      const { error: setErr } = await supabase.auth.setSession(handOff.session);
+      if (!setErr) {
+        toast.success(`You're in. Welcome to ${courseTitle}!`);
+        navigate(`/thank-you/${order.paymentOrderId}`, { replace: true });
+        return;
+      }
+    }
+    // Guest with an existing account: the purchase now sits on the account
+    // that owns the phone (India) or email (elsewhere) they paid with. One code
+    // on /login, sent automatically with the details prefilled, proves it and
+    // lands them on Thank-you; payment_orders is not anonymously readable.
+    const guestState = order.isGuest ? postPaymentNavState(guestPhone, guestEmail, handOff?.login_hint) : undefined;
     toast.success(
       order.isGuest
-        ? "Payment received. Confirm your phone number with a one-time code to open your course."
-        : `Welcome to ${offeringTitle ?? order.offeringTitle ?? offering?.title ?? "your course"}!`,
+        ? guestState?.email
+          ? "Payment received. Enter the code we've emailed you to open your course."
+          : guestState?.phone
+            ? "Payment received. Enter the code we've sent to your phone to open your course."
+            : "Payment received. The course is on your account: sign in as you usually do to open it."
+        : `Welcome to ${courseTitle}!`,
     );
-    navigate(postPaymentRoute(order.isGuest, order.paymentOrderId), {
-      state: order.isGuest ? postPaymentNavState(guestPhone) : undefined,
-    });
+    const navState = order.isGuest ? postPaymentNavState(guestPhone, guestEmail, handOff?.login_hint) : undefined;
+    navigate(postPaymentRoute(order.isGuest, order.paymentOrderId, !!navState?.email), { state: navState });
   };
 
   /** Open the Razorpay sheet for an order (a new one, or the last one again). */
@@ -714,6 +735,15 @@ export default function CheckoutPage() {
         email: prefillEmail,
         contact: prefillContact,
       },
+      // The buyer already gave us these: lock and hide them so Razorpay opens
+      // straight on UPI / card / netbanking instead of asking again. Only when
+      // both are usable; otherwise Razorpay's own contact step stays.
+      ...(razorpayContactLocked(prefillEmail, prefillContact)
+        ? {
+            readonly: { email: true, contact: true, name: true },
+            hidden: { email: true, contact: true },
+          }
+        : {}),
       // PaymentProgress is the dim backdrop (and the spinner while Razorpay
       // loads), so Razorpay's own backdrop stays clear.
       theme: { color: razorpayThemeColor(), backdrop_color: "rgba(0,0,0,0)" },
@@ -728,7 +758,12 @@ export default function CheckoutPage() {
         // buyer is told to "contact support" seconds after paying.
         const { data: verifyData, error: verifyErr } =
           await supabase.functions.invoke("verify-razorpay-payment", {
-            body: buildVerifyBody(response, order.paymentOrderId, order.isGuest),
+            body: buildVerifyBody(
+              response,
+              order.paymentOrderId,
+              order.isGuest,
+              order.isGuest && offeringId ? guestReuseToken(offeringId) : null,
+            ),
           });
 
         if (verifyErr || !verifyData?.success) {
@@ -739,7 +774,7 @@ export default function CheckoutPage() {
           releasePay();
           return;
         }
-        finishPaid(paidOrder, response.razorpay_payment_id, verifyData.offering_title);
+        await finishPaid(paidOrder, response.razorpay_payment_id, verifyData.offering_title, handOffFrom(verifyData));
       },
       modal: {
         ondismiss: () => {
@@ -805,10 +840,15 @@ export default function CheckoutPage() {
     try {
       if (order.paid) {
         const { data: v, error: e } = await supabase.functions.invoke("verify-razorpay-payment", {
-          body: buildVerifyBody(order.paid, order.paymentOrderId, order.isGuest),
+          body: buildVerifyBody(
+            order.paid,
+            order.paymentOrderId,
+            order.isGuest,
+            order.isGuest && offeringId ? guestReuseToken(offeringId) : null,
+          ),
         });
         if (!e && v?.success) {
-          finishPaid(order, order.paid.razorpay_payment_id, v.offering_title);
+          await finishPaid(order, order.paid.razorpay_payment_id, v.offering_title, handOffFrom(v));
           return;
         }
         const info = await readFunctionError(e, v);
@@ -819,7 +859,7 @@ export default function CheckoutPage() {
       const result = await fetchOrderStatus(order);
       const step = payStepFor(result.status, order.cartKey === currentCartKey());
       if (step === "done") {
-        finishPaid(order, result.razorpay_payment_id);
+        void finishPaid(order, result.razorpay_payment_id);
         return;
       }
       setPayIssue(issueForStatus(result.status, step === "locked"));
@@ -879,7 +919,7 @@ export default function CheckoutPage() {
         const result = await fetchOrderStatus(lastOrder);
         const step = payStepFor(result.status, lastOrder.cartKey === currentCartKey());
         if (step === "done") {
-          finishPaid(lastOrder, result.razorpay_payment_id);
+          void finishPaid(lastOrder, result.razorpay_payment_id);
           return;
         }
         if (step === "locked") {
@@ -997,8 +1037,13 @@ export default function CheckoutPage() {
       // Free guest offering: edge function already enrolled the user
       // and granted access. Drop straight to ThankYou.
       if (isAnon && data?.success && !data?.razorpay_order_id) {
-        toast.success("You're enrolled. Confirm your phone number with a one-time code to open your course.");
-        navigate(postPaymentRoute(true, data.payment_order_id), { state: postPaymentNavState(guestPhone) });
+        const freeState = postPaymentNavState(guestPhone, guestEmail);
+        toast.success(
+          freeState?.email
+            ? "You're enrolled. Enter the code we've emailed you to open your course."
+            : "You're enrolled. Enter the code we've sent to your phone to open your course.",
+        );
+        navigate(postPaymentRoute(true, data.payment_order_id, !!freeState?.email), { state: freeState });
         return;
       }
 
@@ -1101,15 +1146,13 @@ export default function CheckoutPage() {
   // the anon path and after a field is touched. PhoneInput emits E.164 (+91…),
   // so the phone check counts a 10-digit national or 12-digit 91-prefixed form —
   // identical to the edge function's normalisation.
-  const guestPhoneDigits = guestPhone.replace(/\D/g, "");
   const guestNameError = !user && !!guestTouched.name && !guestName.trim();
   const guestEmailError =
     !user && !!guestTouched.email &&
     (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim()));
   const guestPhoneError =
     !user && !!guestTouched.phone &&
-    !(guestPhoneDigits.length === 10 ||
-      (guestPhoneDigits.length === 12 && guestPhoneDigits.startsWith("91")));
+    !isValidGuestPhone(guestPhone);
 
   // Loaded, past the revenue guards: crossfade in from the SAME cold-load
   // skeleton the loading branch was painting. `showTrustPanel={!isStaged}` and
@@ -1351,9 +1394,8 @@ export default function CheckoutPage() {
                 <label htmlFor="guest-phone" className="caption mb-1 block">
                   Phone number
                 </label>
-                {/* countries locked to IN: the guest flow is +91-only at every
-                    validation layer (client, useGuestCheckout, server
-                    normalizePhone) — offering other flags here is a dead-end.
+                {/* India by default; any country can be picked (buyers
+                    outside India get their account on their email).
                     onBlur rides the number input itself, NOT a wrapper div:
                     focusout bubbles from the country select and marked the
                     field touched mid-entry. */}
@@ -1364,7 +1406,6 @@ export default function CheckoutPage() {
                   placeholder="Phone number"
                   aria-invalid={guestPhoneError}
                   aria-describedby={guestPhoneError ? "guest-phone-error" : undefined}
-                  countries={["IN"]}
                   onBlur={() => setGuestTouched((s) => ({ ...s, phone: true }))}
                 />
                 {guestPhoneError && (
@@ -1374,7 +1415,7 @@ export default function CheckoutPage() {
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                Your course is tied to this phone number. After you pay, confirm it with a one-time code and you're in. No password.
+                Your course is tied to this phone number (your email, outside India). Pay, and your course opens. No password.
               </p>
             </div>
           )}
