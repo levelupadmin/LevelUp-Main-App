@@ -149,18 +149,48 @@ The **frontend total is always a preview** — `verify-razorpay-payment` re-deri
 expected paise from `payment_orders.total_inr` before capturing, so a tampered client
 cannot change what's charged.
 
-**Guest buyers are identified by PHONE, once, in
-[`supabase/functions/_shared/buyerIdentity.ts`](supabase/functions/_shared/buyerIdentity.ts)**
-(`resolveOrCreateBuyer`): `find_login_identity` on the phone → the existing account is
-used exactly as it is (nothing typed on the checkout form is ever written onto it); no
-match → a new account with `phone_confirm` and the SYNTHETIC auth email, so phone-OTP
-login lands on the purchase; the typed email goes on `public.users` only, and only for a
-paid capture. No session is ever minted from payment proof: after verify the guest is sent
-to `/login?next=/thank-you/<order>&phone=…` for one OTP (`src/lib/checkoutVerify.ts`,
-`src/lib/loginParams.ts`). `verify-razorpay-payment`, `razorpay-webhook` and the free
-path of `guest-create-order` all call the helper; receipts and the invoice PDF for a guest
-order use the order's own guest fields, never a matched account's profile. The client
-MUST send `is_guest` on the verify call.
+**Guest checkout is PAY-FIRST (founder's decision, 2026-11-04; do not undo).** A
+signed-out buyer types name, email and phone on `/checkout/<id>`, taps Pay, and Razorpay
+opens straight on payment methods (prefill locked + hidden, `razorpayContactLocked` in
+`src/lib/checkoutVerify.ts`). **Nothing may stand between the details and Razorpay**: no
+OTP, no identity check that can refuse the sale. On 2 Nov 2026 a verify-before-pay step
+(`VITE_CHECKOUT_VERIFY` + `CheckoutVerify.tsx`) cut Razorpay opens from ~15 to ~4 a day
+and paid masterclass orders by ~40% within two days; it was switched off and this flow
+replaced it. Identity is settled AFTER the money, by adding the course to an account:
+
+- **Who owns the purchase** ([`_shared/buyerIdentity.ts`](supabase/functions/_shared/buyerIdentity.ts),
+  `resolveOrCreateBuyer`, shared by `verify-razorpay-payment`, `razorpay-webhook`,
+  `reconcile-razorpay-orders` and the free path of `guest-create-order`):
+  - **+91 number → the PHONE.** `find_login_identity` on the phone → that account, used
+    exactly as it is (nothing typed is ever written onto it). No match → a new account
+    with `phone_confirm` and the SYNTHETIC auth email; the typed email goes on
+    `public.users` only, for a paid capture.
+  - **Any other number → the EMAIL.** Login email match, else a profile-email match (an
+    NRI's older phone account) → that account, untouched. Neither → a new account whose
+    auth email IS the typed email (no auth phone; the number goes on the profile). Never
+    from a ₹0 order.
+  - `guest-create-order` never refuses for an email/phone mismatch; it writes
+    `notes.identity_conflict` on the order for a person to review.
+- **Getting into the course** (`guestHandOff` in `verify-razorpay-payment`,
+  [`_shared/guestSession.ts`](supabase/functions/_shared/guestSession.ts)): a new checkout
+  account is stamped `app_metadata.created_by_payment_order = <order>` and
+  `identity_unproven = true`. Only when the verify call carries the browser's reuse token
+  AND the account carries THIS order's stamp, is still unproven, under an hour old, owns
+  nothing else and has no unclaimed TagMango purchase, verify returns a session and the
+  buyer lands on Thank-you signed in. Everyone else gets `login_hint` (`phone`/`email`)
+  and `/login` sends the code by itself (`autoSend` router state, then dropped from
+  history). An existing account NEVER gets a session from payment proof.
+- **First proven sign-in wins** (`settleProvenIdentity`, called by `verify-msg91-otp`,
+  `verify-email-otp`, `checkout-email-identity`): signs out every other session and
+  clears `identity_unproven`; `claim_my_purchases()` waits while it is set (migration
+  `20261104120000`).
+- After capture, `_shared/postCapture.ts` also sends the "course is ready" WhatsApp
+  (`_shared/accessWhatsApp.ts`, Indian numbers, off until `INTERAKT_ACCESS_TEMPLATE` names
+  an approved Interakt template).
+
+Receipts and the invoice PDF for a guest order use the order's own guest fields, never a
+matched account's profile. The client MUST send `is_guest` (and, for the hand-off, the
+`reuse_token`) on the verify call.
 
 ---
 
@@ -171,7 +201,10 @@ it to the phone via `phoneBinding` (rejects token-replay account-takeover), (3) 
 user up by phone with the `find_login_identity` RPC — **not** GoTrue's broken `?phone=`
 list filter, which silently misclassified the ~74k legacy users as new. Existing → login;
 unknown phone matching a `legacy_enrolments` row → seamless legacy login; truly new →
-signup. Guest checkout creates the auth user keyed on the typed phone with no OTP (see `_shared/buyerIdentity.ts`); the buyer proves the phone with one OTP on `/login` afterwards.
+signup. Guest checkout creates the auth user with no OTP (see "How money flows": phone
+for +91, email elsewhere). A buyer whose account the purchase made is signed in straight
+away; others prove the phone or email with one code on `/login` afterwards, and that
+first proven sign-in signs out every other session (`settleProvenIdentity`).
 
 Phone + OTP-binding helpers live in [`supabase/functions/_shared/phone.ts`](supabase/functions/_shared/phone.ts)
 (`normalizePhone`, `e164`, `last10`, `phoneVariants`, `syntheticEmail`, `phoneBinding`),

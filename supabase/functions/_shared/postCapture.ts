@@ -33,6 +33,7 @@
  */
 import { buildPurchaseEvent, sendCapiEvents, type CapiOrder } from "./metaCapi.ts";
 import { sendPurchaseReceipt, type ReceiptEmailDeps } from "./receipt.ts";
+import { sendAccessWhatsApp } from "./accessWhatsApp.ts";
 import { paidOrder } from "./captureGrant.ts";
 
 // The service-role client, kept loose so a test double fits.
@@ -362,6 +363,22 @@ export async function runPostCapture(admin: Admin, paymentOrderId: string, opts:
       await sendReceipt(admin, order, opts, offering, user);
     } catch (e) {
       console.error("[post-capture] receipt threw", order.id, e);
+    }
+    // "Your course is ready" on WhatsApp (_shared/accessWhatsApp.ts). Off
+    // until INTERAKT_ACCESS_TEMPLATE names an approved template.
+    try {
+      const wa = await sendAccessWhatsApp(
+        {
+          phone: order.guest_phone || user?.phone || null,
+          fullName: order.guest_name || user?.full_name || null,
+          courseTitle: offering?.title ?? null,
+        },
+        { apiKey: env("INTERAKT_API_KEY"), template: env("INTERAKT_ACCESS_TEMPLATE") },
+      );
+      if ("error" in wa) console.warn("[post-capture] access WhatsApp not sent", { order: order.id, error: wa.error });
+      await recordResult(admin, order.id, "whatsapp", { ...wa, at: new Date().toISOString() });
+    } catch (e) {
+      console.error("[post-capture] access WhatsApp threw", order.id, e);
     }
   } catch (e) {
     console.error("[post-capture] unexpected error", paymentOrderId, e);

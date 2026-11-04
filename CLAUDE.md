@@ -68,6 +68,18 @@ killing vertical scroll.)
   player — 8 lessons. After ANY billing/plan change run `ops/storage-health.sh`;
   uploads now go up resumable (TUS) and attach only after the last byte is stored.
 
+- **2026-11-02 — A code-before-Pay step on guest checkout cut sales ~40% in two days.**
+  `VITE_CHECKOUT_VERIFY` made signed-out buyers verify their phone by SMS before
+  Razorpay would open; Razorpay opens fell from ~15 to ~4 a day while ad CTR and
+  landing traffic were unchanged. **Guest checkout is pay-first: name, email, phone →
+  Pay → Razorpay. Never put an OTP, a login, or any check that can refuse the sale in
+  front of Razorpay.** Identity is settled after the money (ARCHITECTURE.md, "How money
+  flows"). Any change to `CheckoutPage.tsx`, `guest-create-order`, `buyerIdentity.ts`,
+  `guestSession.ts` or the verify hand-off must keep that, and keep the hand-off rule: a
+  payment may sign in ONLY an account stamped with that same order and still unproven.
+  Before shipping a checkout change, compare `payment_initiated` / `Purchase` pixel
+  counts for 48 h against the week before.
+
 ### Staged (phased) rollout — what it is
 Release a new build to a SMALL fraction of users first, watch crash/error/complaint
 signals, then widen only if healthy. A bad build reaches a few users, not all — and
