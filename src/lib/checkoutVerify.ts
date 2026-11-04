@@ -85,8 +85,13 @@ export function postPaymentNavState(
 ): PostPaymentState | undefined {
   const phone = (guestPhone ?? "").trim();
   const email = (guestEmail ?? "").trim();
-  const byEmail = hint === "email" || (!!phone && !phone.startsWith("+91") && phone.startsWith("+"));
+  const foreign = !!phone && phone.startsWith("+") && !phone.startsWith("+91");
+  // The server's hint follows the account the course landed on.
+  const byEmail = hint === "email" || (hint == null && foreign);
   if (byEmail && email) return { email, autoSend: true };
+  // A phone account reached with a foreign number typed (an NRI's older
+  // Indian account): nothing to prefill, they sign in as they always do.
+  if (foreign) return undefined;
   return phone ? { phone, autoSend: true } : undefined;
 }
 
@@ -97,8 +102,13 @@ export function postPaymentNavState(
  */
 export function razorpayContactLocked(email?: string | null, contact?: string | null): boolean {
   const e = (email ?? "").trim();
-  const digits = (contact ?? "").replace(/\D/g, "");
+  const c = (contact ?? "").trim();
+  const digits = c.replace(/\D/g, "");
+  const indian = !c.startsWith("+") || c.startsWith("+91");
+  const phoneOk = indian
+    ? /^[6-9]\d{9}$/.test(digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits)
+    : digits.length >= 8 && digits.length <= 15;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) &&
     !e.toLowerCase().endsWith("@phone.leveluplearning.in") &&
-    digits.length >= 10 && digits.length <= 15;
+    phoneOk;
 }

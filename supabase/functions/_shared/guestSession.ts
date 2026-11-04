@@ -13,6 +13,10 @@
  *
  * "Made by this purchase" is checked on the data, not on which capture path
  * created the account (verify and the webhook race, and either can create it):
+ *   - the auth account carries `app_metadata.created_by_payment_order` equal
+ *     to THIS order (_shared/buyerIdentity.ts stamps it in createUser; an
+ *     account made any other way, an OTP signup or a Tally applicant, never
+ *     has it, however new it is);
  *   - the auth account is less than FRESH_WINDOW_MS old;
  *   - every enrolment it has came from THIS order, and it has no other paid
  *     order;
@@ -30,6 +34,14 @@ export const FRESH_WINDOW_MS = 60 * 60 * 1000;
 
 export type SessionTokens = { access_token: string; refresh_token: string };
 
+type FreshUser = {
+  id: string;
+  email?: string | null;
+  phone?: string | null;
+  created_at?: string;
+  app_metadata?: Record<string, unknown> | null;
+};
+
 type Result<T> = { data: T; error: { message: string } | null };
 
 // deno-lint-ignore no-explicit-any
@@ -40,7 +52,7 @@ export type FreshAdmin = {
   auth: {
     admin: {
       getUserById: (id: string) => PromiseLike<
-        Result<{ user: { id: string; email?: string | null; phone?: string | null; created_at?: string } | null }>
+        Result<{ user: FreshUser | null }>
       >;
     };
   };
@@ -66,6 +78,7 @@ export async function freshAccountLoginEmail(
   const { data, error } = await admin.auth.admin.getUserById(userId);
   const user = data?.user;
   if (error || !user?.email || !user.created_at) return null;
+  if (user.app_metadata?.created_by_payment_order !== paymentOrderId) return null;
   const age = now - new Date(user.created_at).getTime();
   if (!(age >= 0 && age <= FRESH_WINDOW_MS)) return null;
 
@@ -143,4 +156,46 @@ export async function mintSessionForEmail(
   });
   if (vErr || !verified?.session) return null;
   return { access_token: verified.session.access_token, refresh_token: verified.session.refresh_token };
+}
+
+/** Is this an auth email we minted for a phone account (not a real inbox)? */
+export function isPhoneAccountEmail(email: string | null | undefined): boolean {
+  return (email ?? "").trim().toLowerCase().endsWith("@phone.leveluplearning.in");
+}
+
+export type ProveAdmin = {
+  auth: {
+    admin: {
+      getUserById: (id: string) => PromiseLike<Result<{ user: FreshUser | null }>>;
+      updateUserById: (id: string, attrs: { app_metadata: Record<string, unknown> }) => PromiseLike<Result<unknown>>;
+      signOut: (jwt: string, scope?: "global" | "local" | "others") => PromiseLike<{ error: { message: string } | null }>;
+    };
+  };
+};
+
+/**
+ * Call right after a VERIFIED sign-in (an SMS or email code), with the session
+ * just minted for it. An account a payment created is marked
+ * `identity_unproven`: a session may have gone to whoever typed this phone or
+ * email at checkout. The first person to prove the phone or email owns it:
+ * every OTHER session is signed out and the mark is cleared, so the old
+ * checkout session cannot keep watching the account, and the purchase claim
+ * (claim_my_purchases, which waits on the mark) can run. A failure here never
+ * blocks the sign-in.
+ */
+export async function settleProvenIdentity(
+  admin: ProveAdmin,
+  userId: string,
+  accessToken: string,
+): Promise<void> {
+  try {
+    const { data } = await admin.auth.admin.getUserById(userId);
+    const meta = data?.user?.app_metadata ?? null;
+    if (!meta || meta.identity_unproven !== true) return;
+    const { error: soErr } = await admin.auth.admin.signOut(accessToken, "others");
+    if (soErr) console.warn("settleProvenIdentity: signOut(others) failed", soErr.message);
+    await admin.auth.admin.updateUserById(userId, { app_metadata: { ...meta, identity_unproven: false } });
+  } catch (e) {
+    console.warn("settleProvenIdentity failed:", e instanceof Error ? e.message : e);
+  }
 }

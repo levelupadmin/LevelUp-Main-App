@@ -412,6 +412,8 @@ export default function ThankYou() {
   );
 
   const isGuest = !session && order?.guest_email !== null && order?.guest_email !== undefined;
+  // A number outside India: that buyer's account is keyed on their email.
+  const guestByEmail = !!order?.guest_phone?.startsWith("+") && !order.guest_phone.startsWith("+91") && !!order.guest_email;
 
   /* ── Load Razorpay script (for upsells) ── */
   useEffect(() => {
@@ -999,11 +1001,11 @@ export default function ThankYou() {
                 <div className="flex items-center gap-2.5">
                   <Mail className="h-4 w-4 text-[hsl(var(--cream))]" />
                   <p className="text-sm text-foreground">
-                    Your course is on the account for <strong className="text-[hsl(var(--cream))]">{order.guest_phone || "the phone you paid with"}</strong>
+                    Your course is on the account for <strong className="text-[hsl(var(--cream))]">{guestByEmail ? order.guest_email : order.guest_phone || "the phone you paid with"}</strong>
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground pl-6">
-                  Sign in with that number and a one-time code on any device to open it.
+                  Sign in with that {guestByEmail ? "email" : "number"} and a one-time code on any device to open it.
                 </p>
               </div>
             )}

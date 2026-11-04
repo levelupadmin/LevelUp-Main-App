@@ -1035,8 +1035,12 @@ export default function CheckoutPage() {
       // Free guest offering: edge function already enrolled the user
       // and granted access. Drop straight to ThankYou.
       if (isAnon && data?.success && !data?.razorpay_order_id) {
-        toast.success("You're enrolled. Confirm your phone number with a one-time code to open your course.");
         const freeState = postPaymentNavState(guestPhone, guestEmail);
+        toast.success(
+          freeState?.email
+            ? "You're enrolled. Enter the code we've emailed you to open your course."
+            : "You're enrolled. Enter the code we've sent to your phone to open your course.",
+        );
         navigate(postPaymentRoute(true, data.payment_order_id, !!freeState?.email), { state: freeState });
         return;
       }

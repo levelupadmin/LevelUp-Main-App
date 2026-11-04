@@ -29,6 +29,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { e164, phoneBinding, phoneVariants, syntheticEmail } from "../_shared/phone.ts";
+import { settleProvenIdentity } from "../_shared/guestSession.ts";
 
 const SUPABASE_URL     = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -212,6 +213,10 @@ Deno.serve(async (req) => {
     }
     const session = await mintSession(admin, loginEmail);
     if (!session) return json({ error: "session_mint_failed" }, 500);
+    // The phone is now proven: an account a checkout made gets every other
+    // session signed out, and its purchase claim unblocked (before the claim).
+    // deno-lint-ignore no-explicit-any
+    await settleProvenIdentity(admin as any, user.id, session.access_token);
     await claimPurchasesServerSide(admin, user.id);
     return json({ ...session, user_id: user.id, is_new_user: false });
   }

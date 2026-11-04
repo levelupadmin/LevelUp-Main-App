@@ -39,6 +39,9 @@ describe("postPaymentRoute / postPaymentNavState", () => {
     expect(postPaymentNavState("+919876543210", "a@b.co", "email")).toEqual({ email: "a@b.co", autoSend: true });
     expect(postPaymentRoute(true, "po-1", true)).toBe("/login?classic=1&method=email&next=%2Fthank-you%2Fpo-1");
   });
+  it("prefills nothing when a foreign number landed on a phone account", () => {
+    expect(postPaymentNavState("+447911123456", "jo@example.co.uk", "phone")).toBeUndefined();
+  });
 });
 
 describe("handOffFrom", () => {
@@ -56,6 +59,7 @@ describe("razorpayContactLocked", () => {
     expect(razorpayContactLocked("a@b.co", "+447911123456")).toBe(true);
     expect(razorpayContactLocked("", "+919876543210")).toBe(false);
     expect(razorpayContactLocked("a@b.co", "123")).toBe(false);
+    expect(razorpayContactLocked("a@b.co", "+911234567890")).toBe(false);
     expect(razorpayContactLocked("919876543210@phone.leveluplearning.in", "+919876543210")).toBe(false);
   });
 });

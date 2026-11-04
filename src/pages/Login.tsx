@@ -183,6 +183,14 @@ const Login = () => {
   const navState = (location.state as { email?: string; autoSend?: boolean } | null) ?? null;
   const paidEmail = (navState?.email ?? "").trim();
   const startOnEmail = searchParams.get("method") === "email" || !!paidEmail;
+  // Read once: the email panel sends the code on mount, then autoSend is
+  // dropped from history (below) so a reload does not send another.
+  const [autoSendEmail] = useState(() => !!paidEmail && navState?.autoSend === true);
+  useEffect(() => {
+    if (navState?.autoSend !== true) return;
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...navState, autoSend: false } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [step, setStep] = useState<Step>(() =>
     EMAIL_ONLY_AUTH || (startOnEmail && !flag(EMAIL_OTP_TAB)) ? "email_input" : "phone",
   );
@@ -529,7 +537,7 @@ const Login = () => {
                 autoFocus={!native}
                 onSession={handleEmailSession}
                 initialEmail={paidEmail || undefined}
-                autoSend={!!paidEmail && navState?.autoSend === true}
+                autoSend={autoSendEmail}
               />
             }
           />

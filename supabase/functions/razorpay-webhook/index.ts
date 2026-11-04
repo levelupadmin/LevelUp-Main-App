@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
       const resolved = await resolveOrCreateBuyer(
         admin,
         { name: po.guest_name, email: po.guest_email, phone: po.guest_phone },
-        { tag: "razorpay-webhook", paid: true },
+        { tag: "razorpay-webhook", paid: true, orderId: po.id },
       );
       if (!resolved.ok) {
         console.error(

@@ -295,7 +295,7 @@ Deno.serve(async (req) => {
       const buyer = await resolveOrCreateBuyer(
         admin,
         { name: guest_name, email: guest_email, phone: normalizedPhone },
-        { tag: "guest-create-order", paid: false },
+        { tag: "guest-create-order", paid: false, orderId: po.id },
       );
       if (!buyer.ok) {
         console.error("Guest user resolution error:", buyer.error);

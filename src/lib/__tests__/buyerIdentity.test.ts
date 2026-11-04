@@ -190,6 +190,27 @@ describe("resolveOrCreateBuyer", () => {
     expect(upd.args.patch).toEqual({ phone: "+447911123456" });
   });
 
+  it("stamps a NEW account with the order that made it, marked unproven", async () => {
+    const { admin, calls } = fakeAdmin({ byPhone: null });
+    await resolveOrCreateBuyer(admin, input, { tag: "t", paid: true, orderId: "po_9" });
+    const cu = calls.find((c) => c.kind === "createUser") as { args: Record<string, unknown> };
+    expect(cu.args.app_metadata).toEqual({ created_by_payment_order: "po_9", identity_unproven: true });
+  });
+
+  it("international number whose email sits on an existing PROFILE: adds the course there, creates nothing", async () => {
+    const { admin, calls } = fakeAdmin({ emailOwnedElsewhere: true });
+    const r = await resolveOrCreateBuyer(admin, { name: "Jo", email: "jo@example.co.uk", phone: "+447911123456" }, { tag: "t", paid: true });
+    expect(r).toMatchObject({ ok: true, userId: "someone-else", created: false, matchedBy: "email" });
+    expect(calls.some((c) => c.kind === "createUser")).toBe(false);
+  });
+
+  it("never creates an international account from an unpaid (free) order", async () => {
+    const { admin, calls } = fakeAdmin({});
+    const r = await resolveOrCreateBuyer(admin, { name: "Jo", email: "jo@example.co.uk", phone: "+447911123456" }, { tag: "t", paid: false });
+    expect(r.ok).toBe(false);
+    expect(calls.some((c) => c.kind === "createUser")).toBe(false);
+  });
+
   it("international number with no email cannot be given an account", async () => {
     const { admin } = fakeAdmin({});
     expect((await resolveOrCreateBuyer(admin, { name: "Jo", phone: "+447911123456" }, { tag: "t", paid: true })).ok).toBe(false);

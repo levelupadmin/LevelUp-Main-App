@@ -66,6 +66,15 @@ export type BuyerOptions = {
    * cannot inherit an attacker-chosen contact address.
    */
   paid: boolean;
+  /**
+   * The payment order this capture is for. A NEW account is stamped with it
+   * (`app_metadata.created_by_payment_order`) and marked `identity_unproven`:
+   * nobody has proved the phone or email yet. _shared/guestSession.ts hands a
+   * session only to an account stamped with this very order, and the first
+   * verified sign-in (verify-msg91-otp / verify-email-otp) clears the mark and
+   * signs out every other session.
+   */
+  orderId?: string | null;
 };
 
 export type BuyerResolution =
@@ -135,6 +144,18 @@ async function findIdentity(
   return row?.id ? { id: row.id, email: row.email ?? null, phone: row.phone ?? null } : null;
 }
 
+function paymentStamp(opts: BuyerOptions): Record<string, unknown> {
+  return opts.orderId
+    ? { app_metadata: { created_by_payment_order: opts.orderId, identity_unproven: true } }
+    : {};
+}
+
+async function profileOwnerOfEmail(admin: BuyerAdmin, email: string): Promise<string | null> {
+  const { data } = await admin.from("users").select("id").eq("email", email).limit(1);
+  const row = Array.isArray(data) ? (data[0] as { id?: string } | undefined) : undefined;
+  return row?.id ?? null;
+}
+
 async function emailUsedByOtherProfile(admin: BuyerAdmin, email: string, userId: string): Promise<boolean> {
   const { data } = await admin.from("users").select("id").eq("email", email).neq("id", userId).limit(1);
   return Array.isArray(data) && data.length > 0;
@@ -175,13 +196,25 @@ export async function resolveOrCreateBuyer(
       }
     }
 
-    // 3. International buyer, no account: create one on the typed email.
+    // 3. International buyer, no account with that login email.
     if (phone && !indian) {
       if (!email) return { ok: false, error: "international number without an email to sign in with" };
+      // The address may sit on an existing PROFILE whose login is a phone (an
+      // NRI with an older Indian account). That is their account: add the
+      // course there. A second account on the same address could never get an
+      // email code (its profile mirror would be empty).
+      const profileOwner = await profileOwnerOfEmail(admin, email);
+      if (profileOwner) {
+        log("matched existing account by profile email (international number)", { user_id: profileOwner });
+        return { ok: true, userId: profileOwner, created: false, matchedBy: "email", loginEmail: null };
+      }
+      // Never plant a confirmed email login from an unpaid (₹0) order.
+      if (!opts.paid) return { ok: false, error: "an international buyer's account is only created on a paid order" };
       const res = await admin.auth.admin.createUser({
         email,
         email_confirm: true,
         user_metadata: { full_name: name ?? "LevelUp Student", phone },
+        ...paymentStamp(opts),
       });
       if (res.error || !res.data?.user?.id) {
         const raced = await findIdentity(admin, null, email);
@@ -208,6 +241,7 @@ export async function resolveOrCreateBuyer(
       phone: phone.replace(/^\+/, ""), // GoTrue stores bare digits
       phone_confirm: true,
       user_metadata: { full_name: name ?? "LevelUp Student", phone },
+      ...paymentStamp(opts),
     });
     if (res.error || !res.data?.user?.id) {
       // Race: razorpay-webhook and verify-razorpay-payment both run for the

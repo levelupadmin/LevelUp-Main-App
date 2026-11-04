@@ -215,6 +215,8 @@ export default function StageLogin() {
     if (autoSentRef.current || !fromState?.autoSend || step !== "phone" || digits.length !== 10) return;
     if (authLoading || user) return;
     autoSentRef.current = true;
+    // Drop autoSend from history so a reload does not send another code.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...fromState, autoSend: false } });
     void sendCode();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, step]);

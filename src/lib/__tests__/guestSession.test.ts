@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FRESH_WINDOW_MS, freshAccountLoginEmail, mintSessionForEmail, type FreshAdmin } from "@shared/guestSession";
+import { FRESH_WINDOW_MS, freshAccountLoginEmail, mintSessionForEmail, settleProvenIdentity, type FreshAdmin, type ProveAdmin } from "@shared/guestSession";
 
 /**
  * A guest lands signed in after paying ONLY when this purchase made their
@@ -12,7 +12,7 @@ const NOW = Date.parse("2026-11-04T14:00:00Z");
 const ORDER = "po_1";
 
 function fake(opts: {
-  user?: { id: string; email?: string | null; phone?: string | null; created_at?: string } | null;
+  user?: { id: string; email?: string | null; phone?: string | null; created_at?: string; app_metadata?: Record<string, unknown> | null } | null;
   enrolments?: Array<{ id: string; payment_order_id: string | null }>;
   otherOrders?: Array<{ id: string }>;
   legacyByPhone?: number;
@@ -48,12 +48,20 @@ const freshUser = {
   email: "919876543210@phone.leveluplearning.in",
   phone: "919876543210",
   created_at: new Date(NOW - 60_000).toISOString(),
+  app_metadata: { created_by_payment_order: ORDER, identity_unproven: true },
 };
 
 describe("freshAccountLoginEmail", () => {
   it("signs in an account made minutes ago that holds only this order", async () => {
     const { admin } = fake({ user: freshUser, enrolments: [{ id: "e1", payment_order_id: ORDER }] });
     expect(await freshAccountLoginEmail(admin, "u1", ORDER, NOW)).toBe(freshUser.email);
+  });
+
+  it("never signs in an account this order did not create, however new (an OTP signup, a Tally applicant)", async () => {
+    const otp = fake({ user: { ...freshUser, app_metadata: {} } });
+    expect(await freshAccountLoginEmail(otp.admin, "u1", ORDER, NOW)).toBeNull();
+    const other = fake({ user: { ...freshUser, app_metadata: { created_by_payment_order: "po_other" } } });
+    expect(await freshAccountLoginEmail(other.admin, "u1", ORDER, NOW)).toBeNull();
   });
 
   it("never signs in an older account", async () => {
@@ -97,5 +105,33 @@ describe("mintSessionForEmail", () => {
     const bad = { auth: { admin: { generateLink: async () => ({ data: null, error: { message: "no" } }) } } };
     const anon = { auth: { verifyOtp: async () => ({ data: { session: null }, error: null }) } };
     expect(await mintSessionForEmail(bad, anon, "x@y.co")).toBeNull();
+  });
+});
+
+describe("settleProvenIdentity", () => {
+  function prove(meta: Record<string, unknown> | null) {
+    const calls: string[] = [];
+    let saved: Record<string, unknown> | null = null;
+    const admin: ProveAdmin = {
+      auth: {
+        admin: {
+          getUserById: async () => ({ data: { user: { id: "u1", app_metadata: meta } }, error: null }),
+          updateUserById: async (_id, attrs) => { calls.push("update"); saved = attrs.app_metadata; return { data: null, error: null }; },
+          signOut: async (_jwt, scope) => { calls.push(`signOut:${scope}`); return { error: null }; },
+        },
+      },
+    };
+    return { admin, calls, saved: () => saved };
+  }
+  it("on the first verified sign-in to a checkout-made account, signs out every other session and clears the mark", async () => {
+    const p = prove({ created_by_payment_order: "po_1", identity_unproven: true });
+    await settleProvenIdentity(p.admin, "u1", "jwt");
+    expect(p.calls).toEqual(["signOut:others", "update"]);
+    expect(p.saved()).toEqual({ created_by_payment_order: "po_1", identity_unproven: false });
+  });
+  it("does nothing for any other account", async () => {
+    const p = prove({ provider: "email" });
+    await settleProvenIdentity(p.admin, "u1", "jwt");
+    expect(p.calls).toEqual([]);
   });
 });

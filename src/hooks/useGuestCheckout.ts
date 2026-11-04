@@ -13,7 +13,10 @@ export function isValidGuestPhone(raw: string): boolean {
   const v = (raw ?? "").trim();
   const digits = v.replace(/\D/g, "");
   if (!v.startsWith("+") || v.startsWith("+91")) {
-    return digits.length === 10 || (digits.length === 12 && digits.startsWith("91"));
+    const national = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+    // An Indian mobile number starts 6 to 9. Razorpay refuses anything else,
+    // and its contact field is locked once we prefill it.
+    return /^[6-9]\d{9}$/.test(national);
   }
   try {
     return isValidPhoneNumber(v);

@@ -14,7 +14,7 @@ function jsonRes(body: unknown, status = 200) {
 }
 
 import { canonicalBuyerPhone, isIndianBuyerPhone, resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
-import { freshAccountLoginEmail, mintSessionForEmail, type SessionTokens } from "../_shared/guestSession.ts";
+import { freshAccountLoginEmail, isPhoneAccountEmail, mintSessionForEmail, type SessionTokens } from "../_shared/guestSession.ts";
 import { postCaptureRecoverable, schedulePostCapture } from "../_shared/postCaptureRuntime.ts";
 import { requestClientMeta } from "../_shared/attribution.ts";
 import { orderPaymentStatus } from "../_shared/orderPaymentStatus.ts";
@@ -103,8 +103,16 @@ async function guestHandOff(
   userId: string | null,
   reuseToken: unknown,
 ): Promise<{ login_hint: "phone" | "email"; session?: SessionTokens }> {
-  const login_hint = isIndianBuyerPhone(canonicalBuyerPhone(po.guest_phone as string | null)) ? "phone" : "email";
+  let login_hint: "phone" | "email" = isIndianBuyerPhone(canonicalBuyerPhone(po.guest_phone as string | null)) ? "phone" : "email";
   try {
+    // The hint follows the ACCOUNT the course landed on: one whose login is a
+    // phone signs in by SMS even if a foreign number was typed (an NRI's older
+    // Indian account, found by its profile email).
+    if (userId) {
+      const { data } = await admin.auth.admin.getUserById(userId);
+      const authEmail = data?.user?.email as string | null | undefined;
+      if (authEmail) login_hint = isPhoneAccountEmail(authEmail) ? "phone" : "email";
+    }
     if (!userId || !reuseKeyMatches(po.notes, await requestReuseKey(reuseToken))) return { login_hint };
     const email = await freshAccountLoginEmail(admin, userId, String(po.id));
     if (!email) return { login_hint };
@@ -444,7 +452,7 @@ Deno.serve(async (req) => {
         const buyer = await resolveOrCreateBuyer(
           admin,
           { name: po.guest_name, email: po.guest_email, phone: po.guest_phone },
-          { tag: "verify", paid: true },
+          { tag: "verify", paid: true, orderId: payment_order_id },
         );
         if (!buyer.ok) {
           console.error("[verify] buyer resolution failed for", payment_order_id, buyer.error);
