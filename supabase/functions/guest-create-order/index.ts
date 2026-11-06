@@ -131,7 +131,15 @@ Deno.serve(async (req) => {
     if (Array.isArray(bump_ids) && bump_ids.length > MAX_BUMPS) {
       return jsonRes({ error: "Too many bump selections" }, 400);
     }
-    const { bumpTotal, validBumpIds } = await priceBumps(admin, offering_id, bump_ids);
+    let bumpTotal = 0;
+    let validBumpIds: string[] = [];
+    try {
+      ({ bumpTotal, validBumpIds } = await priceBumps(admin, offering_id, bump_ids));
+    } catch (e) {
+      // Never charge less than the screen showed by silently dropping add-ons.
+      console.error("[guest-create-order] add-on pricing failed", e);
+      return jsonRes({ error: "Couldn't load the add-ons. Please try again." }, 500);
+    }
 
     /* ── Answers to the offering's own questions (custom_field_definitions) ──
        Guests' answers used to be dropped (always {}). Only this offering's
@@ -363,6 +371,14 @@ Deno.serve(async (req) => {
           // path's total is the computed one.
           total_paid_inr: totalInr,
         });
+      }
+      // A 100% coupon can bring price + add-ons to ₹0: the add-ons on the
+      // order are granted too (same partial unique index absorbs repeats).
+      for (const bumpOffId of validBumpIds) {
+        const { error: bumpErr } = await admin.from("enrolments").insert({
+          user_id: userId, offering_id: bumpOffId, payment_order_id: po.id, status: "active", source: "checkout",
+        });
+        if (bumpErr && (bumpErr as { code?: string }).code !== "23505") console.error("[guest-create-order] free add-on grant failed", bumpErr);
       }
 
       return jsonRes({

@@ -1221,7 +1221,13 @@ export default function PublicOffering() {
           .select("button_offering_id")
           .eq("slug", slug)
           .maybeSingle();
-        const byPage = page?.button_offering_id ?? null;
+        let byPage = page?.button_offering_id ?? null;
+        // If the page's offering can't be shown (draft, or closed for this
+        // visitor), fall back to the offering with this slug.
+        if (byPage) {
+          const { data: target } = await supabase.from("offerings").select("id").eq("id", byPage).in("status", ["active", "archived"]).maybeSingle();
+          if (!target) byPage = null;
+        }
         const { data, error } = await supabase
           .from("offerings")
           .select(`

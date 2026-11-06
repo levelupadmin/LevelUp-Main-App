@@ -7040,7 +7040,7 @@ export type Database = {
         Returns: { offering_id: string; students: number; tagmango: number }[]
       }
       admin_set_offering_links: {
-        Args: { p_bumps?: Json; p_course_ids: string[]; p_offering_id: string }
+        Args: { p_bumps?: Json | null; p_course_ids: string[] | null; p_offering_id: string }
         Returns: undefined
       }
       admin_dashboard_combined: {

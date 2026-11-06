@@ -134,6 +134,10 @@ const AdminOfferingEditor = () => {
   const [loading, setLoading] = useState(true);
   /** "Show on Explore" (this offering's row in pages). */
   const [explore, setExplore] = useState<ExploreState>(EMPTY_EXPLORE);
+  /** Parts that failed to load. Saving must never treat "couldn't read" as
+   *  "empty": that would unlink every course (students lose access), wipe the
+   *  add-ons or delete the checkout questions. */
+  const [loadFailed, setLoadFailed] = useState<Set<"offering" | "courses" | "bumps" | "upsells" | "questions">>(new Set());
   /** Which editor section is open; the preview follows it. */
   const [section, setSection] = useState<Section>("basics");
   /** Questions asked on the checkout (custom_field_definitions). */
@@ -161,6 +165,7 @@ const AdminOfferingEditor = () => {
           supabase.from("custom_field_definitions").select("id, label, is_required, sort_order").eq("offering_id", offeringId).order("sort_order"),
         ]);
         setExplore(ex);
+        if (qs.error) setLoadFailed((prev) => new Set(prev).add("questions"));
         setQuestions((qs.data ?? []).map((q) => ({ id: q.id, label: q.label, is_required: !!q.is_required })));
       }
 
@@ -175,6 +180,13 @@ const AdminOfferingEditor = () => {
             .order("sort_order"),
           supabase.from("offering_bumps").select("id, bump_offering_id, headline, bump_price_override_inr, sort_order").eq("parent_offering_id", offeringId).order("sort_order"),
         ]);
+
+        const failed = new Set<"offering" | "courses" | "bumps" | "upsells" | "questions">();
+        if (offeringRes.error || !offeringRes.data) failed.add("offering");
+        if (ocsRes.error) failed.add("courses");
+        if (bumpsRes.error) failed.add("bumps");
+        if (upsellsRes.error) failed.add("upsells");
+        if (failed.size) setLoadFailed((prev) => new Set([...prev, ...failed]));
 
         if (offeringRes.data) {
           const d = offeringRes.data as any;
@@ -255,6 +267,10 @@ const AdminOfferingEditor = () => {
 
   /* ── Save ── */
   const handleSave = async () => {
+    if (loadFailed.has("offering")) {
+      toast({ title: "Not saved", description: "This offering didn't load properly, so saving could overwrite it. Reload the page and try again.", variant: "destructive" });
+      return;
+    }
     if (!form.title.trim()) {
       toast({ title: "Title is required", variant: "destructive" });
       return;
@@ -473,8 +489,9 @@ const AdminOfferingEditor = () => {
     if (offId) {
       const { error: linkErr } = await supabase.rpc("admin_set_offering_links", {
         p_offering_id: offId,
-        p_course_ids: linkedCourseIds,
-        p_bumps: bumps
+        // null = "leave as it is" when that part failed to load.
+        p_course_ids: loadFailed.has("courses") ? null : linkedCourseIds,
+        p_bumps: loadFailed.has("bumps") ? null : bumps
           .filter((b) => b.bump_offering_id && b.bump_offering_id !== offId)
           .map((b) => ({ bump_offering_id: b.bump_offering_id, headline: b.headline || "", price_override: b.bump_price_override_inr || "" })),
       });
@@ -501,9 +518,9 @@ const AdminOfferingEditor = () => {
         }
       }
 
-      // Sync upsells
-      await supabase.from("offering_upsells").delete().eq("parent_offering_id", offId);
-      if (upsells.length > 0) {
+      // Sync upsells (skipped if they didn't load)
+      if (!loadFailed.has("upsells")) await supabase.from("offering_upsells").delete().eq("parent_offering_id", offId);
+      if (!loadFailed.has("upsells") && upsells.length > 0) {
         await supabase.from("offering_upsells").insert(
           upsells.map((u, i) => ({
             parent_offering_id: offId!,
@@ -519,7 +536,9 @@ const AdminOfferingEditor = () => {
       const exploreErr = await saveExplore(offId, slug, form.title, explore);
       if (exploreErr) toast({ title: "Explore setting not saved", description: exploreErr, variant: "destructive" });
 
-      // Questions on the checkout: update kept ones, add new ones, remove the rest.
+      // Questions on the checkout: update kept ones, add new ones, remove the rest
+      // (left alone if they didn't load).
+      if (!loadFailed.has("questions")) {
       const keep = questions.filter((q) => q.label.trim());
       const keptIds = keep.filter((q) => q.id).map((q) => q.id as string);
       const { data: existingQs } = await supabase.from("custom_field_definitions").select("id").eq("offering_id", offId);
@@ -531,6 +550,7 @@ const AdminOfferingEditor = () => {
           ? await supabase.from("custom_field_definitions").update(row).eq("id", q.id)
           : await supabase.from("custom_field_definitions").insert(row);
         if (qErr) { toast({ title: "A checkout question wasn't saved", description: qErr.message, variant: "destructive" }); break; }
+      }
       }
     }
 
@@ -590,6 +610,11 @@ const AdminOfferingEditor = () => {
         </Button>
       </div>
 
+      {loadFailed.size > 0 && (
+        <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          Part of this offering didn't load ({[...loadFailed].join(", ")}). {loadFailed.has("offering") ? "Saving is blocked; reload the page." : "Saving leaves those parts exactly as they are; reload to edit them."}
+        </div>
+      )}
       {/* Sections on the left, the live preview always beside them (founder,
           6 Nov 2026: "a visualiser we can keep on"). Every section here does
           something the buyer or the team sees; nothing is decorative. */}

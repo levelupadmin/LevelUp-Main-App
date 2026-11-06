@@ -24,13 +24,16 @@ type AdminClient = { from: (t: string) => any };
 export async function priceBumps(admin: AdminClient, parentOfferingId: string, bumpIds: unknown): Promise<PricedBumps> {
   const ids = Array.isArray(bumpIds) ? [...new Set(bumpIds.filter((x): x is string => typeof x === "string"))] : [];
   if (!ids.length) return { bumpTotal: 0, validBumpIds: [] };
-  const { data: bumps } = await admin
+  const { data: bumps, error } = await admin
     .from("offering_bumps")
     .select(
       "bump_offering_id, bump_price_override_inr, bump_offering:offerings!offering_bumps_bump_offering_id_fkey(id, price_inr, status, access)",
     )
     .eq("parent_offering_id", parentOfferingId)
     .in("bump_offering_id", ids);
+  // A failed read must not quietly drop add-ons the buyer ticked (they'd be
+  // charged less than the screen showed and get none): the caller answers 500.
+  if (error) throw new Error(`add-on read failed: ${error.message}`);
   let bumpTotal = 0;
   const validBumpIds: string[] = [];
   // deno-lint-ignore no-explicit-any

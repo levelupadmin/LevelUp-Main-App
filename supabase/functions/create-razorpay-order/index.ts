@@ -167,7 +167,12 @@ Deno.serve(async (req) => {
     if (!stagedAmountInr && bump_ids && Array.isArray(bump_ids) && bump_ids.length > MAX_BUMPS)
       return jsonRes({ error: "Too many bump selections" }, 400);
     if (!stagedAmountInr && bump_ids && Array.isArray(bump_ids) && bump_ids.length > 0) {
-      ({ bumpTotal, validBumpIds } = await priceBumps(admin, offering_id, bump_ids));
+      try {
+        ({ bumpTotal, validBumpIds } = await priceBumps(admin, offering_id, bump_ids));
+      } catch (e) {
+        console.error("[create-razorpay-order] add-on pricing failed", e);
+        return jsonRes({ error: "Couldn't load the add-ons. Please try again." }, 500);
+      }
     }
 
     /* ── Coupon ──

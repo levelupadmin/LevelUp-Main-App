@@ -24,7 +24,10 @@ export interface ExploreState {
 export const EMPTY_EXPLORE: ExploreState = { pageId: null, show: "off", position: "100", carouselSlot: "", cardImage: "", opens: "page" };
 
 const toShow = (listing: string): ExploreState["show"] => (listing === "featured" ? "carousel" : listing === "listed" ? "on" : "off");
-const toListing = (show: ExploreState["show"]) => (show === "carousel" ? "featured" : show === "on" ? "listed" : "link");
+// "No" is hidden: off Explore everywhere, older app builds included (they read
+// is_public, which follows the pages). Its checkout and sales-page links
+// still work, because they never depended on it.
+const toListing = (show: ExploreState["show"]) => (show === "carousel" ? "featured" : show === "on" ? "listed" : "hidden");
 
 export async function loadExplore(offeringId: string): Promise<ExploreState> {
   const { data } = await supabase

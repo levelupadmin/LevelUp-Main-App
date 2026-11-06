@@ -1139,6 +1139,40 @@ export default function CheckoutPage({ offeringIdOverride }: { offeringIdOverrid
     );
   }
 
+  // Not sold at a checkout (offerings.access, migration 20261106120000): say so
+  // up front instead of showing Pay and refusing after the tap. Staged cohort
+  // stages (an application's own payment) are unaffected.
+  const access = (offering as { access?: string | null }).access ?? null;
+  const tallyUrl = ((offering as { tally_form_url?: string | null }).tally_form_url ?? "").trim();
+  const notSoldHere = !isStaged && (
+    access === "team" ||
+    (access === "apply" && (offering as { payment_mode?: string }).payment_mode !== "staged") ||
+    (!user && (offering as { payment_mode?: string }).payment_mode === "staged")
+  );
+  if (notSoldHere) {
+    const byApplication = access === "apply" || (offering as { payment_mode?: string }).payment_mode === "staged";
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center px-4 py-12">
+        <div className="co-closed w-full max-w-[480px] rounded-2xl border border-border bg-surface p-6 space-y-3 text-center">
+          <h1 className="text-lg font-semibold text-foreground">{offering.title}</h1>
+          <p className="text-sm text-muted-foreground">
+            {byApplication
+              ? "This programme is joined by application. Apply first; our team takes it from there."
+              : "This isn't sold here. If you've already bought it, it's in My learning."}
+          </p>
+          <div className="flex flex-col gap-2 pt-1">
+            {byApplication && tallyUrl && /^https?:\/\//i.test(tallyUrl) && (
+              <Button asChild><a href={tallyUrl}>Apply</a></Button>
+            )}
+            <Button variant="outline" onClick={() => navigate(offering.slug ? `/p/${offering.slug}` : "/home")}>
+              {offering.slug ? "See the programme" : "Back to Home"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const hasMrp =
     !isMasterclass &&
     (offering as any).mrp_inr &&

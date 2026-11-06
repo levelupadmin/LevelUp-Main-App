@@ -43,8 +43,11 @@ update public.offerings set access = case
 end
 where access is null;
 
+-- Default "team": a row made without an access (e.g. admin_duplicate_offering,
+-- which copies a fixed column list) is never buyable by accident; the editor
+-- always sets it explicitly.
 alter table public.offerings
-  alter column access set default 'buy',
+  alter column access set default 'team',
   alter column access set not null;
 alter table public.offerings drop constraint if exists offerings_access_check;
 alter table public.offerings add constraint offerings_access_check
