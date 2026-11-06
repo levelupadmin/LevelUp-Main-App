@@ -166,17 +166,20 @@ export default function AdminCatalogue() {
 
   const q = search.trim().toLowerCase();
   const match = (t: string) => !q || t.toLowerCase().includes(q);
+  // With something selected, what it's connected to comes first in each column.
+  const litFirst = (set: Set<string> | undefined) => (a: { id: string }, b: { id: string }) =>
+    set ? Number(set.has(b.id)) - Number(set.has(a.id)) : 0;
   const shownOfferings = data.offerings
     .filter((o) => status === "all" || o.status === status || (lit?.offerings.has(o.id) ?? false))
     .filter((o) => match(o.title) || (lit?.offerings.has(o.id) ?? false))
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => litFirst(lit?.offerings)(a, b) || a.title.localeCompare(b.title));
   const shownOfferingIds = new Set(shownOfferings.map((o) => o.id));
   const shownPages = data.pages
     .filter((p) => match(p.title) || (lit?.pages.has(p.id) ?? false))
-    .sort((a, b) => LISTING_RANK[b.listing] - LISTING_RANK[a.listing] || a.position - b.position);
+    .sort((a, b) => litFirst(lit?.pages)(a, b) || LISTING_RANK[b.listing] - LISTING_RANK[a.listing] || a.position - b.position);
   const shownCourses = data.courses
     .filter((c) => (lit?.courses.has(c.id) ?? false) || (match(c.title) && (q || (derived.offeringsOf.get(c.id) ?? []).some((oid) => shownOfferingIds.has(oid)))))
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => litFirst(lit?.courses)(a, b) || a.title.localeCompare(b.title));
 
   const pick = (s: Sel) => setSel((cur) => (cur && s && cur.kind === s.kind && cur.id === s.id ? null : s));
   const dimOf = (kind: "page" | "offering" | "course", id: string) =>
