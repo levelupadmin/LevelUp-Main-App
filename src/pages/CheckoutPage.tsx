@@ -1,3 +1,4 @@
+import { bumpAllowed } from "@shared/freeEnrolment";
 import { useEffect, useMemo, useState, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useCheckoutPricing } from "@/hooks/useCheckoutPricing";
@@ -227,8 +228,14 @@ function CheckoutColdSkeleton({
   );
 }
 
-export default function CheckoutPage() {
-  const { offeringId } = useParams<{ offeringId: string }>();
+/** A checkout cover that is a video (by its file type), else an image. */
+const isVideoUrl = (u: string) => /\.(mp4|webm|mov)(\?|#|$)/i.test(u);
+
+export default function CheckoutPage({ offeringIdOverride }: { offeringIdOverride?: string } = {}) {
+  // /checkout/<slug> resolves the slug to the id first (CheckoutBySlug) and
+  // passes it here; /checkout/<id> keeps working exactly as before.
+  const { offeringId: offeringIdParam } = useParams<{ offeringId: string }>();
+  const offeringId = offeringIdOverride ?? offeringIdParam;
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [searchParams] = useSearchParams();
@@ -478,7 +485,9 @@ export default function CheckoutPage() {
               (o) => o.id === b.bump_offering_id
             ),
           }))
-          .filter((b) => b.offeringDetail);
+          // The same rule the server prices by (_shared/freeEnrolment.ts):
+          // an add-on must itself be on sale and priced.
+          .filter((b) => bumpAllowed(b.offeringDetail, b.bump_price_override_inr));
         setBumps(enriched);
       }
 
@@ -983,6 +992,10 @@ export default function CheckoutPage() {
               guest_email: guestEmail.trim(),
               guest_phone: guestPhone.trim(),
               coupon_code: appliedCoupon?.code ?? null,
+              // Answers to the offering's own questions (custom fields).
+              custom_field_values: customFieldValues,
+              // Add-ons (bumps): guests can tick them too; the server prices them.
+              bump_ids: isStaged ? [] : Array.from(selectedBumps).sort(),
               reuse_token: reuseToken,
               // Top-level utm_* are what the deployed function has always
               // read; `attribution` carries the full set for the new one.
@@ -1126,6 +1139,40 @@ export default function CheckoutPage() {
     );
   }
 
+  // Not sold at a checkout (offerings.access, migration 20261106120000): say so
+  // up front instead of showing Pay and refusing after the tap. Staged cohort
+  // stages (an application's own payment) are unaffected.
+  const access = (offering as { access?: string | null }).access ?? null;
+  const tallyUrl = ((offering as { tally_form_url?: string | null }).tally_form_url ?? "").trim();
+  const notSoldHere = !isStaged && (
+    access === "team" ||
+    (access === "apply" && (offering as { payment_mode?: string }).payment_mode !== "staged") ||
+    (!user && (offering as { payment_mode?: string }).payment_mode === "staged")
+  );
+  if (notSoldHere) {
+    const byApplication = access === "apply" || (offering as { payment_mode?: string }).payment_mode === "staged";
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center px-4 py-12">
+        <div className="co-closed w-full max-w-[480px] rounded-2xl border border-border bg-surface p-6 space-y-3 text-center">
+          <h1 className="text-lg font-semibold text-foreground">{offering.title}</h1>
+          <p className="text-sm text-muted-foreground">
+            {byApplication
+              ? "This programme is joined by application. Apply first; our team takes it from there."
+              : "This isn't sold here. If you've already bought it, it's in My learning."}
+          </p>
+          <div className="flex flex-col gap-2 pt-1">
+            {byApplication && tallyUrl && /^https?:\/\//i.test(tallyUrl) && (
+              <Button asChild><a href={tallyUrl}>Apply</a></Button>
+            )}
+            <Button variant="outline" onClick={() => navigate(offering.slug ? `/p/${offering.slug}` : "/home")}>
+              {offering.slug ? "See the programme" : "Back to Home"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const hasMrp =
     !isMasterclass &&
     (offering as any).mrp_inr &&
@@ -1139,6 +1186,12 @@ export default function CheckoutPage() {
   // as the "what you're buying" preview, with a safe fallback if none exists.
   const primaryCourseId = linkedCourses[0]?.course_id ?? null;
   const trustPanelCourseTitle = (linkedCourses[0]?.courses as any)?.title ?? offering.title;
+  const ownBullets = Array.isArray(offering.checkout_bullets)
+    ? (offering.checkout_bullets as unknown[]).filter((b): b is string => typeof b === "string" && b.trim() !== "")
+    : [];
+  const trustPanelIncluded = ownBullets.length
+    ? ownBullets
+    : linkedCourses.map((lc) => (lc.courses as { title?: string } | null)?.title).filter((t): t is string => !!t);
   const trustPanelThumb = (linkedCourses[0]?.courses as any)?.thumbnail_url ?? null;
 
   // Inline guest-field validity (mirrors useGuestCheckout.validateGuest, surfaced
@@ -1193,8 +1246,19 @@ export default function CheckoutPage() {
             {isStaged && stagedLabel && (
               <Badge variant="secondary" className="mb-2">{stagedLabel}</Badge>
             )}
+            {/* Template block 1: the cover (image or video), set in the
+                offering editor's "Checkout page" tab. */}
+            {!isStaged && offering.checkout_cover_url && (
+              <div className="co-cover mb-4 overflow-hidden rounded-xl bg-surface-2 aspect-video">
+                {isVideoUrl(offering.checkout_cover_url) ? (
+                  <video src={offering.checkout_cover_url} className="h-full w-full object-cover" autoPlay muted loop playsInline aria-hidden />
+                ) : (
+                  <img src={offering.checkout_cover_url} alt="" decoding="async" className="h-full w-full object-cover" />
+                )}
+              </div>
+            )}
             <div className="flex items-start gap-3 sm:gap-4">
-              {(offering.thumbnail_url || offering.banner_url) && (
+              {!(!isStaged && offering.checkout_cover_url) && (offering.thumbnail_url || offering.banner_url) && (
                 <img
                   src={offering.thumbnail_url || offering.banner_url || ""}
                   alt=""
@@ -1210,6 +1274,9 @@ export default function CheckoutPage() {
                   <p className="text-sm text-muted-foreground mt-0.5">
                     with {offering.instructor_name}
                   </p>
+                )}
+                {!isStaged && offering.checkout_when && (
+                  <p className="co-when text-sm text-foreground mt-1">{offering.checkout_when}</p>
                 )}
               </div>
             </div>
@@ -1777,6 +1844,10 @@ export default function CheckoutPage() {
           the confirmation/balance flow focused. */}
       {!isStaged && (
         <TrustPanel
+          // "What's included": the offering's own list, else the courses it
+          // unlocks. It used to be one fixed list on every checkout
+          // ("certificate", "community"…) even where that wasn't true.
+          included={trustPanelIncluded}
           courseId={primaryCourseId}
           courseTitle={trustPanelCourseTitle}
           courseThumbnailUrl={trustPanelThumb}

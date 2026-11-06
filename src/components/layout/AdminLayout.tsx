@@ -54,8 +54,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Content",
     items: [
-      { label: "Courses", icon: BookOpen, path: "/admin/courses" },
       { label: "Offerings", icon: Package, path: "/admin/offerings" },
+      { label: "Courses", icon: BookOpen, path: "/admin/courses" },
     ],
   },
   {

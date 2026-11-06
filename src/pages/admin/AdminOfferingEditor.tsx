@@ -1,5 +1,11 @@
+import { OfferingPreview } from "@/components/admin/offering-editor/OfferingPreview";
+import { refreshStorefront } from "@/lib/storefrontCache";
+import { CheckoutPageTab, type Question } from "@/components/admin/offering-editor/CheckoutPageTab";
+import { EMPTY_EXPLORE, ExploreFields, loadExplore, saveExplore, type ExploreState } from "@/components/admin/offering-editor/ExploreFields";
+import { pageReadiness } from "@/lib/catalogue";
+import { ACCESS, ACCESS_ORDER, FORMAT, OFFERING_STATUS } from "@/lib/catalogue";
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +24,6 @@ import PublicPageFields from "@/components/admin/offering-editor/PublicPageField
 import ThankYouFields from "@/components/admin/offering-editor/ThankYouFields";
 import TrackingFields from "@/components/admin/offering-editor/TrackingFields";
 import StudentsTab from "@/components/admin/offering-editor/StudentsTab";
-import CurriculumTab from "@/components/admin/offering-editor/CurriculumTab";
 import AccessTab from "@/components/admin/offering-editor/AccessTab";
 
 /* ────────────────────────────────────────────────── */
@@ -60,6 +65,9 @@ const EMPTY_FORM = {
   gst_rate: 0,
   validity_days: "",
   is_public: false,
+  // How people get it (offerings.access) and its format (product_tier)
+  access: "buy",
+  product_tier: "masterclass",
   // Public Page
   subtitle: "",
   banner_url: "",
@@ -69,9 +77,9 @@ const EMPTY_FORM = {
   highlights: "[]",
   // Thank You Page
   thankyou_thumbnail_url: "",
-  thankyou_headline: "Payment Successful!",
+  thankyou_headline: "",
   thankyou_body: "",
-  thankyou_cta_label: "Go to Dashboard",
+  thankyou_cta_label: "",
   thankyou_cta_url: "",
   thankyou_auto_redirect: true,
   thankyou_redirect_seconds: 10,
@@ -94,6 +102,9 @@ const EMPTY_FORM = {
   // Checkout Social Proof
   checkout_testimonials: "[]",
   checkout_bullets: "[]",
+  checkout_cover_url: "",
+  checkout_when: "",
+  refund_policy_days: "",
   checkout_guarantee_text: "",
   // Coupon Display
   show_coupon_on_page: false,
@@ -103,6 +114,8 @@ const EMPTY_FORM = {
 /* ────────────────────────────────────────────────── */
 /*  Component                                         */
 /* ────────────────────────────────────────────────── */
+type Section = "basics" | "checkout" | "after" | "explore" | "tracking" | "applications" | "students";
+
 const AdminOfferingEditor = () => {
   const { offeringId } = useParams();
   const isNew = !offeringId || offeringId === "new";
@@ -119,6 +132,17 @@ const AdminOfferingEditor = () => {
   const [allOfferingsForUpsell, setAllOfferingsForUpsell] = useState<OfferingForUpsell[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  /** "Show on Explore" (this offering's row in pages). */
+  const [explore, setExplore] = useState<ExploreState>(EMPTY_EXPLORE);
+  /** Parts that failed to load. Saving must never treat "couldn't read" as
+   *  "empty": that would unlink every course (students lose access), wipe the
+   *  add-ons or delete the checkout questions. */
+  const [loadFailed, setLoadFailed] = useState<Set<"offering" | "courses" | "bumps" | "upsells" | "questions">>(new Set());
+  /** Which editor section is open; the preview follows it. */
+  const [section, setSection] = useState<Section>("basics");
+  /** Questions asked on the checkout (custom_field_definitions). */
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [bumpChoices, setBumpChoices] = useState<{ id: string; title: string; price_inr: number | string | null; status: string; access: string }[]>([]);
 
   /* ── Helpers ── */
   const f = (key: keyof typeof EMPTY_FORM, value: any) =>
@@ -130,10 +154,20 @@ const AdminOfferingEditor = () => {
       setLoading(true);
       const [coursesRes, offsRes] = await Promise.all([
         supabase.from("courses").select("id, title").order("title"),
-        supabase.from("offerings").select("id, title, price_inr").order("title"),
+        supabase.from("offerings").select("id, title, price_inr, status, access").order("title"),
       ]);
       setAllCourses(coursesRes.data || []);
       setAllOfferingsForUpsell(offsRes.data || []);
+      setBumpChoices((offsRes.data || []) as typeof bumpChoices);
+      if (!isNew && offeringId) {
+        const [ex, qs] = await Promise.all([
+          loadExplore(offeringId),
+          supabase.from("custom_field_definitions").select("id, label, is_required, sort_order").eq("offering_id", offeringId).order("sort_order"),
+        ]);
+        setExplore(ex);
+        if (qs.error) setLoadFailed((prev) => new Set(prev).add("questions"));
+        setQuestions((qs.data ?? []).map((q) => ({ id: q.id, label: q.label, is_required: !!q.is_required })));
+      }
 
       if (!isNew && offeringId) {
         const [offeringRes, ocsRes, upsellsRes, bumpsRes] = await Promise.all([
@@ -146,6 +180,13 @@ const AdminOfferingEditor = () => {
             .order("sort_order"),
           supabase.from("offering_bumps").select("id, bump_offering_id, headline, bump_price_override_inr, sort_order").eq("parent_offering_id", offeringId).order("sort_order"),
         ]);
+
+        const failed = new Set<"offering" | "courses" | "bumps" | "upsells" | "questions">();
+        if (offeringRes.error || !offeringRes.data) failed.add("offering");
+        if (ocsRes.error) failed.add("courses");
+        if (bumpsRes.error) failed.add("bumps");
+        if (upsellsRes.error) failed.add("upsells");
+        if (failed.size) setLoadFailed((prev) => new Set([...prev, ...failed]));
 
         if (offeringRes.data) {
           const d = offeringRes.data as any;
@@ -162,6 +203,8 @@ const AdminOfferingEditor = () => {
             gst_rate: d.gst_rate ?? 0,
             validity_days: d.validity_days?.toString() || "",
             is_public: d.is_public ?? false,
+            access: d.access || "buy",
+            product_tier: d.product_tier || "other",
             subtitle: d.subtitle || "",
             banner_url: d.banner_url || "",
             instructor_name: d.instructor_name || "",
@@ -169,9 +212,10 @@ const AdminOfferingEditor = () => {
             instructor_avatar_url: d.instructor_avatar_url || "",
             highlights: d.highlights ? JSON.stringify(d.highlights) : "[]",
             thankyou_thumbnail_url: d.thankyou_thumbnail_url || "",
-            thankyou_headline: d.thankyou_headline || "Payment Successful!",
+            // The old editor saved its placeholder wording; treat it as empty.
+            thankyou_headline: d.thankyou_headline && d.thankyou_headline !== "Payment Successful!" ? d.thankyou_headline : "",
             thankyou_body: d.thankyou_body || "",
-            thankyou_cta_label: d.thankyou_cta_label || "Go to Dashboard",
+            thankyou_cta_label: d.thankyou_cta_label && d.thankyou_cta_label !== "Go to Dashboard" ? d.thankyou_cta_label : "",
             thankyou_cta_url: d.thankyou_cta_url || "",
             thankyou_auto_redirect: d.thankyou_auto_redirect ?? true,
             thankyou_redirect_seconds: d.thankyou_redirect_seconds ?? 10,
@@ -191,6 +235,9 @@ const AdminOfferingEditor = () => {
             thankyou_show_calendly: d.thankyou_show_calendly ?? false,
             checkout_testimonials: d.checkout_testimonials ? JSON.stringify(d.checkout_testimonials) : "[]",
             checkout_bullets: d.checkout_bullets ? JSON.stringify(d.checkout_bullets) : "[]",
+            checkout_cover_url: d.checkout_cover_url || "",
+            checkout_when: d.checkout_when || "",
+            refund_policy_days: d.refund_policy_days?.toString() || "",
             checkout_guarantee_text: d.checkout_guarantee_text || "",
             show_coupon_on_page: d.show_coupon_on_page ?? false,
             page_coupon_code: d.page_coupon_code || "",
@@ -220,6 +267,10 @@ const AdminOfferingEditor = () => {
 
   /* ── Save ── */
   const handleSave = async () => {
+    if (loadFailed.has("offering")) {
+      toast({ title: "Not saved", description: "This offering didn't load properly, so saving could overwrite it. Reload the page and try again.", variant: "destructive" });
+      return;
+    }
     if (!form.title.trim()) {
       toast({ title: "Title is required", variant: "destructive" });
       return;
@@ -245,6 +296,26 @@ const AdminOfferingEditor = () => {
     // Prevent publishing with no linked courses
     if (form.status === "active" && linkedCourseIds.length === 0) {
       toast({ title: "Cannot publish offering", description: "At least one course must be linked before setting status to Active.", variant: "destructive" });
+      return;
+    }
+
+    // "Show on Explore" only when the Ready checks pass.
+    if (explore.show !== "off") {
+      const checks = pageReadiness(
+        { button_offering_id: "this", card_image_url: explore.cardImage || null },
+        { status: form.status, access: form.access, price_inr: form.price_inr, product_tier: form.product_tier, tally_form_url: form.tally_form_url, payment_mode: form.payment_mode, thumbnail_url: form.thumbnail_url || form.checkout_cover_url, has_landing: false },
+        linkedCourseIds.length,
+      ).slice(1);
+      const missing = checks.filter((c) => !c.ok).map((c) => c.label);
+      if (missing.length) {
+        toast({ title: "Not ready to show on Explore", description: `${missing.join(". ")}. Set "Show it" to No to save now.`, variant: "destructive" });
+        return;
+      }
+    }
+
+    // A "Buy" offering that is on sale needs a price: ₹0 is not "free" any more.
+    if (form.status === "active" && form.access === "buy" && !(Number(form.price_inr) > 0)) {
+      toast({ title: "Add a price", description: "A Buy offering needs a price above ₹0. To give it away choose Free; for batches and packs the team adds people to, choose Team adds.", variant: "destructive" });
       return;
     }
 
@@ -345,7 +416,10 @@ const AdminOfferingEditor = () => {
       gst_mode: form.gst_mode,
       gst_rate: form.gst_rate || 0,
       validity_days: form.validity_days ? Number(form.validity_days) : null,
-      is_public: form.is_public,
+      // is_public is no longer set here: it follows the pages that sell this
+      // offering (trigger pages_sync_is_public, migration 20261106120000).
+      access: form.access,
+      product_tier: form.product_tier,
       // Public page
       subtitle: form.subtitle || null,
       banner_url: form.banner_url || null,
@@ -355,9 +429,10 @@ const AdminOfferingEditor = () => {
       highlights: parsedHighlights,
       // Thank you page
       thankyou_thumbnail_url: form.thankyou_thumbnail_url || null,
-      thankyou_headline: form.thankyou_headline || "Payment Successful!",
+      // Empty = the thank-you page's own wording ("You're in.", "Start lesson 1").
+      thankyou_headline: form.thankyou_headline.trim() || null,
       thankyou_body: form.thankyou_body || null,
-      thankyou_cta_label: form.thankyou_cta_label || "Go to Dashboard",
+      thankyou_cta_label: form.thankyou_cta_label.trim() || null,
       thankyou_cta_url: form.thankyou_cta_url || null,
       thankyou_auto_redirect: form.thankyou_auto_redirect,
       thankyou_redirect_seconds: redirectSec,
@@ -379,7 +454,10 @@ const AdminOfferingEditor = () => {
       thankyou_show_calendly: form.thankyou_show_calendly,
       // Checkout social proof
       checkout_testimonials: (() => { try { return JSON.parse(form.checkout_testimonials); } catch { return []; } })(),
-      checkout_bullets: (() => { try { return JSON.parse(form.checkout_bullets); } catch { return []; } })(),
+      checkout_bullets: (() => { try { return (JSON.parse(form.checkout_bullets) as unknown[]).filter((b) => typeof b === "string" && b.trim()); } catch { return []; } })(),
+      checkout_cover_url: form.checkout_cover_url.trim() || null,
+      checkout_when: form.checkout_when.trim() || null,
+      refund_policy_days: form.refund_policy_days ? Number(form.refund_policy_days) : null,
       checkout_guarantee_text: form.checkout_guarantee_text || null,
       show_coupon_on_page: form.show_coupon_on_page,
       page_coupon_code: form.page_coupon_code || null,
@@ -404,13 +482,25 @@ const AdminOfferingEditor = () => {
       offId = data.id;
     }
 
-    // Sync offering_courses
+    // What it unlocks (courses) and its checkout add-ons (bumps), in ONE
+    // all-or-nothing database call (admin_set_offering_links). It used to
+    // delete every link and re-add them with errors ignored, so a failure
+    // halfway left the offering with no courses while it said "saved".
     if (offId) {
-      await supabase.from("offering_courses").delete().eq("offering_id", offId);
+      const { error: linkErr } = await supabase.rpc("admin_set_offering_links", {
+        p_offering_id: offId,
+        // null = "leave as it is" when that part failed to load.
+        p_course_ids: loadFailed.has("courses") ? null : linkedCourseIds,
+        p_bumps: loadFailed.has("bumps") ? null : bumps
+          .filter((b) => b.bump_offering_id && b.bump_offering_id !== offId)
+          .map((b) => ({ bump_offering_id: b.bump_offering_id, headline: b.headline || "", price_override: b.bump_price_override_inr || "" })),
+      });
+      if (linkErr) {
+        toast({ title: "Courses and add-ons not saved", description: `The offering's details were saved, but its courses and add-ons were left exactly as they were. ${linkErr.message}`, variant: "destructive" });
+        setSaving(false);
+        return;
+      }
       if (linkedCourseIds.length > 0) {
-        await supabase.from("offering_courses").insert(
-          linkedCourseIds.map((cid) => ({ offering_id: offId!, course_id: cid }))
-        );
 
         // Auto-set primary_offering_id on courses that don't have one
         const { data: coursesWithoutPrimary } = await supabase
@@ -428,9 +518,9 @@ const AdminOfferingEditor = () => {
         }
       }
 
-      // Sync upsells
-      await supabase.from("offering_upsells").delete().eq("parent_offering_id", offId);
-      if (upsells.length > 0) {
+      // Sync upsells (skipped if they didn't load)
+      if (!loadFailed.has("upsells")) await supabase.from("offering_upsells").delete().eq("parent_offering_id", offId);
+      if (!loadFailed.has("upsells") && upsells.length > 0) {
         await supabase.from("offering_upsells").insert(
           upsells.map((u, i) => ({
             parent_offering_id: offId!,
@@ -442,18 +532,25 @@ const AdminOfferingEditor = () => {
         );
       }
 
-      // Sync bumps
-      await supabase.from("offering_bumps").delete().eq("parent_offering_id", offId);
-      if (bumps.length > 0) {
-        await supabase.from("offering_bumps").insert(
-          bumps.map((b, i) => ({
-            parent_offering_id: offId!,
-            bump_offering_id: b.bump_offering_id,
-            headline: b.headline || "",
-            bump_price_override_inr: b.bump_price_override_inr ? Number(b.bump_price_override_inr) : null,
-            sort_order: i,
-          }))
-        );
+      // Show on Explore
+      const exploreErr = await saveExplore(offId, slug, form.title, explore);
+      if (exploreErr) toast({ title: "Explore setting not saved", description: exploreErr, variant: "destructive" });
+
+      // Questions on the checkout: update kept ones, add new ones, remove the rest
+      // (left alone if they didn't load).
+      if (!loadFailed.has("questions")) {
+      const keep = questions.filter((q) => q.label.trim());
+      const keptIds = keep.filter((q) => q.id).map((q) => q.id as string);
+      const { data: existingQs } = await supabase.from("custom_field_definitions").select("id").eq("offering_id", offId);
+      const dropIds = (existingQs ?? []).map((q) => q.id).filter((id) => !keptIds.includes(id));
+      if (dropIds.length) await supabase.from("custom_field_definitions").delete().in("id", dropIds);
+      for (const [i, q] of keep.entries()) {
+        const row = { offering_id: offId, label: q.label.trim(), is_required: q.is_required, field_type: "text", sort_order: i };
+        const { error: qErr } = q.id
+          ? await supabase.from("custom_field_definitions").update(row).eq("id", q.id)
+          : await supabase.from("custom_field_definitions").insert(row);
+        if (qErr) { toast({ title: "A checkout question wasn't saved", description: qErr.message, variant: "destructive" }); break; }
+      }
       }
     }
 
@@ -468,6 +565,8 @@ const AdminOfferingEditor = () => {
       });
     }
 
+    // Home and Explore in this same app re-read the shop window next time.
+    refreshStorefront();
     toast({ title: "Offering saved" });
     setSaving(false);
 
@@ -488,6 +587,11 @@ const AdminOfferingEditor = () => {
     );
   }
 
+  const courseTitles = allCourses.filter((c) => linkedCourseIds.includes(c.id)).map((c) => c.title);
+  // Applications, staged payments, Calendly and the WhatsApp group only mean
+  // something for offerings people apply to (live cohorts).
+  const showApplications = form.product_tier === "live_cohort" || form.access === "apply" || form.payment_mode === "staged" || !!form.tally_form_url;
+
   return (
     <>
       <AdminBreadcrumbs items={[
@@ -506,25 +610,28 @@ const AdminOfferingEditor = () => {
         </Button>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="basic" className="w-full">
-        <TabsList className="w-full justify-start bg-secondary/50 mb-6">
-          <TabsTrigger value="basic">Basic Info</TabsTrigger>
-          <TabsTrigger value="public">Public Page</TabsTrigger>
-          <TabsTrigger value="thankyou">Thank You Page</TabsTrigger>
-          <TabsTrigger value="tracking">Tracking & Pixels</TabsTrigger>
-          <TabsTrigger value="checkout">Checkout</TabsTrigger>
-          <TabsTrigger value="cohort">Live Cohort</TabsTrigger>
-          {/* Read-only views. Hidden on a brand-new offering, which has no id
-              yet and therefore nothing to report on. */}
+      {loadFailed.size > 0 && (
+        <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          Part of this offering didn't load ({[...loadFailed].join(", ")}). {loadFailed.has("offering") ? "Saving is blocked; reload the page." : "Saving leaves those parts exactly as they are; reload to edit them."}
+        </div>
+      )}
+      {/* Sections on the left, the live preview always beside them (founder,
+          6 Nov 2026: "a visualiser we can keep on"). Every section here does
+          something the buyer or the team sees; nothing is decorative. */}
+      <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="w-full">
+        <TabsList className="w-full justify-start bg-secondary/50 mb-6 flex-wrap h-auto">
+          <TabsTrigger value="basics">Basics</TabsTrigger>
+          <TabsTrigger value="checkout">Checkout page</TabsTrigger>
+          <TabsTrigger value="after">After payment</TabsTrigger>
+          <TabsTrigger value="explore">Explore and sales page</TabsTrigger>
+          <TabsTrigger value="tracking">Tracking</TabsTrigger>
+          {showApplications && <TabsTrigger value="applications">Applications and cohort</TabsTrigger>}
           {!isNew && <TabsTrigger value="students">Students</TabsTrigger>}
-          {!isNew && <TabsTrigger value="curriculum">Curriculum</TabsTrigger>}
         </TabsList>
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 1: BASIC INFO                         */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="basic">
+        <div className={section === "students" ? "" : "grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start"}>
+          <div className="min-w-0">
+            <TabsContent value="basics" className="mt-0">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <div>
               <Label>Title</Label>
@@ -539,7 +646,7 @@ const AdminOfferingEditor = () => {
               }} />
             </div>
             <div>
-              <Label>Slug</Label>
+              <Label>Address (short name in its links)</Label>
               <Input
                 value={form.slug}
                 onChange={(e) => {
@@ -550,38 +657,48 @@ const AdminOfferingEditor = () => {
               />
               {form.slug && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Public URL: /p/{form.slug}
+                  Checkout: /checkout/{form.slug} · Sales page: /p/{form.slug}
                 </p>
               )}
             </div>
-            <div>
-              <Label>Description</Label>
-              <Textarea value={form.description} onChange={(e) => f("description", e.target.value)} rows={3} />
-            </div>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Billing model</Label>
-                <Select value={form.type} onValueChange={(v) => f("type", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="onetime">One-time payment</SelectItem>
-                    <SelectItem value="subscription">Subscription</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Product category (Masterclass / Live Cohort / Workshop) is set on the linked course, not here.
-                </p>
-              </div>
               <div>
                 <Label>Status</Label>
                 <Select value={form.status} onValueChange={(v) => f("status", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
+                    {(["active", "archived", "draft"] as const).map((k) => (
+                      <SelectItem key={k} value={k}>{OFFERING_STATUS[k].label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground mt-1">{OFFERING_STATUS[form.status]?.hint}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Format</Label>
+                <Select value={form.product_tier} onValueChange={(v) => f("product_tier", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(FORMAT).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Decides its row on Explore and Home (masterclass, live cohort, workshop).</p>
+              </div>
+              <div>
+                <Label>How people get it</Label>
+                <Select value={form.access} onValueChange={(v) => f("access", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ACCESS_ORDER.map((k) => (
+                      <SelectItem key={k} value={k}>{ACCESS[k].label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">{ACCESS[form.access]?.hint}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -594,7 +711,7 @@ const AdminOfferingEditor = () => {
                 />
               </div>
               <div>
-                <Label>MRP (INR)</Label>
+                <Label>Struck-through price (INR)</Label>
                 <Input
                   type="number"
                   value={form.mrp_inr}
@@ -604,7 +721,8 @@ const AdminOfferingEditor = () => {
               </div>
             </div>
             <div>
-              <Label>Thumbnail URL</Label>
+              <Label>Picture</Label>
+              <p className="text-xs text-muted-foreground mb-1">Used on its cards, in My learning and on the thank-you page when that has none.</p>
               <Input value={form.thumbnail_url} onChange={(e) => f("thumbnail_url", e.target.value)} />
               {form.thumbnail_url && (
                 <img
@@ -617,13 +735,13 @@ const AdminOfferingEditor = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>GST Mode</Label>
+                <Label>GST</Label>
                 <Select value={form.gst_mode} onValueChange={(v) => f("gst_mode", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="inclusive">Inclusive</SelectItem>
-                    <SelectItem value="exclusive">Exclusive</SelectItem>
+                    <SelectItem value="none">No GST</SelectItem>
+                    <SelectItem value="inclusive">Included in the price</SelectItem>
+                    <SelectItem value="exclusive">Added on top of the price</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -636,33 +754,16 @@ const AdminOfferingEditor = () => {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Validity (days)</Label>
-                <Input
-                  type="number"
-                  value={form.validity_days}
-                  onChange={(e) => f("validity_days", e.target.value)}
-                  placeholder="Leave empty for lifetime"
-                />
-              </div>
-              <div className="flex items-center gap-3 pt-6">
-                <Switch
-                  checked={form.is_public}
-                  onCheckedChange={(checked) => f("is_public", checked)}
-                />
-                <Label>Public (visible at /p/{form.slug || "slug"})</Label>
-              </div>
-            </div>
-
             {/* Linked courses */}
             <div>
-              <Label className="mb-2 block">Linked Courses</Label>
+              <Label className="mb-1 block">Courses inside (what the buyer gets)</Label>
+              <p className="text-xs text-muted-foreground mb-2">Buying this offering opens every course ticked here. One course can be inside many offerings.</p>
               <div className="space-y-2 max-h-48 overflow-y-auto border border-border rounded-lg p-3">
                 {allCourses.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No courses found. Create courses first.</p>
                 ) : (
-                  allCourses.map((c) => (
+                  // Ticked courses first, so what's inside is visible without scrolling.
+                  [...allCourses].sort((a, b) => Number(linkedCourseIds.includes(b.id)) - Number(linkedCourseIds.includes(a.id))).map((c) => (
                     <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
                       <Checkbox
                         checked={linkedCourseIds.includes(c.id)}
@@ -672,113 +773,72 @@ const AdminOfferingEditor = () => {
                           );
                         }}
                       />
-                      {c.title}
+                      <span className="flex-1">{c.title}</span>
+                      {linkedCourseIds.includes(c.id) && (
+                        <Link to={`/admin/courses/${c.id}/curriculum`} className="text-xs underline text-muted-foreground" onClick={(e) => e.stopPropagation()}>Edit lessons</Link>
+                      )}
                     </label>
                   ))
                 )}
               </div>
             </div>
+
           </div>
-        </TabsContent>
+            </TabsContent>
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 2: PUBLIC PAGE                        */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="public">
-          <PublicPageFields form={form} f={f} />
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 3: THANK YOU PAGE                     */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="thankyou">
-          <ThankYouFields form={form} f={f} />
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 4: TRACKING & PIXELS                  */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="tracking">
-          <TrackingFields form={form} f={f} />
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 5: CHECKOUT                             */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="checkout">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-            <p className="text-sm text-muted-foreground">
-              Customize the checkout experience: social proof, guarantees and the page coupon code.
-            </p>
-
-            {/* Checkout Testimonials */}
-            <div>
-              <Label>Checkout Testimonials (JSON)</Label>
-              <Textarea
-                value={form.checkout_testimonials}
-                onChange={(e) => f("checkout_testimonials", e.target.value)}
-                placeholder='[{"name":"John","title":"Student","photo_url":"","quote":"Great course!"}]'
-                rows={5}
+            <TabsContent value="checkout" className="mt-0">
+              <CheckoutPageTab
+                form={form}
+                f={(k, v) => f(k as keyof typeof EMPTY_FORM, v)}
+                offeringId={isNew ? undefined : offeringId}
+                bumps={bumps}
+                setBumps={setBumps}
+                bumpChoices={bumpChoices}
+                questions={questions}
+                setQuestions={setQuestions}
+                courseTitles={courseTitles}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                JSON array of {`{name, title, photo_url, quote}`} objects shown on checkout
-              </p>
-            </div>
+            </TabsContent>
 
-            {/* Value Proposition Bullets */}
-            <div>
-              <Label>Value Proposition Bullets (JSON)</Label>
-              <Textarea
-                value={form.checkout_bullets}
-                onChange={(e) => f("checkout_bullets", e.target.value)}
-                placeholder='["Lifetime access","Certificate included","Money-back guarantee"]'
-                rows={3}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                JSON array of strings displayed as bullet points on the checkout page
-              </p>
-            </div>
+            <TabsContent value="after" className="mt-0 space-y-3">
+              <p className="text-sm text-muted-foreground">What the buyer sees right after paying. Leave a box empty to use the app's own wording (shown in the preview).</p>
+              <ThankYouFields form={form} f={f} />
+            </TabsContent>
 
-            {/* Guarantee Badge */}
-            <div>
-              <Label>Guarantee Badge Text</Label>
-              <Input
-                value={form.checkout_guarantee_text}
-                onChange={(e) => f("checkout_guarantee_text", e.target.value)}
-                placeholder="e.g., 7-day money-back guarantee"
-              />
-            </div>
-
-            {/* Coupon Display */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={form.show_coupon_on_page}
-                  onCheckedChange={(checked) => f("show_coupon_on_page", checked)}
-                />
-                <Label>Show coupon on public page</Label>
-              </div>
-              {form.show_coupon_on_page && (
+            <TabsContent value="explore" className="mt-0 space-y-6">
+            <ExploreFields
+              value={explore}
+              onChange={setExplore}
+              courseCount={linkedCourseIds.length}
+              offering={{ status: form.status, access: form.access, price_inr: form.price_inr, product_tier: form.product_tier, tally_form_url: form.tally_form_url, payment_mode: form.payment_mode, thumbnail_url: form.thumbnail_url || form.checkout_cover_url, has_landing: false }}
+            />
+              <div className="space-y-3">
                 <div>
-                  <Label>Page Coupon Code</Label>
-                  <Input
-                    value={form.page_coupon_code}
-                    onChange={(e) => f("page_coupon_code", e.target.value)}
-                    placeholder="e.g., EARLYBIRD"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    This coupon code will be displayed on the public offering page
+                  <p className="text-sm font-medium">Sales page (/p/{form.slug || "…"})</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    The longer page people can read before buying. Masterclasses and cohorts with a designed page use that design; these fields fill the card's second line and any page without a design.
                   </p>
                 </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
+                <PublicPageFields form={form} f={f} />
+                <div className="rounded-xl border border-border p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Switch checked={form.show_coupon_on_page} onCheckedChange={(v) => f("show_coupon_on_page", v)} />
+                    <Label>Show a coupon code on the sales page</Label>
+                  </div>
+                  {form.show_coupon_on_page && (
+                    <Input value={form.page_coupon_code} onChange={(e) => f("page_coupon_code", e.target.value.toUpperCase())} placeholder="EARLYBIRD" className="max-w-[240px]" />
+                  )}
+                </div>
+              </div>
+            </TabsContent>
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 6: LIVE COHORT                        */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="cohort">
+            <TabsContent value="tracking" className="mt-0 space-y-3">
+              <p className="text-sm text-muted-foreground">Extra tracking for this offering only, on its sales, checkout and thank-you pages. LevelUp's own Meta pixel always runs.</p>
+              <TrackingFields form={form} f={f} />
+            </TabsContent>
+
+            {showApplications && (
+              <TabsContent value="applications" className="mt-0">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <p className="text-sm text-muted-foreground">
               Settings for live cohort offerings: staged payments, external integrations, and completion criteria.
@@ -923,31 +983,37 @@ const AdminOfferingEditor = () => {
               </div>
             </div>
           </div>
-        </TabsContent>
+              </TabsContent>
+            )}
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 8-9: STUDENTS AND CURRICULUM          */}
-        {/* ══════════════════════════════════════════ */}
-        {!isNew && offeringId && (
-          <>
-            {/* One place for people: who has it, add or import, and below it who
-                bought it but can't open it yet (founder, 2 Nov 2026: Students and
-                Access were two tabs about the same people). */}
-            <TabsContent value="students" className="space-y-6">
-              <StudentsTab offeringId={offeringId} />
-              <section className="space-y-3" aria-labelledby="accessCheckH">
-                <div>
-                  <h3 id="accessCheckH" className="text-sm font-semibold">Access check</h3>
-                  <p className="text-xs text-muted-foreground">Everyone owed this product, including people who bought it and haven't signed in yet.</p>
-                </div>
-                <AccessTab offeringId={offeringId} />
-              </section>
-            </TabsContent>
-            <TabsContent value="curriculum">
-              <CurriculumTab offeringId={offeringId} />
-            </TabsContent>
-          </>
-        )}
+            {!isNew && offeringId && (
+              <TabsContent value="students" className="mt-0 space-y-6">
+                <StudentsTab offeringId={offeringId} />
+                <section className="space-y-3" aria-labelledby="accessCheckH">
+                  <div>
+                    <h3 id="accessCheckH" className="text-sm font-semibold">Access check</h3>
+                    <p className="text-xs text-muted-foreground">Everyone owed this product, including people who bought it and haven't signed in yet.</p>
+                  </div>
+                  <AccessTab offeringId={offeringId} />
+                </section>
+              </TabsContent>
+            )}
+          </div>
+
+          {section !== "students" && (
+            <aside className="hidden xl:block xl:sticky xl:top-4">
+              <OfferingPreview
+                follow={section === "after" ? "thankyou" : section === "explore" ? "card" : "checkout"}
+                form={form}
+                explore={explore}
+                courseTitles={courseTitles}
+                bumps={bumps}
+                bumpChoices={bumpChoices}
+                questions={questions}
+              />
+            </aside>
+          )}
+        </div>
       </Tabs>
     </>
   );

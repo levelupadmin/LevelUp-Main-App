@@ -1,3 +1,4 @@
+import { checkoutRefusal } from "../_shared/freeEnrolment.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { couponDiscountInr, couponInvalidReason } from "../_shared/pricing.ts";
@@ -50,10 +51,13 @@ async function couponAvailability(req: Request, offeringId: unknown): Promise<Re
 
   const { data: offering } = await admin
     .from("offerings")
-    .select("id, status, is_public")
+    .select("id, status, access, payment_mode")
     .eq("id", offeringId)
     .maybeSingle();
-  if (!offering || offering.status !== "active" || !offering.is_public) {
+  // Whether an offering is on sale follows offerings.access (migration
+  // 20261106120000), not is_public (which now only says "shown on Explore"):
+  // an offering sold on its checkout link alone still takes coupons.
+  if (!offering || offering.status !== "active" || checkoutRefusal(offering)) {
     return jsonRes({ available: false });
   }
 
@@ -115,12 +119,12 @@ Deno.serve(async (req) => {
 
     const { data: offering, error: offErr } = await admin
       .from("offerings")
-      .select("id, price_inr, status, is_public")
+      .select("id, price_inr, status, access, payment_mode")
       .eq("id", offering_id)
       .maybeSingle();
 
     if (offErr || !offering) return jsonRes({ valid: false, error: "Offering not found" }, 404);
-    if (offering.status !== "active" || !offering.is_public) {
+    if (offering.status !== "active" || checkoutRefusal(offering)) {
       return jsonRes({ valid: false, error: "Offering not available" }, 400);
     }
 

@@ -115,9 +115,13 @@ export const BRAND_LIGHT = "VITE_BRAND_LIGHT";
 
 /**
  * Checkout, not signed in: verify the buyer with one code, then pay
- * (CheckoutVerify). Default off, so live keeps today's guest form (name, email,
- * phone, pay, then one code on /login) until a real purchase has been tried
- * with it on. Surface only: the server rules are the same either way.
+ * (CheckoutVerify).
+ *
+ * DO NOT TURN THIS ON. It was on in production from 2 to 4 Nov 2026 and cut
+ * Razorpay opens from ~15 to ~4 a day and paid masterclass orders by ~40%; the
+ * founder ruled guest checkout pay-first (CLAUDE.md lessons, ARCHITECTURE.md
+ * "How money flows"). It stays only so old code paths compile; the variable is
+ * deleted in Vercel Production and must stay deleted.
  */
 export const CHECKOUT_VERIFY = "VITE_CHECKOUT_VERIFY";
 

@@ -1,3 +1,4 @@
+import { OFFERING_STATUS } from "@/lib/catalogue";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -442,9 +443,10 @@ const AdminCourseEditor = () => {
 
         {/* Linked Offerings (bidirectional) */}
         <div className="border border-border rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-semibold">Linked Offerings</h3>
+          <h3 className="text-sm font-semibold">Unlocked by (offerings)</h3>
           <p className="text-xs text-muted-foreground">
-            Select which offerings grant access to this course. This is the same link you see from the Offerings editor, managed from both sides.
+            Students reach this course through these offerings. It's the same link as an offering's "Linked courses", managed from either side.
+            Selling = its checkout works; Closed = no new buyers, students keep access.
           </p>
           <div className="space-y-2 max-h-48 overflow-y-auto border border-border rounded-lg p-3">
             {allOfferings.length === 0 ? (
@@ -478,7 +480,7 @@ const AdminCourseEditor = () => {
                     o.status === "active"
                       ? "bg-[hsl(var(--accent-emerald)/0.15)] text-[hsl(var(--accent-emerald))]"
                       : "bg-secondary text-muted-foreground"
-                  }`}>{o.status}</span>
+                  }`}>{OFFERING_STATUS[o.status]?.label ?? o.status}</span>
                 </label>
               ))
             )}

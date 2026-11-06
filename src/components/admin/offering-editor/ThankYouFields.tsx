@@ -13,15 +13,12 @@ interface Props {
 export default function ThankYouFields({ form, f }: Props) {
   return (
     <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-      <p className="text-sm text-muted-foreground">
-        Customize what buyers see after a successful payment. Leave fields empty to use defaults.
-      </p>
       <div>
-        <Label>Thank You Banner / Thumbnail URL</Label>
+        <Label>Picture (optional)</Label>
         <Input
           value={form.thankyou_thumbnail_url}
           onChange={(e) => f("thankyou_thumbnail_url", e.target.value)}
-          placeholder="Hero image shown on the thank you page"
+          placeholder="https://… (else the offering's picture)"
         />
         {form.thankyou_thumbnail_url && (
           <img
@@ -37,11 +34,11 @@ export default function ThankYouFields({ form, f }: Props) {
         <Input
           value={form.thankyou_headline}
           onChange={(e) => f("thankyou_headline", e.target.value)}
-          placeholder="Payment Successful!"
+          placeholder="You're in."
         />
       </div>
       <div>
-        <Label>Body Text</Label>
+        <Label>Message</Label>
         <Textarea
           value={form.thankyou_body}
           onChange={(e) => f("thankyou_body", e.target.value)}
@@ -51,25 +48,25 @@ export default function ThankYouFields({ form, f }: Props) {
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label>CTA Button Label</Label>
+          <Label>Button text</Label>
           <Input
             value={form.thankyou_cta_label}
             onChange={(e) => f("thankyou_cta_label", e.target.value)}
-            placeholder="Go to Dashboard"
+            placeholder="Start lesson 1"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Text shown on the main button (e.g., "Join WhatsApp Group", "Go to Dashboard")
+            e.g. "Join the WhatsApp group". Empty = "Start lesson 1".
           </p>
         </div>
         <div>
-          <Label>CTA Button URL</Label>
+          <Label>Button link (optional)</Label>
           <Input
             value={form.thankyou_cta_url}
             onChange={(e) => f("thankyou_cta_url", e.target.value)}
-            placeholder="Leave empty for dashboard"
+            placeholder="Empty = opens the first lesson"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Where the button goes. Leave empty to go to the student dashboard. Can be a full URL (e.g., WhatsApp group link).
+            Empty = the first lesson. Can be any link, e.g. a WhatsApp group.
           </p>
         </div>
       </div>
@@ -80,12 +77,12 @@ export default function ThankYouFields({ form, f }: Props) {
             onCheckedChange={(checked) => f("thankyou_auto_redirect", checked)}
           />
           <div>
-            <Label>Auto-redirect after countdown</Label>
+            <Label>Open the button link by itself after a countdown</Label>
             <p className="text-xs text-muted-foreground">Automatically redirect logged-in users after the timer</p>
           </div>
         </div>
         <div>
-          <Label>Countdown seconds</Label>
+          <Label>Seconds</Label>
           <Input
             type="number"
             min={0}

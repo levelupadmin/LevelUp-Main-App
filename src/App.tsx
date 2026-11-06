@@ -60,7 +60,7 @@ const LoginEntry = ({ legacy }: { legacy: ReactNode }) => {
 // Lazy-loaded student pages
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
 const ChapterViewer = lazy(() => import("@/pages/ChapterViewer"));
-const CheckoutPage = lazy(() => import("@/pages/CheckoutPage"));
+const CheckoutPage = lazy(() => import("@/pages/CheckoutRoute"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const MyCoursesPage = lazy(() => import("@/pages/MyCoursesPage"));
 const Studio = lazy(() => import("@/pages/Studio"));

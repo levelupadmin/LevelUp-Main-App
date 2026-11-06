@@ -138,9 +138,9 @@ export function ProductCard({ x, showTag }: { x: CatalogItem; showTag?: boolean 
   }
   const blurb = o.highlight ?? (t !== "live_cohort" ? o.subtitle : null);
   return (
-    <button className="pd" type="button" onClick={() => { void tapTick(); navigate(`/p/${o.slug}`); }}>
+    <button className="pd" type="button" onClick={() => { void tapTick(); navigate(x.href ?? `/p/${o.slug}`); }}>
       <span className="pd-art">
-        {(o.thumbnail_url || t === "workshop") && <img src={o.thumbnail_url || media(WORKSHOP_ART)} alt="" loading="lazy" />}
+        {(x.page?.card_image_url || o.thumbnail_url || t === "workshop") && <img src={x.page?.card_image_url || o.thumbnail_url || media(WORKSHOP_ART)} alt="" loading="lazy" />}
         {showTag && <span className="tag">{TIER_WORD[t]}</span>}
         {x.owned && <span className="tag tag--yours">Yours</span>}
       </span>

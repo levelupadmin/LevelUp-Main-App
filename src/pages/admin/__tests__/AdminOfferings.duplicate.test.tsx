@@ -44,7 +44,9 @@ describe("AdminOfferings — duplicate", () => {
     fireEvent.change(title, { target: { value: "BFP — Batch 24" } });
     fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
 
-    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    // The list also asks admin_catalogue_counts for student counts on load.
+    const dupCalls = () => rpc.mock.calls.filter((c) => c[0] === "admin_duplicate_offering");
+    await waitFor(() => expect(dupCalls()).toHaveLength(1));
     expect(rpc).toHaveBeenCalledWith("admin_duplicate_offering", {
       p_offering_id: "off-1", p_new_title: "BFP — Batch 24", p_copy_curriculum: true,
     });

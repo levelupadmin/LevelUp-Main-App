@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
 
     const { data: offering, error: offErr } = await admin
       .from("offerings")
-      .select("id, title, price_inr, gst_mode, gst_rate, status, payment_mode, product_tier, tally_form_url")
+      .select("id, title, price_inr, gst_mode, gst_rate, status, payment_mode, product_tier, tally_form_url, access")
       .eq("id", offering_id)
       .single();
     if (offErr || !offering) return jsonRes({ error: "Offering not found" }, 404);

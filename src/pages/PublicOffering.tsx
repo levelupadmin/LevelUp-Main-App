@@ -1212,6 +1212,22 @@ export default function PublicOffering() {
     if (!slug) return;
     (async () => {
       try {
+        // /p/<slug> is a PAGE first (pages table, migration 20261106120000):
+        // its button decides which offering this screen sells, so a page can
+        // move to a new batch without changing its address. Without a page
+        // (or on a database without the table) the slug is the offering's own.
+        const { data: page } = await supabase
+          .from("pages")
+          .select("button_offering_id")
+          .eq("slug", slug)
+          .maybeSingle();
+        let byPage = page?.button_offering_id ?? null;
+        // If the page's offering can't be shown (draft, or closed for this
+        // visitor), fall back to the offering with this slug.
+        if (byPage) {
+          const { data: target } = await supabase.from("offerings").select("id").eq("id", byPage).in("status", ["active", "archived"]).maybeSingle();
+          if (!target) byPage = null;
+        }
         const { data, error } = await supabase
           .from("offerings")
           .select(`
@@ -1230,7 +1246,7 @@ export default function PublicOffering() {
               )
             )
           `)
-          .eq("slug", slug)
+          .eq(byPage ? "id" : "slug", byPage ?? slug)
           // 'active' is the normal storefront state. 'archived' is for
           // past programs (e.g. legacy TagMango workshops) where the
           // sale is closed but past enrolees still need access to the

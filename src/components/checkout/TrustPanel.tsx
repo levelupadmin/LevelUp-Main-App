@@ -96,8 +96,8 @@ const TrustPanel = ({
         </div>
       )}
 
-      {/* What's included */}
-      <div>
+      {/* What's included (hidden when there is nothing to list) */}
+      {included.length > 0 && <div>
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3">
           What's included
         </p>
@@ -109,7 +109,7 @@ const TrustPanel = ({
             </li>
           ))}
         </ul>
-      </div>
+      </div>}
 
       {/* What happens next */}
       <div className="bg-[hsl(var(--accent-amber)/0.08)] border border-[hsl(var(--accent-amber)/0.25)] rounded-xl p-4">

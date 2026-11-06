@@ -469,7 +469,11 @@ const ChapterViewer = () => {
           // Prefer active offerings for the canonical back-link; fall
           // back to an archived one if this course only has archived
           // offerings (e.g. legacy TagMango program with no successor).
-          const publicOnes = ((offs ?? []) as any[]).filter((o) => o.is_public !== false);
+          // is_public now follows the Explore pages (migration 20261106120000)
+          // and is false for every closed offering, so a course that only
+          // sits in closed ones falls back to any of them for its back-link.
+          const shown = ((offs ?? []) as any[]).filter((o) => o.is_public !== false);
+          const publicOnes = shown.length ? shown : ((offs ?? []) as any[]);
           const active = publicOnes.find((o) => o.status === "active");
           resolvedSlug = (active ?? publicOnes[0])?.slug ?? null;
           resolvedPrice = (active ?? publicOnes[0])?.price_inr ?? null;

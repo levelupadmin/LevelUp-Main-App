@@ -1,3 +1,6 @@
+import { refreshStorefront } from "@/lib/storefrontCache";
+import { ExploreOrderDialog } from "@/components/admin/ExploreOrderDialog";
+import { ACCESS, OFFERING_STATUS } from "@/lib/catalogue";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,15 +32,21 @@ interface OfferingRow {
   mrp_inr: number | null;
   status: string;
   is_public: boolean | null;
+  access: string;
   course_count: number;
   enrolment_count: number;
+  /** titles of the courses inside */
+  inside: string[];
+  /** "Show on Explore": off / on (row place) / carousel */
+  explore: { show: "off" | "on" | "carousel"; position: number } | null;
 }
 
 const AdminOfferings = () => {
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [orderOpen, setOrderOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   // Duplicate dialog
   const [dupTarget, setDupTarget] = useState<OfferingRow | null>(null);
@@ -51,7 +60,7 @@ const AdminOfferings = () => {
     setLoading(true);
     const { data: offs } = await supabase
       .from("offerings")
-      .select("id, title, slug, type, price_inr, mrp_inr, status, is_public")
+      .select("id, title, slug, type, price_inr, mrp_inr, status, is_public, access")
       .order("created_at", { ascending: false });
     if (!offs) {
       setLoading(false);
@@ -59,26 +68,36 @@ const AdminOfferings = () => {
     }
 
     const offIds = offs.map((o) => o.id);
-    const [ocRes, enRes] = await Promise.all([
-      supabase.from("offering_courses").select("offering_id, course_id").in("offering_id", offIds),
-      supabase.from("enrolments").select("offering_id").in("offering_id", offIds),
+    // Students are counted in the database (admin_catalogue_counts): the
+    // browser stops at 1,000 rows and used to count revoked access too.
+    const [ocRes, countRes, pageRes] = await Promise.all([
+      supabase.from("offering_courses").select("offering_id, courses(title)").in("offering_id", offIds),
+      supabase.rpc("admin_catalogue_counts"),
+      supabase.from("pages").select("button_offering_id, listing, position"),
     ]);
 
-    const courseCounts: Record<string, number> = {};
-    (ocRes.data || []).forEach((oc) => {
-      courseCounts[oc.offering_id] = (courseCounts[oc.offering_id] || 0) + 1;
+    const inside: Record<string, string[]> = {};
+    ((ocRes.data || []) as { offering_id: string; courses: { title: string } | null }[]).forEach((oc) => {
+      (inside[oc.offering_id] ||= []).push(oc.courses?.title ?? "Course");
     });
     const enrolCounts: Record<string, number> = {};
-    (enRes.data || []).forEach((e) => {
-      enrolCounts[e.offering_id] = (enrolCounts[e.offering_id] || 0) + 1;
+    (Array.isArray(countRes.data) ? countRes.data : []).forEach((r) => { enrolCounts[r.offering_id] = Number(r.students) || 0; });
+    const explore: Record<string, OfferingRow["explore"]> = {};
+    (pageRes.data || []).forEach((p) => {
+      if (!p.button_offering_id) return;
+      const show = p.listing === "featured" ? "carousel" : p.listing === "listed" ? "on" : "off";
+      if (!explore[p.button_offering_id] || show !== "off") explore[p.button_offering_id] = { show, position: p.position };
     });
 
     setOfferings(
       offs.map((o) => ({
         ...o,
         is_public: o.is_public ?? false,
-        course_count: courseCounts[o.id] || 0,
+        access: o.access ?? "buy",
+        inside: inside[o.id] || [],
+        course_count: (inside[o.id] || []).length,
         enrolment_count: enrolCounts[o.id] || 0,
+        explore: explore[o.id] ?? null,
       }))
     );
     setLoading(false);
@@ -97,6 +116,7 @@ const AdminOfferings = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      refreshStorefront();
       toast({ title: newStatus === "archived" ? "Offering archived" : "Offering restored" });
       load();
     }
@@ -118,6 +138,7 @@ const AdminOfferings = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      refreshStorefront();
       toast({ title: "Offering deleted" });
       load();
     }
@@ -162,7 +183,7 @@ const AdminOfferings = () => {
   const copyLink = async (slug: string) => {
     // Build the link against the current host so it works in local dev,
     // Vercel preview deploys, and production without code changes.
-    const url = `${window.location.origin}/p/${slug}`;
+    const url = `${window.location.origin}/checkout/${slug}`;
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
@@ -205,14 +226,15 @@ const AdminOfferings = () => {
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-60"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="active">Selling</SelectItem>
+            <SelectItem value="archived">Closed (students keep access)</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="archived">Archived</SelectItem>
+            <SelectItem value="all">All</SelectItem>
           </SelectContent>
         </Select>
+        <Button variant="outline" onClick={() => setOrderOpen(true)}>Explore order</Button>
         <Button
           onClick={() => navigate("/admin/offerings/new/edit")}
           className="bg-[hsl(var(--cream))] text-[hsl(var(--cream-text))] hover:opacity-90"
@@ -225,25 +247,26 @@ const AdminOfferings = () => {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-muted-foreground">
-              <th className="px-5 py-3 font-medium">Title</th>
-              <th className="px-5 py-3 font-medium">Type</th>
+              <th className="px-5 py-3 font-medium">Offering (its checkout page)</th>
               <th className="px-5 py-3 font-medium">Price</th>
               <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium">Courses</th>
-              <th className="px-5 py-3 font-medium">Enrolments</th>
+              <th className="px-5 py-3 font-medium">How people get it</th>
+              <th className="px-5 py-3 font-medium">Courses inside</th>
+              <th className="px-5 py-3 font-medium">On Explore</th>
+              <th className="px-5 py-3 font-medium">Students</th>
               <th className="px-5 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-5 py-12 text-center text-muted-foreground">
+                <td colSpan={8} className="px-5 py-12 text-center text-muted-foreground">
                   Loading…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-5 py-12 text-center text-muted-foreground">
+                <td colSpan={8} className="px-5 py-12 text-center text-muted-foreground">
                   No offerings found
                 </td>
               </tr>
@@ -258,11 +281,10 @@ const AdminOfferings = () => {
                   <td className="px-5 py-3">
                     <span className="font-medium">{o.title}</span>
                     {o.slug && (
-                      <p className="text-xs text-muted-foreground mt-0.5">/p/{o.slug}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">/checkout/{o.slug}</p>
                     )}
                   </td>
-                  <td className="px-5 py-3 font-mono text-xs">{o.type}</td>
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-3 whitespace-nowrap">
                     ₹{o.price_inr}
                     {o.mrp_inr && o.mrp_inr > o.price_inr && (
                       <span className="text-muted-foreground line-through ml-2 text-xs">
@@ -278,11 +300,21 @@ const AdminOfferings = () => {
                           : "bg-secondary text-muted-foreground"
                       }`}
                     >
-                      {o.status}
+                      {OFFERING_STATUS[o.status]?.label ?? o.status}
                     </span>
                   </td>
-                  <td className="px-5 py-3 font-mono text-xs">{o.course_count}</td>
-                  <td className="px-5 py-3 font-mono text-xs">{o.enrolment_count}</td>
+                  <td className="px-5 py-3 text-xs" title={ACCESS[o.access]?.hint}>{ACCESS[o.access]?.label ?? o.access}</td>
+                  <td className="px-5 py-3 text-xs max-w-[240px]">
+                    {o.inside.length === 0 ? <span className="text-muted-foreground">None yet</span> : (
+                      <span title={o.inside.join("\n")}>
+                        {o.inside.slice(0, 2).join(", ")}{o.inside.length > 2 ? ` +${o.inside.length - 2} more` : ""}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-xs whitespace-nowrap">
+                    {o.explore?.show === "carousel" ? "Yes + carousel" : o.explore?.show === "on" ? "Yes" : <span className="text-muted-foreground">No</span>}
+                  </td>
+                  <td className="px-5 py-3 font-mono text-xs">{o.enrolment_count.toLocaleString("en-IN")}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-1">
                       {o.slug && (
@@ -292,7 +324,7 @@ const AdminOfferings = () => {
                             copyLink(o.slug);
                           }}
                           className="p-1.5 rounded hover:bg-secondary"
-                          title="Copy public link"
+                          title="Copy checkout link"
                         >
                           <Link2 className="h-4 w-4 text-muted-foreground" />
                         </button>
@@ -333,6 +365,8 @@ const AdminOfferings = () => {
           </tbody>
         </table>
       </div>
+
+      <ExploreOrderDialog open={orderOpen} onOpenChange={(v) => { setOrderOpen(v); if (!v) void load(); }} />
 
       {/* Duplicate */}
       <Dialog open={!!dupTarget} onOpenChange={(o) => { if (!o && !duplicating) setDupTarget(null); }}>
