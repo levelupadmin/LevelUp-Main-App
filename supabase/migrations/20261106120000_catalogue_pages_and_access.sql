@@ -35,7 +35,10 @@ alter table public.offerings add column if not exists access text;
 update public.offerings set access = case
   when payment_mode = 'staged' or coalesce(trim(tally_form_url), '') <> '' then 'apply'
   when product_tier = 'live_cohort' then 'team'
-  when coalesce(price_inr, 0) > 0 then 'buy'
+  -- Sold in the app today = priced AND public. A priced private offering was
+  -- only ever granted by the team (e.g. the ₹4,999 SMP packs, 0 app sales in
+  -- the 60 days before 6 Nov 2026): it must not become buyable by its link.
+  when coalesce(price_inr, 0) > 0 and is_public then 'buy'
   else 'team'          -- ₹0 and not a cohort: resource packs, imports. Never free by accident.
 end
 where access is null;
@@ -102,6 +105,10 @@ create trigger pages_touch before update on public.pages
 insert into public.pages (slug, title, listing, position, button_offering_id, carousel_title)
 select o.slug, trim(o.title),
   case
+    -- Team-only offerings can't be bought or claimed, so they stop showing
+    -- anywhere (is_public follows: older app builds hide them too). Their
+    -- students keep access; e.g. the free Film Direction 101 resources pack.
+    when o.access = 'team' then 'hidden'
     when o.product_tier in ('masterclass', 'live_cohort', 'workshop')
      and not exists (select 1 from public.offering_courses oc join public.courses c on c.id = oc.course_id
                      where oc.offering_id = o.id and c.show_on_browse = false)
