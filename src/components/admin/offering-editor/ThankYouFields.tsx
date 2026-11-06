@@ -13,9 +13,6 @@ interface Props {
 export default function ThankYouFields({ form, f }: Props) {
   return (
     <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-      <p className="text-sm text-muted-foreground">
-        Customize what buyers see after a successful payment. Leave fields empty to use defaults.
-      </p>
       <div>
         <Label>Picture (optional)</Label>
         <Input
@@ -58,7 +55,7 @@ export default function ThankYouFields({ form, f }: Props) {
             placeholder="Start lesson 1"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Text shown on the main button (e.g., "Join WhatsApp Group", "Go to Dashboard")
+            e.g. "Join the WhatsApp group". Empty = "Start lesson 1".
           </p>
         </div>
         <div>
@@ -69,7 +66,7 @@ export default function ThankYouFields({ form, f }: Props) {
             placeholder="Empty = opens the first lesson"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Where the button goes. Leave empty to go to the student dashboard. Can be a full URL (e.g., WhatsApp group link).
+            Empty = the first lesson. Can be any link, e.g. a WhatsApp group.
           </p>
         </div>
       </div>
