@@ -1,3 +1,4 @@
+import { refreshStorefront } from "@/lib/storefrontCache";
 import { ExploreOrderDialog } from "@/components/admin/ExploreOrderDialog";
 import { ACCESS, OFFERING_STATUS } from "@/lib/catalogue";
 import { useEffect, useState } from "react";
@@ -115,6 +116,7 @@ const AdminOfferings = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      refreshStorefront();
       toast({ title: newStatus === "archived" ? "Offering archived" : "Offering restored" });
       load();
     }
@@ -136,6 +138,7 @@ const AdminOfferings = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      refreshStorefront();
       toast({ title: "Offering deleted" });
       load();
     }

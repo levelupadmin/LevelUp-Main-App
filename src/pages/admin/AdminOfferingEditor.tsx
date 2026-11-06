@@ -1,3 +1,4 @@
+import { refreshStorefront } from "@/lib/storefrontCache";
 import { CheckoutPageTab, type Question } from "@/components/admin/offering-editor/CheckoutPageTab";
 import { EMPTY_EXPLORE, ExploreFields, loadExplore, saveExplore, type ExploreState } from "@/components/admin/offering-editor/ExploreFields";
 import { pageReadiness } from "@/lib/catalogue";
@@ -538,6 +539,8 @@ const AdminOfferingEditor = () => {
       });
     }
 
+    // Home and Explore in this same app re-read the shop window next time.
+    refreshStorefront();
     toast({ title: "Offering saved" });
     setSaving(false);
 

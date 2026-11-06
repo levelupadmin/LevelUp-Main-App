@@ -1,3 +1,4 @@
+import { refreshStorefront } from "@/lib/storefrontCache";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -51,6 +52,7 @@ export function ExploreOrderDialog({ open, onOpenChange }: { open: boolean; onOp
     setBusy(false);
     const bad = results.find((r) => r.error);
     if (bad?.error) toast.error(`Order not saved: ${bad.error.message}`);
+    refreshStorefront();
     await reload();
   };
 
