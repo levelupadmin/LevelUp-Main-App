@@ -20,9 +20,14 @@ The web app is authoritative; the native shells wrap it and are read-only on buy
   `button_offering_id` = the offering its Buy/Apply button sells, `opens` = page or
   straight to the checkout. Offerings under a page (batches) carry `offerings.page_id`.
   `offerings.is_public` is DERIVED from pages by a trigger (older app builds read it).
-  Admin → Catalogue (`pages/admin/AdminCatalogue.tsx`) edits it.
-- **Offering** (`offerings`) — what people pay for: the checkout (TagMango's
-  "service"). A masterclass, a bundle, a live cohort, a workshop, a resource pack.
+  Edited inside the offering ("Show on Explore", `offering-editor/ExploreFields.tsx`); the
+  order is set in Offerings → Explore order (`components/admin/ExploreOrderDialog.tsx`).
+- **Offering** (`offerings`) — what people pay for: the checkout page (TagMango's
+  "service"), at `/checkout/<id or slug>` (`pages/CheckoutRoute.tsx`). Its blocks are
+  edited in the offering editor's "Checkout page" tab with a live preview
+  (`offering-editor/CheckoutPageTab.tsx`): cover (`checkout_cover_url`), title, what you
+  get (`checkout_bullets`, else the courses inside), when (`checkout_when`), add-ons,
+  questions (`custom_field_definitions`), price, refund days and testimonials. A masterclass, a bundle, a live cohort, a workshop, a resource pack.
   Carries price, GST mode/rate, status (active = "Selling", archived = "Closed",
   students keep access; draft), payment_mode, and **`access`**: buy | free | apply |
   team. ₹0 alone never means free: only `access = 'free'` may be claimed at ₹0, and

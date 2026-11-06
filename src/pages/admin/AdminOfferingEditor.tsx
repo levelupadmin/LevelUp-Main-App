@@ -1,4 +1,7 @@
-import { ACCESS, ACCESS_ORDER, FORMAT, LISTING, OFFERING_STATUS } from "@/lib/catalogue";
+import { CheckoutPageTab, type Question } from "@/components/admin/offering-editor/CheckoutPageTab";
+import { EMPTY_EXPLORE, ExploreFields, loadExplore, saveExplore, type ExploreState } from "@/components/admin/offering-editor/ExploreFields";
+import { pageReadiness } from "@/lib/catalogue";
+import { ACCESS, ACCESS_ORDER, FORMAT, OFFERING_STATUS } from "@/lib/catalogue";
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -98,6 +101,9 @@ const EMPTY_FORM = {
   // Checkout Social Proof
   checkout_testimonials: "[]",
   checkout_bullets: "[]",
+  checkout_cover_url: "",
+  checkout_when: "",
+  refund_policy_days: "",
   checkout_guarantee_text: "",
   // Coupon Display
   show_coupon_on_page: false,
@@ -123,8 +129,10 @@ const AdminOfferingEditor = () => {
   const [allOfferingsForUpsell, setAllOfferingsForUpsell] = useState<OfferingForUpsell[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  /** Pages whose button sells this offering (Admin → Catalogue). */
-  const [shownOn, setShownOn] = useState<{ id: string; title: string; slug: string; listing: string }[]>([]);
+  /** "Show on Explore" (this offering's row in pages). */
+  const [explore, setExplore] = useState<ExploreState>(EMPTY_EXPLORE);
+  /** Questions asked on the checkout (custom_field_definitions). */
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [bumpChoices, setBumpChoices] = useState<{ id: string; title: string; price_inr: number | string | null; status: string; access: string }[]>([]);
 
   /* ── Helpers ── */
@@ -143,8 +151,12 @@ const AdminOfferingEditor = () => {
       setAllOfferingsForUpsell(offsRes.data || []);
       setBumpChoices((offsRes.data || []) as typeof bumpChoices);
       if (!isNew && offeringId) {
-        const { data: pg } = await supabase.from("pages").select("id, title, slug, listing").eq("button_offering_id", offeringId);
-        setShownOn(pg ?? []);
+        const [ex, qs] = await Promise.all([
+          loadExplore(offeringId),
+          supabase.from("custom_field_definitions").select("id, label, is_required, sort_order").eq("offering_id", offeringId).order("sort_order"),
+        ]);
+        setExplore(ex);
+        setQuestions((qs.data ?? []).map((q) => ({ id: q.id, label: q.label, is_required: !!q.is_required })));
       }
 
       if (!isNew && offeringId) {
@@ -205,6 +217,9 @@ const AdminOfferingEditor = () => {
             thankyou_show_calendly: d.thankyou_show_calendly ?? false,
             checkout_testimonials: d.checkout_testimonials ? JSON.stringify(d.checkout_testimonials) : "[]",
             checkout_bullets: d.checkout_bullets ? JSON.stringify(d.checkout_bullets) : "[]",
+            checkout_cover_url: d.checkout_cover_url || "",
+            checkout_when: d.checkout_when || "",
+            refund_policy_days: d.refund_policy_days?.toString() || "",
             checkout_guarantee_text: d.checkout_guarantee_text || "",
             show_coupon_on_page: d.show_coupon_on_page ?? false,
             page_coupon_code: d.page_coupon_code || "",
@@ -260,6 +275,20 @@ const AdminOfferingEditor = () => {
     if (form.status === "active" && linkedCourseIds.length === 0) {
       toast({ title: "Cannot publish offering", description: "At least one course must be linked before setting status to Active.", variant: "destructive" });
       return;
+    }
+
+    // "Show on Explore" only when the Ready checks pass.
+    if (explore.show !== "off") {
+      const checks = pageReadiness(
+        { button_offering_id: "this", card_image_url: explore.cardImage || null },
+        { status: form.status, access: form.access, price_inr: form.price_inr, product_tier: form.product_tier, tally_form_url: form.tally_form_url, payment_mode: form.payment_mode, thumbnail_url: form.thumbnail_url || form.checkout_cover_url, has_landing: false },
+        linkedCourseIds.length,
+      ).slice(1);
+      const missing = checks.filter((c) => !c.ok).map((c) => c.label);
+      if (missing.length) {
+        toast({ title: "Not ready to show on Explore", description: `${missing.join(". ")}. Set "Show it" to No to save now.`, variant: "destructive" });
+        return;
+      }
     }
 
     // A "Buy" offering that is on sale needs a price: ₹0 is not "free" any more.
@@ -402,7 +431,10 @@ const AdminOfferingEditor = () => {
       thankyou_show_calendly: form.thankyou_show_calendly,
       // Checkout social proof
       checkout_testimonials: (() => { try { return JSON.parse(form.checkout_testimonials); } catch { return []; } })(),
-      checkout_bullets: (() => { try { return JSON.parse(form.checkout_bullets); } catch { return []; } })(),
+      checkout_bullets: (() => { try { return (JSON.parse(form.checkout_bullets) as unknown[]).filter((b) => typeof b === "string" && b.trim()); } catch { return []; } })(),
+      checkout_cover_url: form.checkout_cover_url.trim() || null,
+      checkout_when: form.checkout_when.trim() || null,
+      refund_policy_days: form.refund_policy_days ? Number(form.refund_policy_days) : null,
       checkout_guarantee_text: form.checkout_guarantee_text || null,
       show_coupon_on_page: form.show_coupon_on_page,
       page_coupon_code: form.page_coupon_code || null,
@@ -476,6 +508,23 @@ const AdminOfferingEditor = () => {
         );
       }
 
+      // Show on Explore
+      const exploreErr = await saveExplore(offId, slug, form.title, explore);
+      if (exploreErr) toast({ title: "Explore setting not saved", description: exploreErr, variant: "destructive" });
+
+      // Questions on the checkout: update kept ones, add new ones, remove the rest.
+      const keep = questions.filter((q) => q.label.trim());
+      const keptIds = keep.filter((q) => q.id).map((q) => q.id as string);
+      const { data: existingQs } = await supabase.from("custom_field_definitions").select("id").eq("offering_id", offId);
+      const dropIds = (existingQs ?? []).map((q) => q.id).filter((id) => !keptIds.includes(id));
+      if (dropIds.length) await supabase.from("custom_field_definitions").delete().in("id", dropIds);
+      for (const [i, q] of keep.entries()) {
+        const row = { offering_id: offId, label: q.label.trim(), is_required: q.is_required, field_type: "text", sort_order: i };
+        const { error: qErr } = q.id
+          ? await supabase.from("custom_field_definitions").update(row).eq("id", q.id)
+          : await supabase.from("custom_field_definitions").insert(row);
+        if (qErr) { toast({ title: "A checkout question wasn't saved", description: qErr.message, variant: "destructive" }); break; }
+      }
     }
 
     // Audit log
@@ -534,7 +583,7 @@ const AdminOfferingEditor = () => {
           <TabsTrigger value="public">Public Page</TabsTrigger>
           <TabsTrigger value="thankyou">Thank You Page</TabsTrigger>
           <TabsTrigger value="tracking">Tracking & Pixels</TabsTrigger>
-          <TabsTrigger value="checkout">Checkout</TabsTrigger>
+          <TabsTrigger value="checkout">Checkout page</TabsTrigger>
           <TabsTrigger value="cohort">Live Cohort</TabsTrigger>
           {/* Read-only views. Hidden on a brand-new offering, which has no id
               yet and therefore nothing to report on. */}
@@ -560,7 +609,7 @@ const AdminOfferingEditor = () => {
               }} />
             </div>
             <div>
-              <Label>Slug</Label>
+              <Label>Address (short name in its links)</Label>
               <Input
                 value={form.slug}
                 onChange={(e) => {
@@ -571,7 +620,7 @@ const AdminOfferingEditor = () => {
               />
               {form.slug && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Public URL: /p/{form.slug}
+                  Checkout: /checkout/{form.slug} · Sales page: /p/{form.slug}
                 </p>
               )}
             </div>
@@ -692,29 +741,16 @@ const AdminOfferingEditor = () => {
                 />
               </div>
               <div className="pt-1">
-                <Label>Shown on</Label>
-                {shownOn.length ? (
-                  <ul className="text-sm mt-1 space-y-0.5">
-                    {shownOn.map((p) => (
-                      <li key={p.id}>
-                        <a className="underline" href={`/p/${p.slug}`} target="_blank" rel="noreferrer">/p/{p.slug}</a>
-                        <span className="text-muted-foreground"> · {LISTING[p.listing]?.label ?? p.listing}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground mt-1">No page yet: sold on its checkout link only.</p>
-                )}
-                <p className="text-xs text-muted-foreground mt-1">
-                  Pages are set in <Link className="underline" to="/admin/catalogue">Catalogue</Link>.
-                  {!isNew && <> Checkout link: <span className="font-mono">/checkout/{offeringId}</span></>}
-                </p>
+                <Label>Checkout link</Label>
+                <p className="text-sm mt-1 font-mono break-all">/checkout/{form.slug || "…"}</p>
+                <p className="text-xs text-muted-foreground mt-1">Share it anywhere: ads, WhatsApp, a sales page button.</p>
               </div>
             </div>
 
             {/* Linked courses */}
             <div>
-              <Label className="mb-2 block">Linked Courses</Label>
+              <Label className="mb-1 block">Courses inside (what the buyer gets)</Label>
+              <p className="text-xs text-muted-foreground mb-2">Buying this offering opens every course ticked here. One course can be inside many offerings.</p>
               <div className="space-y-2 max-h-48 overflow-y-auto border border-border rounded-lg p-3">
                 {allCourses.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No courses found. Create courses first.</p>
@@ -735,6 +771,13 @@ const AdminOfferingEditor = () => {
                 )}
               </div>
             </div>
+
+            <ExploreFields
+              value={explore}
+              onChange={setExplore}
+              courseCount={linkedCourseIds.length}
+              offering={{ status: form.status, access: form.access, price_inr: form.price_inr, product_tier: form.product_tier, tally_form_url: form.tally_form_url, payment_mode: form.payment_mode, thumbnail_url: form.thumbnail_url || form.checkout_cover_url, has_landing: false }}
+            />
           </div>
         </TabsContent>
 
@@ -763,118 +806,19 @@ const AdminOfferingEditor = () => {
         {/*  TAB 5: CHECKOUT                             */}
         {/* ══════════════════════════════════════════ */}
         <TabsContent value="checkout">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
-            <p className="text-sm text-muted-foreground">
-              Customize the checkout experience: add-ons, social proof, guarantees and the page coupon code.
-            </p>
-
-            {/* Add-ons (bumps): other offerings the buyer can tick on this checkout */}
-            <div className="rounded-lg border border-border p-4 space-y-3">
-              <div>
-                <Label>Add-ons on this checkout</Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Other offerings the buyer can tick before paying, e.g. the ₹199 resources pack or a masterclass. Ticking one adds its price;
-                  after payment the buyer gets both. Only Selling offerings that people Buy, priced above ₹0, can be add-ons.
-                </p>
-              </div>
-              {bumps.map((b, i) => (
-                <div key={b.id || i} className="grid grid-cols-1 sm:grid-cols-[2fr_2fr_1fr_auto] gap-2 items-end">
-                  <div>
-                    <Label className="text-xs">Offering</Label>
-                    <Select value={b.bump_offering_id || "none"} onValueChange={(v) => setBumps((prev) => prev.map((x, j) => (j === i ? { ...x, bump_offering_id: v === "none" ? "" : v } : x)))}>
-                      <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>
-                      <SelectContent className="max-h-72">
-                        <SelectItem value="none">Choose an offering</SelectItem>
-                        {bumpChoices
-                          .filter((o) => o.id !== offeringId && ((o.status === "active" && o.access === "buy" && Number(o.price_inr) > 0) || o.id === b.bump_offering_id))
-                          .map((o) => (
-                            <SelectItem key={o.id} value={o.id}>{o.title} · ₹{Number(o.price_inr).toLocaleString("en-IN")}</SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Line on the checkout (optional)</Label>
-                    <Input value={b.headline} placeholder="Add the session recording + deck" onChange={(e) => setBumps((prev) => prev.map((x, j) => (j === i ? { ...x, headline: e.target.value } : x)))} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Add-on price (₹)</Label>
-                    <Input type="number" value={b.bump_price_override_inr} placeholder="its own price" onChange={(e) => setBumps((prev) => prev.map((x, j) => (j === i ? { ...x, bump_price_override_inr: e.target.value } : x)))} />
-                  </div>
-                  <Button type="button" variant="ghost" onClick={() => setBumps((prev) => prev.filter((_, j) => j !== i))}>Remove</Button>
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={() => setBumps((prev) => [...prev, { id: "", bump_offering_id: "", headline: "", bump_price_override_inr: "" }])}>
-                Add an add-on
-              </Button>
-            </div>
-
-            {/* Checkout Testimonials */}
-            <div>
-              <Label>Checkout Testimonials (JSON)</Label>
-              <Textarea
-                value={form.checkout_testimonials}
-                onChange={(e) => f("checkout_testimonials", e.target.value)}
-                placeholder='[{"name":"John","title":"Student","photo_url":"","quote":"Great course!"}]'
-                rows={5}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                JSON array of {`{name, title, photo_url, quote}`} objects shown on checkout
-              </p>
-            </div>
-
-            {/* Value Proposition Bullets */}
-            <div>
-              <Label>Value Proposition Bullets (JSON)</Label>
-              <Textarea
-                value={form.checkout_bullets}
-                onChange={(e) => f("checkout_bullets", e.target.value)}
-                placeholder='["Lifetime access","Certificate included","Money-back guarantee"]'
-                rows={3}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                JSON array of strings displayed as bullet points on the checkout page
-              </p>
-            </div>
-
-            {/* Guarantee Badge */}
-            <div>
-              <Label>Guarantee Badge Text</Label>
-              <Input
-                value={form.checkout_guarantee_text}
-                onChange={(e) => f("checkout_guarantee_text", e.target.value)}
-                placeholder="e.g., 7-day money-back guarantee"
-              />
-            </div>
-
-            {/* Coupon Display */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={form.show_coupon_on_page}
-                  onCheckedChange={(checked) => f("show_coupon_on_page", checked)}
-                />
-                <Label>Show coupon on public page</Label>
-              </div>
-              {form.show_coupon_on_page && (
-                <div>
-                  <Label>Page Coupon Code</Label>
-                  <Input
-                    value={form.page_coupon_code}
-                    onChange={(e) => f("page_coupon_code", e.target.value)}
-                    placeholder="e.g., EARLYBIRD"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    This coupon code will be displayed on the public offering page
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+          <CheckoutPageTab
+            form={form}
+            f={(k, v) => f(k as keyof typeof EMPTY_FORM, v)}
+            offeringId={isNew ? undefined : offeringId}
+            bumps={bumps}
+            setBumps={setBumps}
+            bumpChoices={bumpChoices}
+            questions={questions}
+            setQuestions={setQuestions}
+            courseTitles={allCourses.filter((c) => linkedCourseIds.includes(c.id)).map((c) => c.title)}
+          />
         </TabsContent>
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 6: LIVE COHORT                        */}
         {/* ══════════════════════════════════════════ */}
         <TabsContent value="cohort">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">

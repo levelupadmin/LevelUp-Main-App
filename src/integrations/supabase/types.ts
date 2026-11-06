@@ -4847,8 +4847,10 @@ export type Database = {
           banner_url: string | null
           calendly_url: string | null
           checkout_bullets: Json | null
+          checkout_cover_url: string | null
           checkout_guarantee_text: string | null
           checkout_testimonials: Json | null
+          checkout_when: string | null
           cohort_sessions: Json | null
           cohort_start_date: string | null
           confirmation_amount_inr: number | null
@@ -4910,8 +4912,10 @@ export type Database = {
           banner_url?: string | null
           calendly_url?: string | null
           checkout_bullets?: Json | null
+          checkout_cover_url?: string | null
           checkout_guarantee_text?: string | null
           checkout_testimonials?: Json | null
+          checkout_when?: string | null
           cohort_sessions?: Json | null
           cohort_start_date?: string | null
           confirmation_amount_inr?: number | null
@@ -4973,8 +4977,10 @@ export type Database = {
           banner_url?: string | null
           calendly_url?: string | null
           checkout_bullets?: Json | null
+          checkout_cover_url?: string | null
           checkout_guarantee_text?: string | null
           checkout_testimonials?: Json | null
+          checkout_when?: string | null
           cohort_sessions?: Json | null
           cohort_start_date?: string | null
           confirmation_amount_inr?: number | null

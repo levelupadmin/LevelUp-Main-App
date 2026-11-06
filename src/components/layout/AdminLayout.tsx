@@ -26,7 +26,6 @@ import {
   Repeat,
   KeyRound,
   Award,
-  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 import InitialsAvatar from "@/components/InitialsAvatar";
@@ -55,7 +54,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Content",
     items: [
-      { label: "Catalogue", icon: LayoutGrid, path: "/admin/catalogue" },
       { label: "Offerings", icon: Package, path: "/admin/offerings" },
       { label: "Courses", icon: BookOpen, path: "/admin/courses" },
     ],

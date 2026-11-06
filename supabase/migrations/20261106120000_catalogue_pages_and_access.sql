@@ -23,6 +23,7 @@
 --       drop trigger pages_sync_is_public on public.pages;
 --       drop function public.pages_sync_is_public();
 --       alter table public.offerings drop column page_id, drop column access;
+--       alter table public.offerings drop column checkout_cover_url, drop column checkout_when;
 --       drop table public.pages;
 --       (is_public keeps the values it had; nothing else is touched.)
 
@@ -214,5 +215,21 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.admin_catalogue_counts() from public, anon;
 grant execute on function public.admin_catalogue_counts() to authenticated;
+
+-- 6. The checkout page template -------------------------------------------------
+-- An offering IS its checkout page (TagMango's "service"). Two new blocks; the
+-- rest already exist: checkout_bullets ("What you get"), checkout_testimonials,
+-- refund_policy_days, offering_bumps (add-ons), custom_field_definitions
+-- (questions for the buyer).
+alter table public.offerings add column if not exists checkout_cover_url text;
+alter table public.offerings add column if not exists checkout_when text;
+alter table public.offerings drop constraint if exists offerings_checkout_cover_url_check;
+alter table public.offerings add constraint offerings_checkout_cover_url_check
+  check (checkout_cover_url is null or (length(checkout_cover_url) <= 1000 and checkout_cover_url ~* '^https?://'));
+alter table public.offerings drop constraint if exists offerings_checkout_when_len_check;
+alter table public.offerings add constraint offerings_checkout_when_len_check
+  check (checkout_when is null or length(checkout_when) <= 200);
+comment on column public.offerings.checkout_cover_url is 'Checkout cover: an image, or a video when it ends in .mp4/.webm/.mov';
+comment on column public.offerings.checkout_when is 'Checkout "when" line, e.g. "Wed 8 PM · 2 hours · on Zoom"';
 
 commit;

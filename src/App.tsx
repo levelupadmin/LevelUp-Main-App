@@ -60,7 +60,7 @@ const LoginEntry = ({ legacy }: { legacy: ReactNode }) => {
 // Lazy-loaded student pages
 const CourseDetail = lazy(() => import("@/pages/CourseDetail"));
 const ChapterViewer = lazy(() => import("@/pages/ChapterViewer"));
-const CheckoutPage = lazy(() => import("@/pages/CheckoutPage"));
+const CheckoutPage = lazy(() => import("@/pages/CheckoutRoute"));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const MyCoursesPage = lazy(() => import("@/pages/MyCoursesPage"));
 const Studio = lazy(() => import("@/pages/Studio"));
@@ -87,7 +87,6 @@ const AdminCourses = lazy(() => import("@/pages/admin/AdminCourses"));
 const AdminCourseEditor = lazy(() => import("@/pages/admin/AdminCourseEditor"));
 const AdminCourseCurriculum = lazy(() => import("@/pages/admin/AdminCourseCurriculum"));
 const AdminOfferings = lazy(() => import("@/pages/admin/AdminOfferings"));
-const AdminCatalogue = lazy(() => import("@/pages/admin/AdminCatalogue"));
 const AdminOfferingEditor = lazy(() => import("@/pages/admin/AdminOfferingEditor"));
 const AdminEnrolments = lazy(() => import("@/pages/admin/AdminEnrolments"));
 const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
@@ -418,7 +417,6 @@ const AppContent = () => {
                 <Route path="/admin/courses/:courseId/curriculum" element={<AdminCourseCurriculum />} />
                 <Route path="/admin/courses/:courseId/preview" element={<AdminCoursePreview />} />
                 <Route path="/admin/courses/:courseId/preview/:chapterId" element={<AdminChapterPreview />} />
-                <Route path="/admin/catalogue" element={<AdminCatalogue />} />
                 <Route path="/admin/offerings" element={<AdminOfferings />} />
                 <Route path="/admin/offerings/:offeringId/edit" element={<AdminOfferingEditor />} />
                 <Route path="/admin/schedule" element={<AdminSchedule />} />

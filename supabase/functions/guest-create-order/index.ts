@@ -47,6 +47,7 @@ Deno.serve(async (req) => {
       guest_phone,
       coupon_code,
       bump_ids,
+      custom_field_values,
     } = body;
     // Ad attribution from the checkout link (utm_*, fbclid, gclid, ic_eid,
     // _fbp/_fbc). Older clients send utm_* at the top level only; both are read.
@@ -131,6 +132,22 @@ Deno.serve(async (req) => {
       return jsonRes({ error: "Too many bump selections" }, 400);
     }
     const { bumpTotal, validBumpIds } = await priceBumps(admin, offering_id, bump_ids);
+
+    /* ── Answers to the offering's own questions (custom_field_definitions) ──
+       Guests' answers used to be dropped (always {}). Only this offering's
+       field ids are kept, as short strings. A missing answer never refuses
+       the sale here: the checkout asks for required ones before Pay. */
+    const answers: Record<string, string> = {};
+    if (custom_field_values && typeof custom_field_values === "object" && !Array.isArray(custom_field_values)) {
+      const { data: defs } = await admin
+        .from("custom_field_definitions")
+        .select("id")
+        .eq("offering_id", offering_id);
+      for (const d of (defs ?? []) as { id: string }[]) {
+        const v = (custom_field_values as Record<string, unknown>)[d.id];
+        if (typeof v === "string" && v.trim()) answers[d.id] = v.trim().slice(0, 500);
+      }
+    }
 
     /* ── No identity gate before payment (2026-11-04) ──
        This used to refuse (403) when the typed email belonged to an account
@@ -253,7 +270,7 @@ Deno.serve(async (req) => {
         total_inr: totalInr,
         coupon_id: couponDbId,
         bump_offering_ids: validBumpIds,
-        custom_field_values: {},
+        custom_field_values: answers,
         status: totalInr <= 0 ? "captured" : "created",
         guest_name,
         guest_email,
