@@ -755,7 +755,8 @@ const AdminOfferingEditor = () => {
                 {allCourses.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No courses found. Create courses first.</p>
                 ) : (
-                  allCourses.map((c) => (
+                  // Ticked courses first, so what's inside is visible without scrolling.
+                  [...allCourses].sort((a, b) => Number(linkedCourseIds.includes(b.id)) - Number(linkedCourseIds.includes(a.id))).map((c) => (
                     <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
                       <Checkbox
                         checked={linkedCourseIds.includes(c.id)}

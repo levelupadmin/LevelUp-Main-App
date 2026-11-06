@@ -80,7 +80,7 @@ export function pageReadiness(
   const pictured = !!(page.card_image_url || offering?.thumbnail_url || offering?.has_landing);
   return [
     { ok: !!offering, label: "Its button sells an offering" },
-    { ok: offering?.status === "active", label: "That offering is Selling" },
+    { ok: offering?.status === "active", label: "It is Selling" },
     {
       ok: !!offering && priced,
       label: access === "apply" ? "It has an application link"
