@@ -1,3 +1,5 @@
+import { checkoutRefusal } from "../_shared/freeEnrolment.ts";
+import { MAX_BUMPS, priceBumps } from "../_shared/bumps.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import {
@@ -63,13 +65,20 @@ Deno.serve(async (req) => {
     /* ── Offering ── */
     const { data: offering, error: offErr } = await admin
       .from("offerings")
-      .select("id, title, price_inr, gst_mode, gst_rate, status, payment_mode, app_fee_inr, confirmation_amount_inr")
+      .select("id, title, price_inr, gst_mode, gst_rate, status, payment_mode, app_fee_inr, confirmation_amount_inr, access")
       .eq("id", offering_id)
       .single();
     if (offErr || !offering)
       return jsonRes({ error: "Offering not found" }, 404);
     if (offering.status !== "active")
       return jsonRes({ error: "Offering is not active" }, 400);
+    // Team-only and application offerings never open a checkout order
+    // (offerings.access, migration 20261106120000). Staged cohort stages
+    // still pass: their access is "apply" with payment_mode "staged".
+    {
+      const refusal = checkoutRefusal(offering);
+      if (refusal) return jsonRes({ error: refusal }, 400);
+    }
 
     /* ── Re-purchase guard ──
        Block users from paying for an offering they already have active access
@@ -153,31 +162,12 @@ Deno.serve(async (req) => {
        be active, otherwise a draft/archived offering could be added via
        someone else's bump_ids list. */
     let bumpTotal = 0;
-    const validBumpIds: string[] = [];
+    let validBumpIds: string[] = [];
     // Skip bumps for staged payments
-    if (!stagedAmountInr && bump_ids && Array.isArray(bump_ids) && bump_ids.length > 20)
+    if (!stagedAmountInr && bump_ids && Array.isArray(bump_ids) && bump_ids.length > MAX_BUMPS)
       return jsonRes({ error: "Too many bump selections" }, 400);
     if (!stagedAmountInr && bump_ids && Array.isArray(bump_ids) && bump_ids.length > 0) {
-      const { data: bumps } = await admin
-        .from("offering_bumps")
-        .select(
-          "bump_offering_id, bump_price_override_inr, bump_offering:offerings!offering_bumps_bump_offering_id_fkey(id, price_inr, status)"
-        )
-        .eq("parent_offering_id", offering_id)
-        .in("bump_offering_id", bump_ids);
-
-      if (bumps) {
-        for (const b of bumps as any[]) {
-          const bo = b.bump_offering;
-          if (!bo || bo.status !== "active") continue;
-          if (b.bump_price_override_inr != null) {
-            bumpTotal += Number(b.bump_price_override_inr);
-          } else {
-            bumpTotal += Number(bo.price_inr);
-          }
-          validBumpIds.push(b.bump_offering_id);
-        }
-      }
+      ({ bumpTotal, validBumpIds } = await priceBumps(admin, offering_id, bump_ids));
     }
 
     /* ── Coupon ──

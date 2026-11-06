@@ -11,7 +11,8 @@ import { normalizePhone } from "../_shared/phone.ts";
 import { canonicalBuyerPhone, isIndianBuyerPhone, resolveOrCreateBuyer } from "../_shared/buyerIdentity.ts";
 import { requestClientMeta, sanitizeAttribution, utmColumns } from "../_shared/attribution.ts";
 import { requestReuseKey, reuseKeyMatches } from "../_shared/guestOrderKey.ts";
-import { freeEnrolmentRefusal } from "../_shared/freeEnrolment.ts";
+import { checkoutRefusal, freeEnrolmentRefusal } from "../_shared/freeEnrolment.ts";
+import { MAX_BUMPS, priceBumps } from "../_shared/bumps.ts";
 
 function encodeBase64(str: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
@@ -45,6 +46,7 @@ Deno.serve(async (req) => {
       guest_email,
       guest_phone,
       coupon_code,
+      bump_ids,
     } = body;
     // Ad attribution from the checkout link (utm_*, fbclid, gclid, ic_eid,
     // _fbp/_fbc). Older clients send utm_* at the top level only; both are read.
@@ -107,13 +109,28 @@ Deno.serve(async (req) => {
     /* ── Offering ── */
     const { data: offering, error: offErr } = await admin
       .from("offerings")
-      .select("id, title, price_inr, gst_mode, gst_rate, status, is_public, payment_mode, product_tier, tally_form_url")
+      .select("id, title, price_inr, gst_mode, gst_rate, status, is_public, payment_mode, product_tier, tally_form_url, access")
       .eq("id", offering_id)
       .single();
 
     if (offErr || !offering) return jsonRes({ error: "Offering not found" }, 404);
     if (offering.status !== "active") return jsonRes({ error: "Offering is not active" }, 400);
-    if (!offering.is_public) return jsonRes({ error: "Offering is not available for public purchase" }, 400);
+    // Whether a guest may pay is decided by how people get the offering
+    // (offerings.access, migration 20261106120000), no longer by whether a
+    // page lists it: an offering can be sold on a direct checkout link.
+    {
+      const refusal = checkoutRefusal(offering);
+      if (refusal) return jsonRes({ error: "Offering is not available for public purchase" }, 400);
+    }
+    if (offering.payment_mode === "staged") {
+      return jsonRes({ error: "Offering is not available for public purchase" }, 400);
+    }
+
+    /* ── Add-ons (bumps) ── priced on the server from the parent's list. */
+    if (Array.isArray(bump_ids) && bump_ids.length > MAX_BUMPS) {
+      return jsonRes({ error: "Too many bump selections" }, 400);
+    }
+    const { bumpTotal, validBumpIds } = await priceBumps(admin, offering_id, bump_ids);
 
     /* ── No identity gate before payment (2026-11-04) ──
        This used to refuse (403) when the typed email belonged to an account
@@ -151,22 +168,23 @@ Deno.serve(async (req) => {
         .single();
 
       if (coupon) {
-        // Guests get no add-on bumps, so the coupon applies to the base price
-        // only. An invalid coupon is silently skipped (discount stays 0) — same
-        // behaviour as before; the validity + discount math is now shared.
+        // The coupon applies to the whole order (price + add-ons), the same
+        // as the signed-in path and the on-screen preview. With no add-on this
+        // is the base price, exactly as before. An invalid coupon is silently
+        // skipped (discount stays 0); the validity + discount math is shared.
         if (couponInvalidReason(coupon, offering_id, new Date()) === null) {
           couponDbId = coupon.id;
           discountInr = couponDiscountInr(
             coupon.discount_type,
             Number(coupon.discount_value),
-            Number(offering.price_inr),
+            Number(offering.price_inr) + bumpTotal,
           );
         }
       }
     }
 
     /* ── Totals ── */
-    const subtotalInr = Number(offering.price_inr);
+    const subtotalInr = Number(offering.price_inr) + bumpTotal;
     const afterDiscount = Math.max(subtotalInr - discountInr, 0);
     const gstInr = computeGstInr(afterDiscount, offering.gst_mode, Number(offering.gst_rate || 18));
     const totalInr = computeTotalInr(afterDiscount, offering.gst_mode, gstInr);
@@ -192,7 +210,7 @@ Deno.serve(async (req) => {
       const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data: pending } = await admin
         .from("payment_orders")
-        .select("id, razorpay_order_id, total_inr, coupon_id, guest_email, guest_name, notes")
+        .select("id, razorpay_order_id, total_inr, coupon_id, guest_email, guest_name, notes, bump_offering_ids")
         .is("user_id", null)
         .eq("offering_id", offering_id)
         .eq("guest_phone", normalizedPhone)
@@ -206,6 +224,7 @@ Deno.serve(async (req) => {
         typeof row.razorpay_order_id === "string" &&
         Number(row.total_inr) === totalInr &&
         (row.coupon_id ?? null) === (couponDbId ?? null) &&
+        (Array.isArray(row.bump_offering_ids) ? [...(row.bump_offering_ids as string[])].sort().join(",") : "") === validBumpIds.join(",") &&
         String(row.guest_email ?? "").trim().toLowerCase() === String(guest_email).trim().toLowerCase() &&
         String(row.guest_name ?? "").trim() === String(guest_name).trim()
       );
@@ -233,7 +252,7 @@ Deno.serve(async (req) => {
         gst_inr: gstInr,
         total_inr: totalInr,
         coupon_id: couponDbId,
-        bump_offering_ids: [],
+        bump_offering_ids: validBumpIds,
         custom_field_values: {},
         status: totalInr <= 0 ? "captured" : "created",
         guest_name,

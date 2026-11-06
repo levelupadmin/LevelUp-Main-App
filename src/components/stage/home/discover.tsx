@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { tapTick } from "@/lib/haptics";
 import { isNative } from "@/lib/platform";
 import { media } from "@/components/stage/landing/landing";
-import { WORKSHOP_ART, inr, type CatalogItem, type StageCatalog, type Tier } from "./catalog";
+import { WORKSHOP_ART, fetchShownPages, inr, pageHref, type CatalogItem, type StageCatalog, type Tier } from "./catalog";
 
 /*
  * Home for someone who hasn't bought yet, round 3 (founder, 2026-11-02; vault
@@ -16,7 +16,14 @@ import { WORKSHOP_ART, inr, type CatalogItem, type StageCatalog, type Tier } fro
  * something gets BuyerHome instead. No prices in the phone apps (store rules).
  */
 
-/** The carousel, in order. Cohorts use the headline from their page; a masterclass gets its own line. */
+/** Pages that show somewhere; null on a database without the pages table. */
+function useShownPages() {
+  return useQuery({ queryKey: ["stage-pages"], queryFn: fetchShownPages, staleTime: 5 * 60_000 });
+}
+
+/** The carousel's fallback order, used only on a database without pages (the
+ *  featured pages and their carousel_position now decide it: Admin → Catalogue).
+ *  Cohorts use the headline from their page; a masterclass gets its own line. */
 const SLIDES: { slug: string; title?: string }[] = [
   { slug: "breakthrough-filmmakers-program" },
   { slug: "nelson-dilipkumar-teaches-filmmaking", title: "Learn filmmaking from Nelson Dilipkumar" },
@@ -77,15 +84,16 @@ function useWide() {
 const still = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ---- the carousel ---- */
-interface Slide { slug: string; eyebrow: string; title: string; line: string; cta: string; video: string | null; poster: string | null; once: boolean }
+interface Slide { slug: string; href: string; eyebrow: string; title: string; line: string; cta: string; video: string | null; poster: string | null; once: boolean }
 
-function toSlide(s: (typeof SLIDES)[number], h: Head | undefined, wide: boolean, native: boolean): Slide | null {
+function toSlide(s: { slug: string; title?: string | null; href?: string }, h: Head | undefined, wide: boolean, native: boolean): Slide | null {
   if (!h?.hero) return null;
   const cohort = h.product_tier === "live_cohort";
   const price = Number(h.price_inr) || 0;
   const video = cohort ? (wide ? pick(h.hero.video, true) ?? h.hero.video_m : h.hero.video_m ?? pick(h.hero.video, false)) : pick(h.hero.video, wide);
   return {
     slug: h.slug,
+    href: s.href ?? `/p/${h.slug}`,
     eyebrow: cohort ? "Live cohort · Applications open" : "Masterclass",
     title: s.title ?? h.hero.headline ?? h.title,
     line: cohort
@@ -116,10 +124,17 @@ export function HomeCarousel({ heads }: { heads: Head[] }) {
   const navigate = useNavigate();
   const wide = useWide();
   const native = isNative();
-  const slides = useMemo(
-    () => SLIDES.map((s) => toSlide(s, heads.find((h) => h.slug === s.slug), wide, native)).filter((s): s is Slide => !!s),
-    [heads, wide, native],
-  );
+  const pages = useShownPages();
+  const slides = useMemo(() => {
+    if (pages.isLoading) return [];
+    const featured = pages.data
+      ?.filter((p) => p.listing === "featured" && p.button_offering_id)
+      .sort((a, b) => (a.carousel_position ?? 99) - (b.carousel_position ?? 99));
+    const order = featured
+      ? featured.map((p) => ({ head: heads.find((h) => h.id === p.button_offering_id), s: { slug: p.slug, title: p.carousel_title, href: pageHref(p) } }))
+      : SLIDES.map((s) => ({ head: heads.find((h) => h.slug === s.slug), s }));
+    return order.map(({ head, s }) => toSlide(s, head, wide, native)).filter((s): s is Slide => !!s);
+  }, [heads, wide, native, pages.isLoading, pages.data]);
   const box = useRef<HTMLElement | null>(null);
   const track = useRef<HTMLDivElement | null>(null);
   const [at, setAt] = useState(0);
@@ -180,7 +195,7 @@ export function HomeCarousel({ heads }: { heads: Head[] }) {
     >
       <div ref={track} className="hc-track">
         {slides.map((s, n) => (
-          <button key={s.slug} type="button" className="hc-slide" onClick={() => { void tapTick(); navigate(`/p/${s.slug}`); }}>
+          <button key={s.slug} type="button" className="hc-slide" onClick={() => { void tapTick(); navigate(s.href); }}>
             <span className="hc-slide-art">
               {s.video && !calm
                 ? <SlideVideo src={s.video} poster={s.poster} playing={seen && n === at} once={s.once} />
@@ -215,7 +230,7 @@ export function HomeCarousel({ heads }: { heads: Head[] }) {
 }
 
 /* ---- the three rows: masterclasses as the website's poster tiles, cohorts and workshops as wide cards ---- */
-interface Card { id: string; slug: string; art: string | null; kicker: string | null; title: string; meta: string }
+interface Card { id: string; slug: string; href: string; art: string | null; kicker: string | null; title: string; meta: string }
 
 function CardRow({ id, title, tier, cards, poster }: { id: string; title: string; tier: Tier; cards: Card[]; poster?: boolean }) {
   const navigate = useNavigate();
@@ -239,7 +254,7 @@ function CardRow({ id, title, tier, cards, poster }: { id: string; title: string
       <div ref={ref} className={`hc-rail${poster ? " hc-rail--poster" : ""}`}>
         {cards.map((c) => (
           <button key={c.id} type="button" className={`hc-card${poster ? " hc-card--poster" : ""}`} aria-label={poster ? c.title : undefined}
-            onClick={() => { void tapTick(); navigate(`/p/${c.slug}`); }}>
+            onClick={() => { void tapTick(); navigate(c.href); }}>
             <span className="hc-card-art">{c.art && <img src={c.art} alt="" loading="lazy" decoding="async" />}</span>
             <span className="hc-card-b">
               {c.kicker && <span className="hc-eyebrow">{c.kicker}</span>}
@@ -260,21 +275,26 @@ export function HomeRows({ data, heads }: { data: StageCatalog; heads: Head[] })
   const list = (t: Tier) => data.formats.find((f) => f.tier === t)?.list.filter((x) => !x.owned) ?? [];
   const price = (x: CatalogItem) => (!native && x.offering.price > 0 ? inr(x.offering.price) : null);
 
+  // With pages, the catalogue already comes in the order set in Admin → Catalogue
+  // and lists exactly what's switched on; the old hard-coded order and the
+  // "cohort needs a v2 page" rule only apply to a database without pages.
+  const paged = data.catalog.some((x) => x.page);
+  const sortBy = (order: string[]) => (paged ? () => 0 : byOrder(order));
   const posters = list("masterclass").every((x) => bySlug.get(x.offering.slug)?.poster);
-  const masterclasses: Card[] = list("masterclass").sort(byOrder(MASTERCLASSES)).map((x) => ({
-    id: x.offering.id, slug: x.offering.slug,
+  const masterclasses: Card[] = list("masterclass").sort(sortBy(MASTERCLASSES)).map((x) => ({
+    id: x.offering.id, slug: x.offering.slug, href: x.href,
     art: (posters ? media(bySlug.get(x.offering.slug)?.poster) : media(bySlug.get(x.offering.slug)?.card)) ?? x.offering.thumbnail_url,
     kicker: null,
     title: x.offering.title,
     meta: [x.lessons ? `${x.lessons} lessons` : null, price(x)].filter(Boolean).join(" · "),
   }));
   const cohorts: Card[] = list("live_cohort")
-    .filter((x) => bySlug.get(x.offering.slug)?.v === 2)
-    .sort(byOrder(COHORTS))
+    .filter((x) => paged || bySlug.get(x.offering.slug)?.v === 2)
+    .sort(sortBy(COHORTS))
     .map((x) => {
       const h = bySlug.get(x.offering.slug);
       return {
-        id: x.offering.id, slug: x.offering.slug,
+        id: x.offering.id, slug: x.offering.slug, href: x.href,
         // The programme's own logo, as on its My learning card (founder, 2 Nov 2026); the page's hero only without one.
         art: x.offering.thumbnail_url ?? media(pick(h?.hero?.image, true)) ?? null,
         kicker: fact(h, /next cohort/i),
@@ -283,8 +303,8 @@ export function HomeRows({ data, heads }: { data: StageCatalog; heads: Head[] })
       };
     });
   const workshops: Card[] = list("workshop").map((x) => ({
-    id: x.offering.id, slug: x.offering.slug,
-    art: x.offering.thumbnail_url ?? media(WORKSHOP_ART) ?? null,
+    id: x.offering.id, slug: x.offering.slug, href: x.href,
+    art: x.page?.card_image_url ?? x.offering.thumbnail_url ?? media(WORKSHOP_ART) ?? null,
     kicker: null,
     title: x.offering.title,
     meta: [x.videos ? `${x.videos} videos` : null, x.files ? `${x.files} files` : null, price(x)].filter(Boolean).join(" · "),

@@ -14,8 +14,19 @@ The web app is authoritative; the native shells wrap it and are read-only on buy
 
 ## Vocabulary (call these by the same name everywhere)
 
-- **Offering** (`offerings`) — a thing a user can buy: a masterclass, a course bundle,
-  a live cohort, or an event. Carries price, GST mode/rate, status, payment_mode.
+- **Page** (`pages`, migration `20261106120000`) — what people see: the card on
+  Explore/Home and `/p/<slug>`. `listing` = hidden | link | listed | featured (+ the
+  Home carousel at `carousel_position`), `position` = order in its row,
+  `button_offering_id` = the offering its Buy/Apply button sells, `opens` = page or
+  straight to the checkout. Offerings under a page (batches) carry `offerings.page_id`.
+  `offerings.is_public` is DERIVED from pages by a trigger (older app builds read it).
+  Admin → Catalogue (`pages/admin/AdminCatalogue.tsx`) edits it.
+- **Offering** (`offerings`) — what people pay for: the checkout (TagMango's
+  "service"). A masterclass, a bundle, a live cohort, a workshop, a resource pack.
+  Carries price, GST mode/rate, status (active = "Selling", archived = "Closed",
+  students keep access; draft), payment_mode, and **`access`**: buy | free | apply |
+  team. ₹0 alone never means free: only `access = 'free'` may be claimed at ₹0, and
+  only buy/free (and staged stages) open a checkout order (`_shared/freeEnrolment.ts`).
 - **Course** (`courses`) → **Section** (`sections`) → **Chapter** (`chapters`) — the
   learning content tree. An offering links to courses via `offering_courses`.
 - **Enrolment** (`enrolments`) — a user's granted access to an offering. This is the
@@ -25,8 +36,10 @@ The web app is authoritative; the native shells wrap it and are read-only on buy
   (subtotal/discount/gst/total), the Razorpay order id, and capture state.
   Only the server writes it: the browser can read its own rows but has no
   insert, update or delete (migration `20261030120000`).
-- **Bump** (`offering_bumps`) — an order-bump add-on offered on the checkout of a parent
-  offering. **Coupon** (`coupons`) — a discount code (percent or flat). Both feed pricing.
+- **Bump** (`offering_bumps`) — an add-on: another offering the buyer can tick on the
+  checkout of a parent offering (signed in AND guest; priced on the server by
+  `_shared/bumps.ts`, granted by the capture paths from `payment_orders.bump_offering_ids`).
+  Only Selling, `access = 'buy'`, priced offerings can be add-ons. **Coupon** (`coupons`) — a discount code (percent or flat). Both feed pricing.
 - **Cohort application** (`cohort_applications`) + **staged payments** — live-cohort
   offerings (`payment_mode = "staged"`) are paid in stages: `app_fee` → `confirmation`
   → `balance`, tracked on the application row. Bumps/coupons don't apply to staged.
@@ -142,8 +155,9 @@ The browser Purchase goes out once per
 `couponDiscountInr`, `gstInr`, `totalInr`, `toPaise`, `couponInvalidReason`. Used by
 `create-razorpay-order`, `guest-create-order`, `validate-coupon`, and the frontend
 preview (`hooks/useCheckoutPricing.ts`, via the `@shared` alias). Change pricing rules
-there, once. Intentional difference: the public coupon preview and the guest path
-discount the **base price only**; the signed-in order path discounts **price + bumps**.
+there, once. Intentional difference: the public coupon preview
+discounts the **base price only**; both order paths (signed in and guest) discount
+**price + bumps** (the same with no bump).
 
 The **frontend total is always a preview** — `verify-razorpay-payment` re-derives the
 expected paise from `payment_orders.total_inr` before capturing, so a tampered client

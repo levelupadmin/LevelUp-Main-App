@@ -8,7 +8,9 @@ import { useAuth } from "@/contexts/AuthContext";
  * nothing on these screens is written by hand except the format copy.
  *
  * - Formats are offerings.product_tier: masterclass, live_cohort, workshop.
- * - Listed = is_public, status active, and the course not hidden from browse.
+ * - Listed = a page (pages table) set to "listed" or "featured" whose button
+ *   offering is active; rows follow pages.position (Admin → Catalogue).
+ *   On a database without the pages table it falls back to is_public.
  * - Lessons = courses.total_lessons when set, else the video chapters.
  * - Free lessons = chapters.make_free on listed courses the person doesn't own.
  * - A live cohort's price of 0 means "apply first", so no price is shown.
@@ -31,8 +33,22 @@ interface CourseRow {
 interface SectionRow { id: string; course_id: string; sort_order: number | null }
 interface ChapterRow { id: string; section_id: string; title: string; content_type: string | null; make_free: boolean | null; sort_order: number | null }
 
+/** What people see (Explore, Home, /p/<slug>): migration 20261106120000. */
+export interface PageRow {
+  id: string; slug: string; title: string; listing: string; position: number; carousel_position: number | null;
+  opens: string; button_offering_id: string | null; carousel_title: string | null; card_image_url: string | null;
+}
+export const PAGE_COLUMNS = "id, slug, title, listing, position, carousel_position, opens, button_offering_id, carousel_title, card_image_url";
+/** Where a page's card goes: its page, or straight to the checkout. */
+export const pageHref = (page: Pick<PageRow, "slug" | "opens" | "button_offering_id">) =>
+  page.opens === "checkout" && page.button_offering_id ? `/checkout/${page.button_offering_id}` : `/p/${page.slug}`;
+
 export interface CatalogItem {
   offering: OfferingRow & { price: number; highlight: string | null };
+  /** the page that lists it (null on a database without pages) */
+  page: PageRow | null;
+  /** where its card goes */
+  href: string;
   course: CourseRow | null;
   lessons: number;
   videos: number;
@@ -55,11 +71,26 @@ export interface StageCatalog { catalog: CatalogItem[]; formats: FormatSummary[]
 
 const num = (v: number | string | null | undefined) => (v == null ? 0 : Number(v) || 0);
 
+/** Pages that show somewhere (not hidden), or null when the table isn't there yet. */
+export async function fetchShownPages(): Promise<PageRow[] | null> {
+  const { data, error } = await supabase.from("pages").select(PAGE_COLUMNS).neq("listing", "hidden");
+  if (error) return null;
+  return (data ?? []) as PageRow[];
+}
+
+const OFFERING_COLUMNS = "id, slug, title, subtitle, highlights, thumbnail_url, product_tier, instructor_name, price_inr, validity_days, refund_policy_days, created_at";
+
 async function fetchRaw() {
+  const pages = await fetchShownPages();
+  const listed = pages?.filter((p) => (p.listing === "listed" || p.listing === "featured") && p.button_offering_id) ?? null;
+  const offeringsQuery = listed
+    ? supabase.from("offerings").select(OFFERING_COLUMNS)
+        .in("id", listed.length ? listed.map((p) => p.button_offering_id as string) : ["00000000-0000-0000-0000-000000000000"])
+        .eq("status", "active")
+    : supabase.from("offerings").select(OFFERING_COLUMNS)
+        .eq("is_public", true).eq("status", "active").order("created_at", { ascending: false });
   const [o, c, oc, s, ch] = await Promise.all([
-    supabase.from("offerings")
-      .select("id, slug, title, subtitle, highlights, thumbnail_url, product_tier, instructor_name, price_inr, validity_days, refund_policy_days, created_at")
-      .eq("is_public", true).eq("status", "active").order("created_at", { ascending: false }),
+    offeringsQuery,
     supabase.from("courses")
       .select("id, title, total_lessons, duration_minutes, duration_text, language, show_on_browse, primary_offering_id"),
     supabase.from("offering_courses").select("offering_id, course_id"),
@@ -69,6 +100,7 @@ async function fetchRaw() {
   const err = o.error || c.error || oc.error || s.error || ch.error;
   if (err) throw err;
   return {
+    pages: listed,
     offerings: (o.data ?? []) as OfferingRow[],
     courses: (c.data ?? []) as CourseRow[],
     links: (oc.data ?? []) as { offering_id: string; course_id: string }[],
@@ -94,17 +126,25 @@ export function buildCatalog(raw: Awaited<ReturnType<typeof fetchRaw>>, ownedIds
   const coursesOf = (offeringId: string) =>
     raw.links.filter((l) => l.offering_id === offeringId).map((l) => courseById.get(l.course_id)).filter(Boolean) as CourseRow[];
 
+  const pageByOffering = new Map((raw.pages ?? []).map((p) => [p.button_offering_id as string, p]));
+  const offerings = raw.pages
+    ? [...raw.offerings].sort((a, b) => (pageByOffering.get(a.id)?.position ?? 999) - (pageByOffering.get(b.id)?.position ?? 999))
+    : raw.offerings;
   const catalog: CatalogItem[] = [];
-  for (const o of raw.offerings) {
+  for (const o of offerings) {
     if (!TIERS.includes(o.product_tier as Tier)) continue;
+    const page = pageByOffering.get(o.id) ?? null;
     const cs = coursesOf(o.id);
     const c = cs.find((x) => (chaptersByCourse.get(x.id) ?? []).length) ?? cs[0] ?? null;
-    if (c && c.show_on_browse === false) continue;
+    // With pages, the page's listing is the only switch; without, the old course flag.
+    if (!raw.pages && c && c.show_on_browse === false) continue;
     const chs = c ? chaptersByCourse.get(c.id) ?? [] : [];
     const videos = chs.filter((x) => x.content_type === "video").length;
     const hl = Array.isArray(o.highlights) && typeof o.highlights[0] === "string" ? (o.highlights[0] as string) : null;
     catalog.push({
       offering: { ...o, price: num(o.price_inr), highlight: hl },
+      page,
+      href: page ? pageHref(page) : `/p/${o.slug}`,
       course: c,
       lessons: c && num(c.total_lessons) > 0 ? num(c.total_lessons) : videos,
       videos,

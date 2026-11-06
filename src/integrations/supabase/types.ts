@@ -4659,6 +4659,59 @@ export type Database = {
           },
         ]
       }
+      pages: {
+        Row: {
+          button_offering_id: string | null
+          card_image_url: string | null
+          carousel_position: number | null
+          carousel_title: string | null
+          created_at: string
+          id: string
+          listing: string
+          opens: string
+          position: number
+          slug: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          button_offering_id?: string | null
+          card_image_url?: string | null
+          carousel_position?: number | null
+          carousel_title?: string | null
+          created_at?: string
+          id?: string
+          listing?: string
+          opens?: string
+          position?: number
+          slug: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          button_offering_id?: string | null
+          card_image_url?: string | null
+          carousel_position?: number | null
+          carousel_title?: string | null
+          created_at?: string
+          id?: string
+          listing?: string
+          opens?: string
+          position?: number
+          slug?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pages_button_offering_id_fkey"
+            columns: ["button_offering_id"]
+            isOneToOne: false
+            referencedRelation: "offerings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offering_bumps: {
         Row: {
           bump_offering_id: string
@@ -4822,7 +4875,9 @@ export type Database = {
           page_coupon_code: string | null
           payment_mode: string | null
           price_inr: number
+          access: string
           product_tier: string
+          page_id: string | null
           razorpay_plan_id: string | null
           refund_policy_days: number | null
           seats_total: number | null
@@ -4883,7 +4938,9 @@ export type Database = {
           page_coupon_code?: string | null
           payment_mode?: string | null
           price_inr: number
+          access?: string
           product_tier?: string
+          page_id?: string | null
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null
           seats_total?: number | null
@@ -4944,7 +5001,9 @@ export type Database = {
           page_coupon_code?: string | null
           payment_mode?: string | null
           price_inr?: number
+          access?: string
           product_tier?: string
+          page_id?: string | null
           razorpay_plan_id?: string | null
           refund_policy_days?: number | null
           seats_total?: number | null
@@ -6969,6 +7028,14 @@ export type Database = {
       _room_balance_outstanding: {
         Args: { p_offering: string; p_user: string }
         Returns: boolean
+      }
+      admin_catalogue_counts: {
+        Args: never
+        Returns: { offering_id: string; students: number; tagmango: number }[]
+      }
+      admin_set_offering_links: {
+        Args: { p_bumps?: Json; p_course_ids: string[]; p_offering_id: string }
+        Returns: undefined
       }
       admin_dashboard_combined: {
         Args: { p_from: string; p_to: string }

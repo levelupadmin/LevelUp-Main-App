@@ -1,5 +1,6 @@
+import { ACCESS, ACCESS_ORDER, FORMAT, LISTING, OFFERING_STATUS } from "@/lib/catalogue";
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,6 +61,9 @@ const EMPTY_FORM = {
   gst_rate: 0,
   validity_days: "",
   is_public: false,
+  // How people get it (offerings.access) and its format (product_tier)
+  access: "buy",
+  product_tier: "masterclass",
   // Public Page
   subtitle: "",
   banner_url: "",
@@ -119,6 +123,9 @@ const AdminOfferingEditor = () => {
   const [allOfferingsForUpsell, setAllOfferingsForUpsell] = useState<OfferingForUpsell[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  /** Pages whose button sells this offering (Admin → Catalogue). */
+  const [shownOn, setShownOn] = useState<{ id: string; title: string; slug: string; listing: string }[]>([]);
+  const [bumpChoices, setBumpChoices] = useState<{ id: string; title: string; price_inr: number | string | null; status: string; access: string }[]>([]);
 
   /* ── Helpers ── */
   const f = (key: keyof typeof EMPTY_FORM, value: any) =>
@@ -130,10 +137,15 @@ const AdminOfferingEditor = () => {
       setLoading(true);
       const [coursesRes, offsRes] = await Promise.all([
         supabase.from("courses").select("id, title").order("title"),
-        supabase.from("offerings").select("id, title, price_inr").order("title"),
+        supabase.from("offerings").select("id, title, price_inr, status, access").order("title"),
       ]);
       setAllCourses(coursesRes.data || []);
       setAllOfferingsForUpsell(offsRes.data || []);
+      setBumpChoices((offsRes.data || []) as typeof bumpChoices);
+      if (!isNew && offeringId) {
+        const { data: pg } = await supabase.from("pages").select("id, title, slug, listing").eq("button_offering_id", offeringId);
+        setShownOn(pg ?? []);
+      }
 
       if (!isNew && offeringId) {
         const [offeringRes, ocsRes, upsellsRes, bumpsRes] = await Promise.all([
@@ -162,6 +174,8 @@ const AdminOfferingEditor = () => {
             gst_rate: d.gst_rate ?? 0,
             validity_days: d.validity_days?.toString() || "",
             is_public: d.is_public ?? false,
+            access: d.access || "buy",
+            product_tier: d.product_tier || "other",
             subtitle: d.subtitle || "",
             banner_url: d.banner_url || "",
             instructor_name: d.instructor_name || "",
@@ -245,6 +259,12 @@ const AdminOfferingEditor = () => {
     // Prevent publishing with no linked courses
     if (form.status === "active" && linkedCourseIds.length === 0) {
       toast({ title: "Cannot publish offering", description: "At least one course must be linked before setting status to Active.", variant: "destructive" });
+      return;
+    }
+
+    // A "Buy" offering that is on sale needs a price: ₹0 is not "free" any more.
+    if (form.status === "active" && form.access === "buy" && !(Number(form.price_inr) > 0)) {
+      toast({ title: "Add a price", description: "A Buy offering needs a price above ₹0. To give it away choose Free; for batches and packs the team adds people to, choose Team adds.", variant: "destructive" });
       return;
     }
 
@@ -345,7 +365,10 @@ const AdminOfferingEditor = () => {
       gst_mode: form.gst_mode,
       gst_rate: form.gst_rate || 0,
       validity_days: form.validity_days ? Number(form.validity_days) : null,
-      is_public: form.is_public,
+      // is_public is no longer set here: it follows the pages that sell this
+      // offering (trigger pages_sync_is_public, migration 20261106120000).
+      access: form.access,
+      product_tier: form.product_tier,
       // Public page
       subtitle: form.subtitle || null,
       banner_url: form.banner_url || null,
@@ -404,13 +427,24 @@ const AdminOfferingEditor = () => {
       offId = data.id;
     }
 
-    // Sync offering_courses
+    // What it unlocks (courses) and its checkout add-ons (bumps), in ONE
+    // all-or-nothing database call (admin_set_offering_links). It used to
+    // delete every link and re-add them with errors ignored, so a failure
+    // halfway left the offering with no courses while it said "saved".
     if (offId) {
-      await supabase.from("offering_courses").delete().eq("offering_id", offId);
+      const { error: linkErr } = await supabase.rpc("admin_set_offering_links", {
+        p_offering_id: offId,
+        p_course_ids: linkedCourseIds,
+        p_bumps: bumps
+          .filter((b) => b.bump_offering_id && b.bump_offering_id !== offId)
+          .map((b) => ({ bump_offering_id: b.bump_offering_id, headline: b.headline || "", price_override: b.bump_price_override_inr || "" })),
+      });
+      if (linkErr) {
+        toast({ title: "Courses and add-ons not saved", description: `The offering's details were saved, but its courses and add-ons were left exactly as they were. ${linkErr.message}`, variant: "destructive" });
+        setSaving(false);
+        return;
+      }
       if (linkedCourseIds.length > 0) {
-        await supabase.from("offering_courses").insert(
-          linkedCourseIds.map((cid) => ({ offering_id: offId!, course_id: cid }))
-        );
 
         // Auto-set primary_offering_id on courses that don't have one
         const { data: coursesWithoutPrimary } = await supabase
@@ -442,19 +476,6 @@ const AdminOfferingEditor = () => {
         );
       }
 
-      // Sync bumps
-      await supabase.from("offering_bumps").delete().eq("parent_offering_id", offId);
-      if (bumps.length > 0) {
-        await supabase.from("offering_bumps").insert(
-          bumps.map((b, i) => ({
-            parent_offering_id: offId!,
-            bump_offering_id: b.bump_offering_id,
-            headline: b.headline || "",
-            bump_price_override_inr: b.bump_price_override_inr ? Number(b.bump_price_override_inr) : null,
-            sort_order: i,
-          }))
-        );
-      }
     }
 
     // Audit log
@@ -568,20 +589,44 @@ const AdminOfferingEditor = () => {
                     <SelectItem value="subscription">Subscription</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Product category (Masterclass / Live Cohort / Workshop) is set on the linked course, not here.
-                </p>
               </div>
               <div>
                 <Label>Status</Label>
                 <Select value={form.status} onValueChange={(v) => f("status", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
+                    {(["active", "archived", "draft"] as const).map((k) => (
+                      <SelectItem key={k} value={k}>{OFFERING_STATUS[k].label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground mt-1">{OFFERING_STATUS[form.status]?.hint}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Format</Label>
+                <Select value={form.product_tier} onValueChange={(v) => f("product_tier", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(FORMAT).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Decides its row on Explore and Home (masterclass, live cohort, workshop).</p>
+              </div>
+              <div>
+                <Label>How people get it</Label>
+                <Select value={form.access} onValueChange={(v) => f("access", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ACCESS_ORDER.map((k) => (
+                      <SelectItem key={k} value={k}>{ACCESS[k].label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">{ACCESS[form.access]?.hint}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -646,12 +691,24 @@ const AdminOfferingEditor = () => {
                   placeholder="Leave empty for lifetime"
                 />
               </div>
-              <div className="flex items-center gap-3 pt-6">
-                <Switch
-                  checked={form.is_public}
-                  onCheckedChange={(checked) => f("is_public", checked)}
-                />
-                <Label>Public (visible at /p/{form.slug || "slug"})</Label>
+              <div className="pt-1">
+                <Label>Shown on</Label>
+                {shownOn.length ? (
+                  <ul className="text-sm mt-1 space-y-0.5">
+                    {shownOn.map((p) => (
+                      <li key={p.id}>
+                        <a className="underline" href={`/p/${p.slug}`} target="_blank" rel="noreferrer">/p/{p.slug}</a>
+                        <span className="text-muted-foreground"> · {LISTING[p.listing]?.label ?? p.listing}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground mt-1">No page yet: sold on its checkout link only.</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Pages are set in <Link className="underline" to="/admin/catalogue">Catalogue</Link>.
+                  {!isNew && <> Checkout link: <span className="font-mono">/checkout/{offeringId}</span></>}
+                </p>
               </div>
             </div>
 
@@ -708,8 +765,49 @@ const AdminOfferingEditor = () => {
         <TabsContent value="checkout">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <p className="text-sm text-muted-foreground">
-              Customize the checkout experience: social proof, guarantees and the page coupon code.
+              Customize the checkout experience: add-ons, social proof, guarantees and the page coupon code.
             </p>
+
+            {/* Add-ons (bumps): other offerings the buyer can tick on this checkout */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div>
+                <Label>Add-ons on this checkout</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Other offerings the buyer can tick before paying, e.g. the ₹199 resources pack or a masterclass. Ticking one adds its price;
+                  after payment the buyer gets both. Only Selling offerings that people Buy, priced above ₹0, can be add-ons.
+                </p>
+              </div>
+              {bumps.map((b, i) => (
+                <div key={b.id || i} className="grid grid-cols-1 sm:grid-cols-[2fr_2fr_1fr_auto] gap-2 items-end">
+                  <div>
+                    <Label className="text-xs">Offering</Label>
+                    <Select value={b.bump_offering_id || "none"} onValueChange={(v) => setBumps((prev) => prev.map((x, j) => (j === i ? { ...x, bump_offering_id: v === "none" ? "" : v } : x)))}>
+                      <SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        <SelectItem value="none">Choose an offering</SelectItem>
+                        {bumpChoices
+                          .filter((o) => o.id !== offeringId && ((o.status === "active" && o.access === "buy" && Number(o.price_inr) > 0) || o.id === b.bump_offering_id))
+                          .map((o) => (
+                            <SelectItem key={o.id} value={o.id}>{o.title} · ₹{Number(o.price_inr).toLocaleString("en-IN")}</SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Line on the checkout (optional)</Label>
+                    <Input value={b.headline} placeholder="Add the session recording + deck" onChange={(e) => setBumps((prev) => prev.map((x, j) => (j === i ? { ...x, headline: e.target.value } : x)))} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Add-on price (₹)</Label>
+                    <Input type="number" value={b.bump_price_override_inr} placeholder="its own price" onChange={(e) => setBumps((prev) => prev.map((x, j) => (j === i ? { ...x, bump_price_override_inr: e.target.value } : x)))} />
+                  </div>
+                  <Button type="button" variant="ghost" onClick={() => setBumps((prev) => prev.filter((_, j) => j !== i))}>Remove</Button>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={() => setBumps((prev) => [...prev, { id: "", bump_offering_id: "", headline: "", bump_price_override_inr: "" }])}>
+                Add an add-on
+              </Button>
+            </div>
 
             {/* Checkout Testimonials */}
             <div>

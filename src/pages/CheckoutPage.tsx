@@ -1,3 +1,4 @@
+import { bumpAllowed } from "@shared/freeEnrolment";
 import { useEffect, useMemo, useState, useRef } from "react";
 import usePageTitle from "@/hooks/usePageTitle";
 import { useCheckoutPricing } from "@/hooks/useCheckoutPricing";
@@ -478,7 +479,9 @@ export default function CheckoutPage() {
               (o) => o.id === b.bump_offering_id
             ),
           }))
-          .filter((b) => b.offeringDetail);
+          // The same rule the server prices by (_shared/freeEnrolment.ts):
+          // an add-on must itself be on sale and priced.
+          .filter((b) => bumpAllowed(b.offeringDetail, b.bump_price_override_inr));
         setBumps(enriched);
       }
 
@@ -983,6 +986,8 @@ export default function CheckoutPage() {
               guest_email: guestEmail.trim(),
               guest_phone: guestPhone.trim(),
               coupon_code: appliedCoupon?.code ?? null,
+              // Add-ons (bumps): guests can tick them too; the server prices them.
+              bump_ids: isStaged ? [] : Array.from(selectedBumps).sort(),
               reuse_token: reuseToken,
               // Top-level utm_* are what the deployed function has always
               // read; `attribution` carries the full set for the new one.
