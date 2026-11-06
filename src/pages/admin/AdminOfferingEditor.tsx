@@ -1,3 +1,4 @@
+import { OfferingPreview } from "@/components/admin/offering-editor/OfferingPreview";
 import { refreshStorefront } from "@/lib/storefrontCache";
 import { CheckoutPageTab, type Question } from "@/components/admin/offering-editor/CheckoutPageTab";
 import { EMPTY_EXPLORE, ExploreFields, loadExplore, saveExplore, type ExploreState } from "@/components/admin/offering-editor/ExploreFields";
@@ -23,7 +24,6 @@ import PublicPageFields from "@/components/admin/offering-editor/PublicPageField
 import ThankYouFields from "@/components/admin/offering-editor/ThankYouFields";
 import TrackingFields from "@/components/admin/offering-editor/TrackingFields";
 import StudentsTab from "@/components/admin/offering-editor/StudentsTab";
-import CurriculumTab from "@/components/admin/offering-editor/CurriculumTab";
 import AccessTab from "@/components/admin/offering-editor/AccessTab";
 
 /* ────────────────────────────────────────────────── */
@@ -77,9 +77,9 @@ const EMPTY_FORM = {
   highlights: "[]",
   // Thank You Page
   thankyou_thumbnail_url: "",
-  thankyou_headline: "Payment Successful!",
+  thankyou_headline: "",
   thankyou_body: "",
-  thankyou_cta_label: "Go to Dashboard",
+  thankyou_cta_label: "",
   thankyou_cta_url: "",
   thankyou_auto_redirect: true,
   thankyou_redirect_seconds: 10,
@@ -114,6 +114,8 @@ const EMPTY_FORM = {
 /* ────────────────────────────────────────────────── */
 /*  Component                                         */
 /* ────────────────────────────────────────────────── */
+type Section = "basics" | "checkout" | "after" | "explore" | "tracking" | "applications" | "students";
+
 const AdminOfferingEditor = () => {
   const { offeringId } = useParams();
   const isNew = !offeringId || offeringId === "new";
@@ -132,6 +134,8 @@ const AdminOfferingEditor = () => {
   const [loading, setLoading] = useState(true);
   /** "Show on Explore" (this offering's row in pages). */
   const [explore, setExplore] = useState<ExploreState>(EMPTY_EXPLORE);
+  /** Which editor section is open; the preview follows it. */
+  const [section, setSection] = useState<Section>("basics");
   /** Questions asked on the checkout (custom_field_definitions). */
   const [questions, setQuestions] = useState<Question[]>([]);
   const [bumpChoices, setBumpChoices] = useState<{ id: string; title: string; price_inr: number | string | null; status: string; access: string }[]>([]);
@@ -196,9 +200,10 @@ const AdminOfferingEditor = () => {
             instructor_avatar_url: d.instructor_avatar_url || "",
             highlights: d.highlights ? JSON.stringify(d.highlights) : "[]",
             thankyou_thumbnail_url: d.thankyou_thumbnail_url || "",
-            thankyou_headline: d.thankyou_headline || "Payment Successful!",
+            // The old editor saved its placeholder wording; treat it as empty.
+            thankyou_headline: d.thankyou_headline && d.thankyou_headline !== "Payment Successful!" ? d.thankyou_headline : "",
             thankyou_body: d.thankyou_body || "",
-            thankyou_cta_label: d.thankyou_cta_label || "Go to Dashboard",
+            thankyou_cta_label: d.thankyou_cta_label && d.thankyou_cta_label !== "Go to Dashboard" ? d.thankyou_cta_label : "",
             thankyou_cta_url: d.thankyou_cta_url || "",
             thankyou_auto_redirect: d.thankyou_auto_redirect ?? true,
             thankyou_redirect_seconds: d.thankyou_redirect_seconds ?? 10,
@@ -408,9 +413,10 @@ const AdminOfferingEditor = () => {
       highlights: parsedHighlights,
       // Thank you page
       thankyou_thumbnail_url: form.thankyou_thumbnail_url || null,
-      thankyou_headline: form.thankyou_headline || "Payment Successful!",
+      // Empty = the thank-you page's own wording ("You're in.", "Start lesson 1").
+      thankyou_headline: form.thankyou_headline.trim() || null,
       thankyou_body: form.thankyou_body || null,
-      thankyou_cta_label: form.thankyou_cta_label || "Go to Dashboard",
+      thankyou_cta_label: form.thankyou_cta_label.trim() || null,
       thankyou_cta_url: form.thankyou_cta_url || null,
       thankyou_auto_redirect: form.thankyou_auto_redirect,
       thankyou_redirect_seconds: redirectSec,
@@ -561,6 +567,11 @@ const AdminOfferingEditor = () => {
     );
   }
 
+  const courseTitles = allCourses.filter((c) => linkedCourseIds.includes(c.id)).map((c) => c.title);
+  // Applications, staged payments, Calendly and the WhatsApp group only mean
+  // something for offerings people apply to (live cohorts).
+  const showApplications = form.product_tier === "live_cohort" || form.access === "apply" || form.payment_mode === "staged" || !!form.tally_form_url;
+
   return (
     <>
       <AdminBreadcrumbs items={[
@@ -579,25 +590,23 @@ const AdminOfferingEditor = () => {
         </Button>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="basic" className="w-full">
-        <TabsList className="w-full justify-start bg-secondary/50 mb-6">
-          <TabsTrigger value="basic">Basic Info</TabsTrigger>
-          <TabsTrigger value="public">Public Page</TabsTrigger>
-          <TabsTrigger value="thankyou">Thank You Page</TabsTrigger>
-          <TabsTrigger value="tracking">Tracking & Pixels</TabsTrigger>
+      {/* Sections on the left, the live preview always beside them (founder,
+          6 Nov 2026: "a visualiser we can keep on"). Every section here does
+          something the buyer or the team sees; nothing is decorative. */}
+      <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="w-full">
+        <TabsList className="w-full justify-start bg-secondary/50 mb-6 flex-wrap h-auto">
+          <TabsTrigger value="basics">Basics</TabsTrigger>
           <TabsTrigger value="checkout">Checkout page</TabsTrigger>
-          <TabsTrigger value="cohort">Live Cohort</TabsTrigger>
-          {/* Read-only views. Hidden on a brand-new offering, which has no id
-              yet and therefore nothing to report on. */}
+          <TabsTrigger value="after">After payment</TabsTrigger>
+          <TabsTrigger value="explore">Explore and sales page</TabsTrigger>
+          <TabsTrigger value="tracking">Tracking</TabsTrigger>
+          {showApplications && <TabsTrigger value="applications">Applications and cohort</TabsTrigger>}
           {!isNew && <TabsTrigger value="students">Students</TabsTrigger>}
-          {!isNew && <TabsTrigger value="curriculum">Curriculum</TabsTrigger>}
         </TabsList>
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 1: BASIC INFO                         */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="basic">
+        <div className={section === "students" ? "" : "grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start"}>
+          <div className="min-w-0">
+            <TabsContent value="basics" className="mt-0">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <div>
               <Label>Title</Label>
@@ -627,21 +636,7 @@ const AdminOfferingEditor = () => {
                 </p>
               )}
             </div>
-            <div>
-              <Label>Description</Label>
-              <Textarea value={form.description} onChange={(e) => f("description", e.target.value)} rows={3} />
-            </div>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Billing model</Label>
-                <Select value={form.type} onValueChange={(v) => f("type", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="onetime">One-time payment</SelectItem>
-                    <SelectItem value="subscription">Subscription</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               <div>
                 <Label>Status</Label>
                 <Select value={form.status} onValueChange={(v) => f("status", v)}>
@@ -691,7 +686,7 @@ const AdminOfferingEditor = () => {
                 />
               </div>
               <div>
-                <Label>MRP (INR)</Label>
+                <Label>Struck-through price (INR)</Label>
                 <Input
                   type="number"
                   value={form.mrp_inr}
@@ -701,7 +696,8 @@ const AdminOfferingEditor = () => {
               </div>
             </div>
             <div>
-              <Label>Thumbnail URL</Label>
+              <Label>Picture</Label>
+              <p className="text-xs text-muted-foreground mb-1">Used on its cards, in My learning and on the thank-you page when that has none.</p>
               <Input value={form.thumbnail_url} onChange={(e) => f("thumbnail_url", e.target.value)} />
               {form.thumbnail_url && (
                 <img
@@ -714,13 +710,13 @@ const AdminOfferingEditor = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>GST Mode</Label>
+                <Label>GST</Label>
                 <Select value={form.gst_mode} onValueChange={(v) => f("gst_mode", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="inclusive">Inclusive</SelectItem>
-                    <SelectItem value="exclusive">Exclusive</SelectItem>
+                    <SelectItem value="none">No GST</SelectItem>
+                    <SelectItem value="inclusive">Included in the price</SelectItem>
+                    <SelectItem value="exclusive">Added on top of the price</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -733,23 +729,6 @@ const AdminOfferingEditor = () => {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Validity (days)</Label>
-                <Input
-                  type="number"
-                  value={form.validity_days}
-                  onChange={(e) => f("validity_days", e.target.value)}
-                  placeholder="Leave empty for lifetime"
-                />
-              </div>
-              <div className="pt-1">
-                <Label>Checkout link</Label>
-                <p className="text-sm mt-1 font-mono break-all">/checkout/{form.slug || "…"}</p>
-                <p className="text-xs text-muted-foreground mt-1">Share it anywhere: ads, WhatsApp, a sales page button.</p>
-              </div>
-            </div>
-
             {/* Linked courses */}
             <div>
               <Label className="mb-1 block">Courses inside (what the buyer gets)</Label>
@@ -769,62 +748,72 @@ const AdminOfferingEditor = () => {
                           );
                         }}
                       />
-                      {c.title}
+                      <span className="flex-1">{c.title}</span>
+                      {linkedCourseIds.includes(c.id) && (
+                        <Link to={`/admin/courses/${c.id}/curriculum`} className="text-xs underline text-muted-foreground" onClick={(e) => e.stopPropagation()}>Edit lessons</Link>
+                      )}
                     </label>
                   ))
                 )}
               </div>
             </div>
 
+          </div>
+            </TabsContent>
+
+            <TabsContent value="checkout" className="mt-0">
+              <CheckoutPageTab
+                form={form}
+                f={(k, v) => f(k as keyof typeof EMPTY_FORM, v)}
+                offeringId={isNew ? undefined : offeringId}
+                bumps={bumps}
+                setBumps={setBumps}
+                bumpChoices={bumpChoices}
+                questions={questions}
+                setQuestions={setQuestions}
+                courseTitles={courseTitles}
+              />
+            </TabsContent>
+
+            <TabsContent value="after" className="mt-0 space-y-3">
+              <p className="text-sm text-muted-foreground">What the buyer sees right after paying. Leave a box empty to use the app's own wording (shown in the preview).</p>
+              <ThankYouFields form={form} f={f} />
+            </TabsContent>
+
+            <TabsContent value="explore" className="mt-0 space-y-6">
             <ExploreFields
               value={explore}
               onChange={setExplore}
               courseCount={linkedCourseIds.length}
               offering={{ status: form.status, access: form.access, price_inr: form.price_inr, product_tier: form.product_tier, tally_form_url: form.tally_form_url, payment_mode: form.payment_mode, thumbnail_url: form.thumbnail_url || form.checkout_cover_url, has_landing: false }}
             />
-          </div>
-        </TabsContent>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Sales page (/p/{form.slug || "…"})</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    The longer page people can read before buying. Masterclasses and cohorts with a designed page use that design; these fields fill the card's second line and any page without a design.
+                  </p>
+                </div>
+                <PublicPageFields form={form} f={f} />
+                <div className="rounded-xl border border-border p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Switch checked={form.show_coupon_on_page} onCheckedChange={(v) => f("show_coupon_on_page", v)} />
+                    <Label>Show a coupon code on the sales page</Label>
+                  </div>
+                  {form.show_coupon_on_page && (
+                    <Input value={form.page_coupon_code} onChange={(e) => f("page_coupon_code", e.target.value.toUpperCase())} placeholder="EARLYBIRD" className="max-w-[240px]" />
+                  )}
+                </div>
+              </div>
+            </TabsContent>
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 2: PUBLIC PAGE                        */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="public">
-          <PublicPageFields form={form} f={f} />
-        </TabsContent>
+            <TabsContent value="tracking" className="mt-0 space-y-3">
+              <p className="text-sm text-muted-foreground">Extra tracking for this offering only, on its sales, checkout and thank-you pages. LevelUp's own Meta pixel always runs.</p>
+              <TrackingFields form={form} f={f} />
+            </TabsContent>
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 3: THANK YOU PAGE                     */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="thankyou">
-          <ThankYouFields form={form} f={f} />
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 4: TRACKING & PIXELS                  */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="tracking">
-          <TrackingFields form={form} f={f} />
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 5: CHECKOUT                             */}
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="checkout">
-          <CheckoutPageTab
-            form={form}
-            f={(k, v) => f(k as keyof typeof EMPTY_FORM, v)}
-            offeringId={isNew ? undefined : offeringId}
-            bumps={bumps}
-            setBumps={setBumps}
-            bumpChoices={bumpChoices}
-            questions={questions}
-            setQuestions={setQuestions}
-            courseTitles={allCourses.filter((c) => linkedCourseIds.includes(c.id)).map((c) => c.title)}
-          />
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════ */}
-        <TabsContent value="cohort">
+            {showApplications && (
+              <TabsContent value="applications" className="mt-0">
           <div className="bg-card border border-border rounded-xl p-6 space-y-5">
             <p className="text-sm text-muted-foreground">
               Settings for live cohort offerings: staged payments, external integrations, and completion criteria.
@@ -969,31 +958,37 @@ const AdminOfferingEditor = () => {
               </div>
             </div>
           </div>
-        </TabsContent>
+              </TabsContent>
+            )}
 
-        {/* ══════════════════════════════════════════ */}
-        {/*  TAB 8-9: STUDENTS AND CURRICULUM          */}
-        {/* ══════════════════════════════════════════ */}
-        {!isNew && offeringId && (
-          <>
-            {/* One place for people: who has it, add or import, and below it who
-                bought it but can't open it yet (founder, 2 Nov 2026: Students and
-                Access were two tabs about the same people). */}
-            <TabsContent value="students" className="space-y-6">
-              <StudentsTab offeringId={offeringId} />
-              <section className="space-y-3" aria-labelledby="accessCheckH">
-                <div>
-                  <h3 id="accessCheckH" className="text-sm font-semibold">Access check</h3>
-                  <p className="text-xs text-muted-foreground">Everyone owed this product, including people who bought it and haven't signed in yet.</p>
-                </div>
-                <AccessTab offeringId={offeringId} />
-              </section>
-            </TabsContent>
-            <TabsContent value="curriculum">
-              <CurriculumTab offeringId={offeringId} />
-            </TabsContent>
-          </>
-        )}
+            {!isNew && offeringId && (
+              <TabsContent value="students" className="mt-0 space-y-6">
+                <StudentsTab offeringId={offeringId} />
+                <section className="space-y-3" aria-labelledby="accessCheckH">
+                  <div>
+                    <h3 id="accessCheckH" className="text-sm font-semibold">Access check</h3>
+                    <p className="text-xs text-muted-foreground">Everyone owed this product, including people who bought it and haven't signed in yet.</p>
+                  </div>
+                  <AccessTab offeringId={offeringId} />
+                </section>
+              </TabsContent>
+            )}
+          </div>
+
+          {section !== "students" && (
+            <aside className="hidden xl:block xl:sticky xl:top-4">
+              <OfferingPreview
+                follow={section === "after" ? "thankyou" : section === "explore" ? "card" : "checkout"}
+                form={form}
+                explore={explore}
+                courseTitles={courseTitles}
+                bumps={bumps}
+                bumpChoices={bumpChoices}
+                questions={questions}
+              />
+            </aside>
+          )}
+        </div>
       </Tabs>
     </>
   );

@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -64,19 +63,17 @@ export function CheckoutPageTab({
   const addonChoices = bumpChoices.filter((o) => o.id !== offeringId && o.status === "active" && o.access === "buy" && Number(o.price_inr) > 0);
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          This offering is a checkout page. Fill the blocks in order; the preview on the right shows what buyers see.
-          Its address is <span className="font-mono">/checkout/{form.slug || "…"}</span>.
+          The blocks of this offering's checkout page, in the order buyers see them. The preview beside this updates as you type.
+          Address: <span className="font-mono">/checkout/{form.slug || "…"}</span>
         </p>
 
         <Block n={1} title="Cover" hint="An image, or a video (a link ending in .mp4). Shown at the top, 16:9.">
           <Input value={form.checkout_cover_url ?? ""} onChange={(e) => f("checkout_cover_url", e.target.value)} placeholder="https://…/cover.jpg" />
         </Block>
 
-        <Block n={2} title="Title and one line">
-          <Input value={form.title} onChange={(e) => f("title", e.target.value)} placeholder="Film Direction 101 · Live Workshop" />
+        <Block n={2} title="One line under the title" hint="The title itself is set in Basics.">
           <Textarea rows={2} value={form.description} onChange={(e) => f("description", e.target.value)} placeholder="A 2-hour live workshop on directing your first film." />
         </Block>
 
@@ -137,17 +134,12 @@ export function CheckoutPageTab({
           <Button type="button" variant="outline" size="sm" onClick={() => setQuestions((prev) => [...prev, { label: "", is_required: false }])}><Plus className="h-4 w-4 mr-1" />Add a question</Button>
         </Block>
 
-        <Block n={7} title="Price" hint={`GST: ${form.gst_mode === "none" ? "none" : `${form.gst_rate || 18}% ${form.gst_mode}`} (change it in Basic Info). The coupon box shows by itself when a coupon can apply.`}>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Price (₹)</Label>
-              <Input type="number" value={form.price_inr} onChange={(e) => f("price_inr", Number(e.target.value))} />
-            </div>
-            <div>
-              <Label className="text-xs">Struck-through price (₹, optional)</Label>
-              <Input type="number" value={form.mrp_inr} onChange={(e) => f("mrp_inr", e.target.value)} />
-            </div>
-          </div>
+        <Block n={7} title="Price" hint="Set in Basics. The coupon box shows by itself only when a coupon can apply.">
+          <p className="text-sm">
+            ₹{Number(form.price_inr || 0).toLocaleString("en-IN")}
+            {Number(form.mrp_inr) > Number(form.price_inr) && <span className="text-muted-foreground line-through ml-2">₹{Number(form.mrp_inr).toLocaleString("en-IN")}</span>}
+            <span className="text-muted-foreground"> · GST {form.gst_mode === "none" ? "none" : `${form.gst_rate || 18}% ${form.gst_mode === "inclusive" ? "included" : "added on top"}`}</span>
+          </p>
         </Block>
 
         <Block n={8} title="Trust" hint="Refund window and up to two short testimonials.">
@@ -167,24 +159,17 @@ export function CheckoutPageTab({
           )}
         </Block>
 
-        <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <p className="text-sm font-medium">Sales page coupon (the /p/ page, not the checkout)</p>
-          <div className="flex items-center gap-3">
-            <Switch checked={form.show_coupon_on_page} onCheckedChange={(v) => f("show_coupon_on_page", v)} />
-            <Label>Show a coupon code on the sales page</Label>
-          </div>
-          {form.show_coupon_on_page && (
-            <Input value={form.page_coupon_code} onChange={(e) => f("page_coupon_code", e.target.value.toUpperCase())} placeholder="EARLYBIRD" className="max-w-[240px]" />
-          )}
-        </section>
       </div>
-
-      <div className="xl:sticky xl:top-4">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Live preview</p>
-        <CheckoutPreview form={form} bullets={bullets} courseTitles={courseTitles} testimonials={testimonials} bumps={bumps} bumpChoices={bumpChoices} questions={questions} />
-      </div>
-    </div>
   );
+}
+
+/** The checkout preview straight from the editor's (unsaved) form. */
+export function CheckoutPreviewFromForm(props: {
+  form: Form; courseTitles: string[]; bumps: BumpRow[]; bumpChoices: BumpChoice[]; questions: Question[];
+}) {
+  const bullets = parseList<string>(props.form.checkout_bullets).filter((b) => typeof b === "string");
+  const testimonials = parseList<Testimonial>(props.form.checkout_testimonials);
+  return <CheckoutPreview {...props} bullets={bullets} testimonials={testimonials} />;
 }
 
 /** A faithful sketch of the buyer's checkout, from the unsaved form. */
