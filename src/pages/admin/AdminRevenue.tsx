@@ -126,7 +126,7 @@ const AdminRevenue = () => {
   // Confirmation dialog
   const [confirmRefund, setConfirmRefund] = useState<{ orderId: string; amount: number; customerName: string } | null>(null);
 
-  /* Combined live + legacy revenue from revenue_in_range RPC.
+  /* Combined live + legacy revenue from the admin_revenue RPC.
    * The in-memory `orders` array only has live payment_orders; legacy
    * data lives in legacy_enrolments (~73K rows, too big to load) and is
    * aggregated server-side. */
@@ -239,9 +239,9 @@ const AdminRevenue = () => {
   useEffect(() => { fetchData(); }, []);
 
   /* Refetch combined (live + legacy) totals whenever the date filter
-   * changes. revenue_in_range is an SQL RPC that does the aggregation
-   * server-side across both payment_orders and the 73K-row
-   * legacy_enrolments table - cheap, indexed. */
+   * changes. admin_revenue aggregates payment_orders server-side and
+   * reads legacy totals from the precomputed legacy_revenue_daily table
+   * (migration 20261031110000). Same numbers as revenue_in_range. */
   useEffect(() => {
     const now = Date.now();
     const IST_OFFSET_MS = 5.5 * 3600 * 1000;
@@ -258,7 +258,7 @@ const AdminRevenue = () => {
       if (customTo)   to   = new Date(Date.UTC(customTo.getFullYear(), customTo.getMonth(), customTo.getDate() + 1) - IST_OFFSET_MS);
     }
     (async () => {
-      const { data } = await supabase.rpc("revenue_in_range" as any, { p_from: from.toISOString(), p_to: to.toISOString() });
+      const { data } = await supabase.rpc("admin_revenue" as any, { p_from: from.toISOString(), p_to: to.toISOString() });
       const row = (data as any[])?.[0];
       if (row) {
         setCombinedTotals({
